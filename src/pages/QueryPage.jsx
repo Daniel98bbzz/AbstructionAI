@@ -318,8 +318,10 @@ function QueryPage() {
         id: responseId,
         type: 'assistant',
         content: response.explanation,
+        introduction: response.introduction,
         analogy: response.analogy,
         resources: response.resources,
+        recap: response.recap,
         timestamp: new Date().toISOString()
       };
       
@@ -425,8 +427,10 @@ function QueryPage() {
         id: regeneratedResponseId,
         type: 'assistant',
         content: response.explanation,
+        introduction: response.introduction,
         analogy: response.analogy,
         resources: response.resources,
+        recap: response.recap,
         isRegenerated: true,
         timestamp: new Date().toISOString()
       };
@@ -522,17 +526,36 @@ function QueryPage() {
                           Improved answer based on your feedback:
                         </div>
                       )}
-                      <div className="prose max-w-none">
-                        {message.content}
+                      
+                      {/* Introduction Section */}
+                      {message.introduction && (
+                        <div>
+                          <h4 className="font-medium text-gray-900 mb-2">Introduction:</h4>
+                          <div className="prose max-w-none">
+                            {message.introduction}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Main Explanation */}
+                      <div>
+                        <h4 className="font-medium text-gray-900 mt-4 mb-2">Explanation:</h4>
+                        <div className="prose max-w-none">
+                          {message.content}
+                        </div>
                       </div>
+                      
+                      {/* Analogy Section */}
                       {message.analogy && (
                         <div>
-                          <h4 className="font-medium text-gray-900 mt-4 mb-2">Real-World Analogy:</h4>
+                          <h4 className="font-medium text-gray-900 mt-4 mb-2">Analogy:</h4>
                           <div className="prose max-w-none">
                             {message.analogy}
                           </div>
                         </div>
                       )}
+                      
+                      {/* Resources Section */}
                       {message.resources && message.resources.length > 0 && (
                         <div>
                           <h4 className="font-medium text-gray-900 mt-4 mb-2">Additional Resources:</h4>
@@ -553,6 +576,16 @@ function QueryPage() {
                               </li>
                             ))}
                           </ul>
+                        </div>
+                      )}
+                      
+                      {/* Recap Section */}
+                      {message.recap && (
+                        <div>
+                          <h4 className="font-medium text-gray-900 mt-4 mb-2">Brief Recap:</h4>
+                          <div className="prose max-w-none">
+                            {message.recap}
+                          </div>
                         </div>
                       )}
                     </div>

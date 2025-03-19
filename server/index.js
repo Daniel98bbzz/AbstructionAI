@@ -78,7 +78,7 @@ app.post('/api/query', async (req, res) => {
     // Add system context about the current conversation
     const systemContext = {
       role: "system",
-      content: `You are a knowledgeable AI tutor. Maintain conversation continuity.
+      content: `You are a knowledgeable AI tutor specialized in explaining complex concepts clearly and thoroughly.
 ${conversationSummary.lastExplanation 
   ? `Previous topic: ${conversationSummary.currentTopic}
 Last explanation: ${conversationSummary.lastExplanation}`
@@ -89,28 +89,30 @@ ${conversationSummary.lastAnalogy
 
 Your responses must ALWAYS follow this format:
 
-EXPLANATION:
-${query.toLowerCase().includes('another') || query.toLowerCase().includes('one more')
-  ? (conversationSummary.lastExplanation || 'No previous explanation available')
-  : '[Provide a clear explanation]'}
+Introduction:
+[A concise overview of the topic, 2-3 sentences]
 
-ANALOGY:
-${query.toLowerCase().includes('another') || query.toLowerCase().includes('one more')
-  ? '[Provide a new analogy different from: ' + (conversationSummary.lastAnalogy || 'no previous analogy') + ']'
-  : '[Provide a relatable analogy]'}
+Explanation:
+[A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
 
-RESOURCES:
-[Provide relevant learning resources]
+Analogy:
+[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable]
 
-Guidelines:
-1. Never skip any section
-2. For follow-up questions, reference previous context
-3. For "another analogy" requests:
-   - ALWAYS reuse the exact previous explanation
-   - Provide a completely new and different analogy
-   - Make sure the analogy is unique and not similar to previous ones
-4. Maintain conversation continuity by referencing previous explanations when relevant
-5. For any request containing "another" or similar words, treat it as a request for a new analogy while keeping the same explanation`
+Additional Sources:
+[Provide 3-5 relevant learning resources with URLs when possible]
+
+Brief Recap:
+[Summarize the key points in 3-5 bullet points]
+
+Style and Guidelines:
+- Always use second-person language (e.g., "you," "your") to address the user directly.
+- Keep language clear, friendly, and respectful.
+- Avoid overly technical jargon unless the user explicitly requests deeper technical detail.
+- Be thorough and detailed - aim for comprehensive explanations.
+- Use examples to illustrate your points.
+
+If user asks for another analogy, ALWAYS reuse the previous explanation but provide a new and different analogy.
+Never skip any section of the format. Each section must be properly identified with its header.`
     };
     
     historyMessages.push(systemContext);
@@ -126,7 +128,7 @@ Guidelines:
           { role: "user", content: interaction.query },
           { 
             role: "assistant", 
-            content: `EXPLANATION:\n${interaction.response.explanation || ''}\n\nANALOGY:\n${interaction.response.analogy || ''}`
+            content: interaction.response.explanation || ''
           }
         );
       }
@@ -137,10 +139,12 @@ Guidelines:
 
     // Call OpenAI API with enhanced context
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4",  // Use GPT-4 for more comprehensive responses
       messages: historyMessages,
       temperature: 0.7,
-      max_tokens: 1500,
+      max_tokens: 4000,  // Increased token limit for longer responses
+      presence_penalty: 0.1,  // Slight penalty to avoid repetition
+      frequency_penalty: 0.1  // Slight penalty to encourage diversity
     });
     
     // Process the response
@@ -148,48 +152,70 @@ Guidelines:
     
     // Parse sections with error handling
     const sections = {
+      introduction: '',
       explanation: '',
       analogy: '',
-      resources: []
+      additional_sources: [],
+      recap: ''
     };
     
     try {
-      const parts = responseText.split('\n\n');
-      for (const part of parts) {
-        if (part.startsWith('EXPLANATION:')) {
-          sections.explanation = part.replace('EXPLANATION:', '').trim();
-        } else if (part.startsWith('ANALOGY:')) {
-          sections.analogy = part.replace('ANALOGY:', '').trim();
-        } else if (part.startsWith('RESOURCES:')) {
-          const resourcesText = part.replace('RESOURCES:', '').trim();
-          sections.resources = resourcesText.split('\n')
-            .filter(line => line.trim())
-            .map(line => {
-              const urlMatch = line.match(/\[(.*?)\]\((.*?)\)/);
-              return urlMatch ? {
-                title: urlMatch[1],
-                url: urlMatch[2],
-                description: ''
-              } : null;
-            })
-            .filter(Boolean);
-        }
+      // Split by section headers
+      const introMatch = responseText.match(/Introduction:[\s\S]*?(?=Explanation:|$)/i);
+      const explanationMatch = responseText.match(/Explanation:[\s\S]*?(?=Analogy:|$)/i);
+      const analogyMatch = responseText.match(/Analogy:[\s\S]*?(?=Additional Sources:|$)/i);
+      const sourcesMatch = responseText.match(/Additional Sources:[\s\S]*?(?=Brief Recap:|$)/i);
+      const recapMatch = responseText.match(/Brief Recap:[\s\S]*?(?=Style and Guidelines:|$)/i);
+      
+      if (introMatch) sections.introduction = introMatch[0].replace(/Introduction:/i, '').trim();
+      if (explanationMatch) sections.explanation = explanationMatch[0].replace(/Explanation:/i, '').trim();
+      if (analogyMatch) sections.analogy = analogyMatch[0].replace(/Analogy:/i, '').trim();
+      
+      // Process resources
+      if (sourcesMatch) {
+        const sourcesContent = sourcesMatch[0].replace(/Additional Sources:/i, '').trim();
+        const resourceLines = sourcesContent.split('\n').filter(line => line.trim());
+        
+        sections.additional_sources = resourceLines.map(line => {
+          const urlMatch = line.match(/\[(.*?)\]\((.*?)\)/);
+          if (urlMatch) {
+            return {
+              title: urlMatch[1],
+              url: urlMatch[2],
+              description: ''
+            };
+          } else {
+            return {
+              title: line,
+              url: '',
+              description: ''
+            };
+          }
+        });
       }
+      
+      if (recapMatch) sections.recap = recapMatch[0].replace(/Brief Recap:/i, '').trim();
     } catch (error) {
       console.error('Error parsing response sections:', error);
     }
     
     // Ensure sections are not empty
+    sections.introduction = sections.introduction || 'No introduction provided';
     sections.explanation = sections.explanation || 'No explanation provided';
     sections.analogy = sections.analogy || 'No analogy provided';
-    sections.resources = sections.resources.length ? sections.resources : [];
+    sections.additional_sources = sections.additional_sources.length ? sections.additional_sources : [];
+    sections.recap = sections.recap || 'No recap provided';
     
     // Prepare final response
     const response = {
       id: uuidv4(),
       sessionId: sessionData.id,
       query,
-      ...sections,
+      introduction: sections.introduction,
+      explanation: sections.explanation,
+      analogy: sections.analogy,
+      resources: sections.additional_sources,
+      recap: sections.recap,
       timestamp: new Date().toISOString()
     };
     
