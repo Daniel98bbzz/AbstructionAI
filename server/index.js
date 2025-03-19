@@ -89,6 +89,9 @@ ${conversationSummary.lastAnalogy
 
 Your responses must ALWAYS follow this format:
 
+SUGGESTED_TITLE:
+[A brief, descriptive title for this conversation, maximum 5-7 words]
+
 Introduction:
 [A concise overview of the topic, 2-3 sentences]
 
@@ -152,6 +155,7 @@ Never skip any section of the format. Each section must be properly identified w
     
     // Parse sections with error handling
     const sections = {
+      suggested_title: '',
       introduction: '',
       explanation: '',
       analogy: '',
@@ -161,12 +165,14 @@ Never skip any section of the format. Each section must be properly identified w
     
     try {
       // Split by section headers
+      const titleMatch = responseText.match(/SUGGESTED_TITLE:[\s\S]*?(?=Introduction:|$)/i);
       const introMatch = responseText.match(/Introduction:[\s\S]*?(?=Explanation:|$)/i);
       const explanationMatch = responseText.match(/Explanation:[\s\S]*?(?=Analogy:|$)/i);
       const analogyMatch = responseText.match(/Analogy:[\s\S]*?(?=Additional Sources:|$)/i);
       const sourcesMatch = responseText.match(/Additional Sources:[\s\S]*?(?=Brief Recap:|$)/i);
       const recapMatch = responseText.match(/Brief Recap:[\s\S]*?(?=Style and Guidelines:|$)/i);
       
+      if (titleMatch) sections.suggested_title = titleMatch[0].replace(/SUGGESTED_TITLE:/i, '').trim();
       if (introMatch) sections.introduction = introMatch[0].replace(/Introduction:/i, '').trim();
       if (explanationMatch) sections.explanation = explanationMatch[0].replace(/Explanation:/i, '').trim();
       if (analogyMatch) sections.analogy = analogyMatch[0].replace(/Analogy:/i, '').trim();
@@ -200,6 +206,7 @@ Never skip any section of the format. Each section must be properly identified w
     }
     
     // Ensure sections are not empty
+    sections.suggested_title = sections.suggested_title || '';
     sections.introduction = sections.introduction || 'No introduction provided';
     sections.explanation = sections.explanation || 'No explanation provided';
     sections.analogy = sections.analogy || 'No analogy provided';
@@ -211,6 +218,7 @@ Never skip any section of the format. Each section must be properly identified w
       id: uuidv4(),
       sessionId: sessionData.id,
       query,
+      suggested_title: sections.suggested_title,
       introduction: sections.introduction,
       explanation: sections.explanation,
       analogy: sections.analogy,

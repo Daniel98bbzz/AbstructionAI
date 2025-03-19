@@ -35,8 +35,11 @@ export function QueryProvider({ children }) {
   useEffect(() => {
     if (user && currentSession) {
       localStorage.setItem(`currentSession_${user.id}`, JSON.stringify(currentSession));
+      // Also save just the session ID for easy access
+      localStorage.setItem(`sessionId_${user.id}`, currentSession.id);
     } else if (user) {
       localStorage.removeItem(`currentSession_${user.id}`);
+      localStorage.removeItem(`sessionId_${user.id}`);
     }
   }, [currentSession, user]);
   
@@ -176,8 +179,12 @@ export function QueryProvider({ children }) {
         setMessageHistory(prev => [...prev, aiMessage]);
         
         // Set current session if not already set
-        if (responseData.sessionId && !currentSession) {
+        if (responseData.sessionId && (!currentSession || currentSession.id !== responseData.sessionId)) {
           setCurrentSession({ id: responseData.sessionId });
+          // Also save to localStorage for persistence
+          if (user) {
+            localStorage.setItem(`sessionId_${user.id}`, responseData.sessionId);
+          }
         }
       } catch (err) {
         console.error('Error calling backend API:', err);
@@ -638,6 +645,7 @@ export function QueryProvider({ children }) {
     // Clear localStorage items related to chat
     if (user) {
       localStorage.removeItem(`currentSession_${user.id}`);
+      localStorage.removeItem(`sessionId_${user.id}`);
       localStorage.removeItem(`messageHistory_${user.id}`);
     }
   };

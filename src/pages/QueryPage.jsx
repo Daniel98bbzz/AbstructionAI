@@ -45,8 +45,16 @@ function QueryPage() {
   const messagesEndRef = useRef(null);
   const { submitQuery, loading, error, regenerateAnswer, currentSession } = useQuery();
   
-  // Set sessionId from the current session in the QueryContext
-  const [sessionId, setSessionId] = useState(currentSession?.id || null);
+  // Set sessionId from the current session in the QueryContext or from localStorage
+  const [sessionId, setSessionId] = useState(() => {
+    if (user) {
+      // First try to load from localStorage
+      const savedSessionId = localStorage.getItem(`sessionId_${user.id}`);
+      // Fall back to currentSession from context if available
+      return savedSessionId || currentSession?.id || null;
+    }
+    return currentSession?.id || null;
+  });
   
   // Update sessionId when currentSession changes
   useEffect(() => {
@@ -55,6 +63,15 @@ function QueryPage() {
       setSessionId(currentSession.id);
     }
   }, [currentSession]);
+  
+  // Persist sessionId to localStorage whenever it changes
+  useEffect(() => {
+    if (user && sessionId) {
+      localStorage.setItem(`sessionId_${user.id}`, sessionId);
+    } else if (user) {
+      localStorage.removeItem(`sessionId_${user.id}`);
+    }
+  }, [sessionId, user]);
   
   // Persist preferences whenever they change
   useEffect(() => {
@@ -133,6 +150,12 @@ function QueryPage() {
       if (savedFeedbackFor) {
         setShowFeedbackFor(savedFeedbackFor);
       }
+      
+      // Load session ID
+      const savedSessionId = localStorage.getItem(`sessionId_${user.id}`);
+      if (savedSessionId) {
+        setSessionId(savedSessionId);
+      }
     }
   }, [user?.id]);
 
@@ -176,6 +199,8 @@ function QueryPage() {
       title: 'New Conversation',
       messages: [],
       lastMessageTime: new Date().toISOString(),
+      // Preserve the sessionId for continuity
+      sessionId: sessionId
     };
     
     // Add the new conversation to the list
@@ -203,6 +228,11 @@ function QueryPage() {
       // Store the current state
       localStorage.setItem(`activeConversation_${user.id}`, newConversationId);
       localStorage.setItem(`conversations_${user.id}`, JSON.stringify([newConversation, ...conversations]));
+      
+      // Keep the sessionId in localStorage
+      if (sessionId) {
+        localStorage.setItem(`sessionId_${user.id}`, sessionId);
+      }
     }
   };
 
@@ -328,11 +358,25 @@ function QueryPage() {
       const updatedMessages = [...messages, userMessage, aiMessage];
       setMessages(updatedMessages);
       
-      // Update conversations
+      // Update conversations with a more descriptive title based on the AI response
       setConversations(prev => prev.map(conv => {
         if (conv.id === activeConversation) {
+          // Use the AI suggested title if available, otherwise create one from the introduction
+          let betterTitle = response.suggested_title || conv.title;
+          
+          // If no suggested title but we have an introduction, create one from that
+          if (!betterTitle && response.introduction) {
+            const introContent = response.introduction.trim();
+            // Extract the first sentence or up to 40 chars for the title
+            const firstSentence = introContent.split(/[.!?]/)[0].trim();
+            betterTitle = firstSentence.length > 40 
+              ? firstSentence.substring(0, 40) + '...' 
+              : firstSentence;
+          }
+          
           return {
             ...conv,
+            title: betterTitle || conv.title,
             messages: updatedMessages,
             lastMessageTime: new Date().toISOString(),
           };
@@ -441,8 +485,14 @@ function QueryPage() {
       // Update the conversation
       setConversations(prev => prev.map(conv => {
         if (conv.id === activeConversation) {
+          // Update the title if we got a suggested title from the regenerated response
+          const updatedTitle = response.suggested_title 
+            ? response.suggested_title 
+            : conv.title;
+            
           return {
             ...conv,
+            title: updatedTitle,
             messages: [...messages, regeneratedMessage],
             lastMessageTime: new Date().toISOString(),
           };
