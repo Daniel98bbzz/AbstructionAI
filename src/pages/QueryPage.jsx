@@ -9,19 +9,67 @@ function QueryPage() {
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [showPreferences, setShowPreferences] = useState(false);
-  const [preferences, setPreferences] = useState({
-    visualLearning: 50,
-    practicalExamples: 50,
-    technicalDepth: 50,
+  const [preferences, setPreferences] = useState(() => {
+    // Try to load preferences from localStorage
+    const savedPreferences = localStorage.getItem('userPreferences');
+    return savedPreferences ? JSON.parse(savedPreferences) : {
+      visualLearning: 50,
+      practicalExamples: 50,
+      technicalDepth: 50,
+    };
   });
-  const [messages, setMessages] = useState([]);
-  const [sessionId, setSessionId] = useState(null);
-  const [conversations, setConversations] = useState([]);
-  const [activeConversation, setActiveConversation] = useState(null);
+  const [messages, setMessages] = useState(() => {
+    // Try to load messages from localStorage
+    const savedMessages = localStorage.getItem('currentMessages');
+    return savedMessages ? JSON.parse(savedMessages) : [];
+  });
+  const [conversations, setConversations] = useState(() => {
+    // Try to load conversations from localStorage
+    const savedConversations = localStorage.getItem('conversations');
+    return savedConversations ? JSON.parse(savedConversations) : [];
+  });
+  const [activeConversation, setActiveConversation] = useState(() => {
+    // Try to load active conversation from localStorage
+    return localStorage.getItem('activeConversation') || null;
+  });
   const [showFeedbackFor, setShowFeedbackFor] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
   const messagesEndRef = useRef(null);
-  const { submitQuery, loading, error, regenerateAnswer } = useQuery();
+  const { submitQuery, loading, error, regenerateAnswer, currentSession } = useQuery();
+  
+  // Set sessionId from the current session in the QueryContext
+  const [sessionId, setSessionId] = useState(currentSession?.id || null);
+  
+  // Update sessionId when currentSession changes
+  useEffect(() => {
+    if (currentSession?.id) {
+      setSessionId(currentSession.id);
+    }
+  }, [currentSession]);
+  
+  // Persist preferences whenever they change
+  useEffect(() => {
+    localStorage.setItem('userPreferences', JSON.stringify(preferences));
+  }, [preferences]);
+  
+  // Persist messages whenever they change
+  useEffect(() => {
+    localStorage.setItem('currentMessages', JSON.stringify(messages));
+  }, [messages]);
+  
+  // Persist conversations whenever they change
+  useEffect(() => {
+    localStorage.setItem('conversations', JSON.stringify(conversations));
+  }, [conversations]);
+  
+  // Persist active conversation whenever it changes
+  useEffect(() => {
+    if (activeConversation) {
+      localStorage.setItem('activeConversation', activeConversation);
+    } else {
+      localStorage.removeItem('activeConversation');
+    }
+  }, [activeConversation]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -54,16 +102,40 @@ function QueryPage() {
   };
 
   const handleNewConversation = () => {
+    // Create a unique ID for the new conversation
+    const newConversationId = Date.now().toString();
+    
+    // Create the new conversation object
     const newConversation = {
-      id: Date.now().toString(),
+      id: newConversationId,
       title: 'New Conversation',
       messages: [],
       lastMessageTime: new Date().toISOString(),
     };
+    
+    // Add the new conversation to the list
     setConversations(prev => [newConversation, ...prev]);
-    setActiveConversation(newConversation.id);
+    
+    // Set it as the active conversation
+    setActiveConversation(newConversationId);
+    
+    // Clear the messages for this new conversation
     setMessages([]);
-    setSessionId(null);
+    
+    // Don't clear the sessionId if it exists - we'll keep using the same session
+    // but if we want a completely fresh session, uncomment the next line
+    // setSessionId(null);
+    
+    // Reset the UI state
+    setShowFeedbackFor(null);
+    setQuery('');
+    
+    // Clear localStorage for the current messages only
+    localStorage.removeItem('currentMessages');
+    
+    // Store the current state
+    localStorage.setItem('activeConversation', newConversationId);
+    localStorage.setItem('conversations', JSON.stringify([newConversation, ...conversations]));
   };
 
   const handleSelectConversation = (conversationId) => {
@@ -196,6 +268,12 @@ function QueryPage() {
     try {
       setRegenerating(true);
       console.log('Starting answer regeneration with feedback:', feedbackData);
+      console.log('Using session ID:', sessionId || currentSession?.id);
+      
+      // Check if we have a valid session ID
+      if (!sessionId && !currentSession?.id) {
+        console.warn('No session ID available for regeneration, this might cause issues');
+      }
       
       // Find the original message and query that initiated this response
       const messageIndex = messages.findIndex(m => m.id === messageId);

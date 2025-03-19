@@ -124,6 +124,14 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
       if (onFeedbackSubmitted) {
         onFeedbackSubmitted();
       }
+      
+      // Automatically trigger regeneration after successful feedback
+      setTimeout(() => {
+        if (onRegenerateAnswer) {
+          console.log('Auto-triggering regeneration based on feedback');
+          onRegenerateAnswer(feedback);
+        }
+      }, 500);
     } catch (err) {
       setError('Failed to submit feedback. Please try again. Error: ' + (err.message || 'Unknown error'));
       console.error('Error submitting feedback:', err);

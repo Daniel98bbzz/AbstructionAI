@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from './AuthContext';
 import axios from 'axios';
@@ -13,9 +13,35 @@ export function QueryProvider({ children }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [currentSession, setCurrentSession] = useState(null);
+  const [currentSession, setCurrentSession] = useState(() => {
+    // Try to load session from localStorage on init
+    const savedSession = localStorage.getItem('currentSession');
+    return savedSession ? JSON.parse(savedSession) : null;
+  });
   const [currentResponse, setCurrentResponse] = useState(null);
-  const [messageHistory, setMessageHistory] = useState([]);
+  const [messageHistory, setMessageHistory] = useState(() => {
+    // Try to load message history from localStorage on init
+    const savedMessages = localStorage.getItem('messageHistory');
+    return savedMessages ? JSON.parse(savedMessages) : [];
+  });
+  
+  // Save session to localStorage whenever it changes
+  useEffect(() => {
+    if (currentSession) {
+      localStorage.setItem('currentSession', JSON.stringify(currentSession));
+    } else {
+      localStorage.removeItem('currentSession');
+    }
+  }, [currentSession]);
+  
+  // Save message history to localStorage whenever it changes
+  useEffect(() => {
+    if (messageHistory && messageHistory.length > 0) {
+      localStorage.setItem('messageHistory', JSON.stringify(messageHistory));
+    } else {
+      localStorage.removeItem('messageHistory');
+    }
+  }, [messageHistory]);
 
   // Ensure user exists in the users table
   const ensureUserExists = async () => {
@@ -598,6 +624,10 @@ export function QueryProvider({ children }) {
     setMessageHistory([]);
     setCurrentSession(null);
     setCurrentResponse(null);
+    
+    // Clear localStorage items related to chat
+    localStorage.removeItem('currentSession');
+    localStorage.removeItem('messageHistory');
   };
 
   const value = {
