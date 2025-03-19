@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery } from '../contexts/QueryContext';
+import { supabase } from '../lib/supabaseClient';
 
-function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferences, onRegenerateAnswer }) {
+function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferences, onRegenerateAnswer, sessionId }) {
   const { submitFeedback } = useQuery();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -23,6 +24,7 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
     e.preventDefault();
     try {
       setLoading(true);
+      setError(null);
       
       // Format feedback as JSON to include in comments
       const feedbackDetails = JSON.stringify({
@@ -32,13 +34,98 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
         comments: feedback.comments
       });
       
-      await submitFeedback(responseId, feedback.rating, feedbackDetails);
+      console.log('Submitting comprehensive feedback...');
+      
+      // Try multiple submission methods in sequence:
+      let isSubmitted = false;
+      
+      // Method 1: Try direct insertion with session ID as priority
+      if (sessionId) {
+        try {
+          console.log('Attempting direct insertion with sessionId:', sessionId);
+          const { data, error: insertError } = await supabase
+            .from('interactions')
+            .insert([
+              {
+                session_id: sessionId,
+                type: 'feedback',
+                rating: feedback.rating,
+                comments: feedbackDetails,
+                // Don't use related_to to avoid foreign key issues
+                related_to: null
+              }
+            ])
+            .select();
+          
+          if (insertError) {
+            console.error('Direct insertion failed:', insertError);
+            throw insertError;
+          }
+          
+          console.log('Feedback submitted successfully via direct insertion');
+          isSubmitted = true;
+        } catch (insertError) {
+          console.error('Direct insertion failed:', insertError);
+        }
+      }
+      
+      // Method 2: Try the fallback approach without session ID
+      if (!isSubmitted) {
+        try {
+          console.log('Attempting fallback insertion');
+          // Get most recent session
+          let actualSessionId = null;
+          
+          try {
+            const { data: sessionData } = await supabase
+              .from('sessions')
+              .select('id')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .single();
+            
+            if (sessionData) {
+              actualSessionId = sessionData.id;
+            }
+          } catch (err) {
+            console.warn('Could not get session, will use null session ID');
+          }
+          
+          const { data, error: fallbackInsertError } = await supabase
+            .from('interactions')
+            .insert([
+              {
+                session_id: actualSessionId,
+                type: 'feedback',
+                rating: feedback.rating,
+                comments: feedbackDetails,
+                related_to: null
+              }
+            ])
+            .select();
+          
+          if (fallbackInsertError) {
+            console.error('Fallback insertion failed:', fallbackInsertError);
+            throw fallbackInsertError;
+          }
+          
+          console.log('Feedback submitted successfully via fallback insertion');
+          isSubmitted = true;
+        } catch (fallbackInsertError) {
+          console.error('Fallback insertion failed:', fallbackInsertError);
+        }
+      }
+      
+      if (!isSubmitted) {
+        throw new Error('All feedback submission methods failed');
+      }
+      
       setSubmitted(true);
       if (onFeedbackSubmitted) {
         onFeedbackSubmitted();
       }
     } catch (err) {
-      setError('Failed to submit feedback. Please try again.');
+      setError('Failed to submit feedback. Please try again. Error: ' + (err.message || 'Unknown error'));
       console.error('Error submitting feedback:', err);
     } finally {
       setLoading(false);

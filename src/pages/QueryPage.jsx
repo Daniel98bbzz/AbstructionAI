@@ -195,9 +195,14 @@ function QueryPage() {
   const handleRegenerateAnswer = async (messageId, feedbackData) => {
     try {
       setRegenerating(true);
+      console.log('Starting answer regeneration with feedback:', feedbackData);
+      
       // Find the original message and query that initiated this response
       const messageIndex = messages.findIndex(m => m.id === messageId);
-      if (messageIndex < 0) return;
+      if (messageIndex < 0) {
+        console.error('Message not found for regeneration, ID:', messageId);
+        return;
+      }
 
       // Find the corresponding user query (should be the previous message)
       let userQuery = '';
@@ -214,6 +219,8 @@ function QueryPage() {
         return;
       }
 
+      console.log('Found original query for regeneration:', userQuery);
+      
       // Add a "Regenerating..." message
       const regeneratingMsg = {
         type: 'system',
@@ -224,12 +231,15 @@ function QueryPage() {
       setMessages(prev => [...prev, regeneratingMsg]);
 
       // Call the regenerateAnswer function
+      console.log('Calling regenerateAnswer with preferences:', preferences);
       const response = await regenerateAnswer(
         userQuery,
         messageId,
         feedbackData,
         preferences
       );
+      
+      console.log('Received regenerated response:', response);
 
       // Remove the regenerating message
       setMessages(prev => prev.filter(m => m !== regeneratingMsg));
@@ -246,6 +256,7 @@ function QueryPage() {
         timestamp: new Date().toISOString()
       };
 
+      console.log('Adding regenerated message to conversation');
       setMessages(prev => [...prev, regeneratedMessage]);
 
       // Update the conversation
@@ -270,7 +281,7 @@ function QueryPage() {
       // Add error message
       const errorMessage = {
         type: 'error',
-        content: 'Sorry, there was an error regenerating the answer. Please try again.',
+        content: 'Sorry, there was an error regenerating the answer. Please try again. Error: ' + (error.message || ''),
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -384,7 +395,16 @@ function QueryPage() {
                   <FeedbackForm 
                     responseId={message.id} 
                     onFeedbackSubmitted={() => handleFeedbackSubmitted(message.id)}
-                    onRegenerateAnswer={(feedbackData) => handleRegenerateAnswer(message.id, feedbackData)} 
+                    onRegenerateAnswer={(feedbackData) => handleRegenerateAnswer(message.id, feedbackData)}
+                    originalQuery={
+                      // Find the user query that preceded this message
+                      messages.find((m, idx) => {
+                        const msgIndex = messages.findIndex(msg => msg.id === message.id);
+                        return idx < msgIndex && m.type === 'user';
+                      })?.content || ''
+                    }
+                    preferences={preferences}
+                    sessionId={sessionId}
                   />
                 </div>
               )}

@@ -226,38 +226,81 @@ export function QueryProvider({ children }) {
       setLoading(true);
       setError(null);
       
+      console.log('Starting feedback submission process...');
+      
       if (!user) {
-        throw new Error('You must be logged in to submit feedback');
+        const authError = new Error('You must be logged in to submit feedback');
+        console.error(authError);
+        throw authError;
       }
       
+      // Try to initialize a session if none exists
       if (!currentSession) {
-        throw new Error('No active session found');
+        console.log('No active session found, trying to create one...');
+        try {
+          const newSession = await startNewSession();
+          console.log('Created new session:', newSession);
+        } catch (sessionError) {
+          console.error('Error creating session:', sessionError);
+          throw new Error('Could not create a session for feedback. Please refresh and try again.');
+        }
       }
+      
+      console.log('Attempting to submit feedback with session:', currentSession?.id);
       
       try {
-        // Direct insert to interactions table
-        const { data, error: directFeedbackError } = await supabase
-          .from('interactions')
-          .insert([
-            {
-              session_id: currentSession.id,
-              related_to: responseId,
-              rating,
-              comments,
-              type: 'feedback'
-            }
-          ])
-          .select();
+        // First try using the RPC function
+        console.log('Calling Supabase RPC submit_feedback with:', {
+          response_id: responseId,
+          rating,
+          comments_length: comments?.length || 0
+        });
+        
+        const { data, error: rpcError } = await supabase.rpc(
+          'submit_feedback',
+          {
+            response_id: responseId,
+            rating,
+            comments
+          }
+        );
           
-        if (directFeedbackError) throw directFeedbackError;
-        return data[0];
+        if (rpcError) {
+          console.error('Error submitting feedback via RPC:', rpcError);
+          
+          // Fall back to direct table insertion if RPC fails
+          console.log('Falling back to direct table insertion...');
+          const { data: directData, error: directError } = await supabase
+            .from('interactions')
+            .insert([
+              {
+                session_id: currentSession.id,
+                related_to: responseId,
+                rating,
+                comments,
+                type: 'feedback'
+              }
+            ])
+            .select();
+            
+          if (directError) {
+            console.error('Direct insertion also failed:', directError);
+            throw directError;
+          }
+          
+          console.log('Direct insertion succeeded:', directData);
+          return directData[0];
+        }
+        
+        console.log('RPC submission succeeded:', data);
+        return data;
       } catch (err) {
         console.error('Error submitting feedback:', err);
         throw err;
       }
     } catch (err) {
       console.error('Error submitting feedback:', err);
-      setError('Failed to submit feedback. Please try again.');
+      setError('Failed to submit feedback. Please try again. ' + (err.message || ''));
       throw err;
     } finally {
       setLoading(false);
@@ -270,34 +313,52 @@ export function QueryProvider({ children }) {
       setLoading(true);
       setError(null);
       
+      console.log('Regenerating answer with feedback:', feedbackDetails);
+      
       if (!user) {
         throw new Error('You must be logged in to regenerate an answer');
       }
       
+      // Try to initialize a session if none exists
       if (!currentSession) {
-        throw new Error('No active session found');
+        try {
+          console.log('No active session found, trying to create one...');
+          const newSession = await startNewSession();
+          console.log('Created new session:', newSession);
+        } catch (sessionError) {
+          console.error('Error creating session:', sessionError);
+          throw new Error('Could not create a session for regeneration. Please refresh and try again.');
+        }
       }
       
       try {
         // Format the preferences to adapt based on feedback
         const updatedPreferences = { ...preferences };
         
+        console.log('Adjusting preferences based on feedback...');
+        
         // Adjust technical depth based on explanation detail preference
         if (feedbackDetails.explanationDetail === 'more_detailed') {
-          updatedPreferences.technicalDepth = Math.min(100, updatedPreferences.technicalDepth + 20);
-          updatedPreferences.practicalExamples = Math.min(100, updatedPreferences.practicalExamples + 10);
+          updatedPreferences.technicalDepth = Math.min(100, (updatedPreferences.technicalDepth || 50) + 20);
+          updatedPreferences.practicalExamples = Math.min(100, (updatedPreferences.practicalExamples || 50) + 10);
+          console.log('Increasing technical depth and practical examples');
         } else if (feedbackDetails.explanationDetail === 'simpler') {
-          updatedPreferences.technicalDepth = Math.max(0, updatedPreferences.technicalDepth - 20);
+          updatedPreferences.technicalDepth = Math.max(0, (updatedPreferences.technicalDepth || 50) - 20);
+          console.log('Decreasing technical depth for simpler explanation');
         }
         
         // Adjust visual learning based on clarity feedback
         if (feedbackDetails.explanationClear === 'no') {
-          updatedPreferences.visualLearning = Math.min(100, updatedPreferences.visualLearning + 15);
+          updatedPreferences.visualLearning = Math.min(100, (updatedPreferences.visualLearning || 50) + 15);
+          console.log('Increasing visual learning for clarity');
         }
+        
+        console.log('Updated preferences:', updatedPreferences);
         
         // Process the query with updated preferences
         let responseData;
         try {
+          console.log('Sending regeneration request to backend API...');
           // Include feedback in the API call so the backend can adapt
           const response = await axios.post('/api/query', {
             query,
@@ -308,34 +369,52 @@ export function QueryProvider({ children }) {
             isRegeneration: true
           });
           responseData = response.data;
-        } catch (err) {
-          console.error('Error calling backend API for regeneration:', err);
+          console.log('Received regenerated response from API');
+        } catch (apiErr) {
+          console.error('Error calling backend API for regeneration:', apiErr);
           
-          // Fall back to local processing
-          responseData = await processQueryLocally(query, updatedPreferences);
+          // Fall back to original preferences if API call fails
+          console.log('Falling back to simplified regeneration...');
           
-          // Add regeneration context to the response
-          responseData.explanation = `[Improved response based on your feedback]\n\n${responseData.explanation}`;
-          
-          if (feedbackDetails.explanationDetail === 'more_detailed') {
-            responseData.explanation += '\n\nThis improved answer provides more details as requested in your feedback.';
-          } else if (feedbackDetails.explanationDetail === 'simpler') {
-            responseData.explanation += '\n\nThis improved answer uses simpler explanations as requested in your feedback.';
-          }
-          
-          if (feedbackDetails.analogyHelpful === 'no' && responseData.analogy) {
-            responseData.analogy = `I've revised this analogy based on your feedback: ${responseData.analogy}`;
+          try {
+            // Simple fallback: retry the query with normal submission
+            const fallbackResponse = await submitQuery(query, updatedPreferences);
+            
+            // Add regeneration context
+            fallbackResponse.explanation = `[Improved based on your feedback]\n\n${fallbackResponse.explanation}`;
+            
+            if (feedbackDetails.explanationDetail === 'more_detailed') {
+              fallbackResponse.explanation += '\n\nThis answer provides more technical details as requested.';
+            } else if (feedbackDetails.explanationDetail === 'simpler') {
+              fallbackResponse.explanation += '\n\nThis explanation is simplified based on your feedback.';
+            }
+            
+            responseData = fallbackResponse;
+            console.log('Generated fallback response');
+          } catch (fallbackErr) {
+            console.error('Fallback regeneration also failed:', fallbackErr);
+            throw new Error('Failed to regenerate answer with both methods');
           }
         }
         
+        // Add regeneration ID and timestamp if not present
+        if (!responseData.id) {
+          responseData.id = Date.now().toString();
+        }
+        
+        if (!responseData.timestamp) {
+          responseData.timestamp = new Date().toISOString();
+        }
+        
+        console.log('Final regenerated response:', responseData);
         return responseData;
       } catch (err) {
-        console.error('Error regenerating answer:', err);
+        console.error('Error in regeneration process:', err);
         throw err;
       }
     } catch (err) {
       console.error('Error regenerating answer:', err);
-      setError('Failed to regenerate answer. Please try again.');
+      setError('Failed to regenerate answer. Please try again. ' + (err.message || ''));
       throw err;
     } finally {
       setLoading(false);
