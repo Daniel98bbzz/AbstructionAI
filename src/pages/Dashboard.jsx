@@ -7,6 +7,7 @@ function Dashboard() {
   const { user } = useAuth();
   const { getQueryHistory, loading } = useQuery();
   const [recentQueries, setRecentQueries] = useState([]);
+  const [pendingFeedback, setPendingFeedback] = useState([]);
   const [stats, setStats] = useState({
     totalQueries: 0,
     averageRating: 0,
@@ -65,6 +66,17 @@ function Dashboard() {
             averageRating: averageRating || 0,
             topCategories: topCategories.length > 0 ? topCategories : ['Algorithms', 'Quantum Physics', 'Machine Learning']
           });
+          
+          // Load stored feedback from localStorage
+          try {
+            const storedFeedback = localStorage.getItem('user_feedback');
+            if (storedFeedback) {
+              const parsedFeedback = JSON.parse(storedFeedback);
+              setPendingFeedback(parsedFeedback);
+            }
+          } catch (e) {
+            console.warn('Error loading stored feedback:', e);
+          }
         }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -272,6 +284,71 @@ function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Your Learning Categories */}
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+        <div className="px-4 py-5 border-b border-gray-200 sm:px-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">
+            Your Learning Categories
+          </h3>
+        </div>
+        <div className="px-4 py-5 sm:p-6">
+          <div className="flex flex-wrap gap-3">
+            {stats.topCategories.map((category, index) => (
+              <span
+                key={index}
+                className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary-100 text-primary-800"
+              >
+                {category}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+      
+      {/* Stored Feedback */}
+      {pendingFeedback.length > 0 && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+          <div className="px-4 py-5 border-b border-gray-200 sm:px-6">
+            <h3 className="text-lg leading-6 font-medium text-gray-900">
+              Saved Feedback ({pendingFeedback.length})
+            </h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Your feedback is stored locally while server issues are being fixed
+            </p>
+          </div>
+          <ul className="divide-y divide-gray-200">
+            {pendingFeedback.slice(0, 3).map((feedback, index) => (
+              <li key={index} className="px-4 py-4 sm:px-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="ml-3">
+                      <p className="text-sm font-medium text-gray-900">
+                        Rating: {feedback.rating}/5
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {new Date(feedback.timestamp).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {feedback.comments && (
+                  <div className="mt-2 text-sm text-gray-700">
+                    "{feedback.comments}"
+                  </div>
+                )}
+              </li>
+            ))}
+            {pendingFeedback.length > 3 && (
+              <li className="px-4 py-2 sm:px-6 text-center">
+                <p className="text-sm text-gray-500">
+                  + {pendingFeedback.length - 3} more feedback items stored
+                </p>
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

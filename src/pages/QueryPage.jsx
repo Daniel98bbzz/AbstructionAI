@@ -10,8 +10,9 @@ function QueryPage() {
   const [query, setQuery] = useState('');
   const [showPreferences, setShowPreferences] = useState(false);
   const [preferences, setPreferences] = useState(() => {
-    // Try to load preferences from localStorage
-    const savedPreferences = localStorage.getItem('userPreferences');
+    // Try to load preferences from localStorage with user namespace
+    const key = user ? `userPreferences_${user.id}` : 'userPreferences';
+    const savedPreferences = localStorage.getItem(key);
     return savedPreferences ? JSON.parse(savedPreferences) : {
       visualLearning: 50,
       practicalExamples: 50,
@@ -19,18 +20,21 @@ function QueryPage() {
     };
   });
   const [messages, setMessages] = useState(() => {
-    // Try to load messages from localStorage
-    const savedMessages = localStorage.getItem('currentMessages');
+    // Try to load messages from localStorage with user namespace
+    const key = user ? `currentMessages_${user.id}` : 'currentMessages';
+    const savedMessages = localStorage.getItem(key);
     return savedMessages ? JSON.parse(savedMessages) : [];
   });
   const [conversations, setConversations] = useState(() => {
-    // Try to load conversations from localStorage
-    const savedConversations = localStorage.getItem('conversations');
+    // Try to load conversations from localStorage with user namespace
+    const key = user ? `conversations_${user.id}` : 'conversations';
+    const savedConversations = localStorage.getItem(key);
     return savedConversations ? JSON.parse(savedConversations) : [];
   });
   const [activeConversation, setActiveConversation] = useState(() => {
-    // Try to load active conversation from localStorage
-    return localStorage.getItem('activeConversation') || null;
+    // Try to load active conversation from localStorage with user namespace
+    const key = user ? `activeConversation_${user.id}` : 'activeConversation';
+    return localStorage.getItem(key) || null;
   });
   const [showFeedbackFor, setShowFeedbackFor] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
@@ -43,33 +47,73 @@ function QueryPage() {
   // Update sessionId when currentSession changes
   useEffect(() => {
     if (currentSession?.id) {
+      console.log('Setting sessionId from currentSession:', currentSession.id);
       setSessionId(currentSession.id);
     }
   }, [currentSession]);
   
   // Persist preferences whenever they change
   useEffect(() => {
-    localStorage.setItem('userPreferences', JSON.stringify(preferences));
-  }, [preferences]);
+    if (user) {
+      localStorage.setItem(`userPreferences_${user.id}`, JSON.stringify(preferences));
+    }
+  }, [preferences, user]);
   
   // Persist messages whenever they change
   useEffect(() => {
-    localStorage.setItem('currentMessages', JSON.stringify(messages));
-  }, [messages]);
+    if (user) {
+      localStorage.setItem(`currentMessages_${user.id}`, JSON.stringify(messages));
+    }
+  }, [messages, user]);
   
   // Persist conversations whenever they change
   useEffect(() => {
-    localStorage.setItem('conversations', JSON.stringify(conversations));
-  }, [conversations]);
+    if (user) {
+      localStorage.setItem(`conversations_${user.id}`, JSON.stringify(conversations));
+    }
+  }, [conversations, user]);
   
   // Persist active conversation whenever it changes
   useEffect(() => {
-    if (activeConversation) {
-      localStorage.setItem('activeConversation', activeConversation);
-    } else {
-      localStorage.removeItem('activeConversation');
+    if (user) {
+      if (activeConversation) {
+        localStorage.setItem(`activeConversation_${user.id}`, activeConversation);
+      } else {
+        localStorage.removeItem(`activeConversation_${user.id}`);
+      }
     }
-  }, [activeConversation]);
+  }, [activeConversation, user]);
+
+  // Load user-specific data when user changes
+  useEffect(() => {
+    if (user) {
+      // Load preferences
+      const savedPreferences = localStorage.getItem(`userPreferences_${user.id}`);
+      if (savedPreferences) {
+        setPreferences(JSON.parse(savedPreferences));
+      }
+      
+      // Load messages
+      const savedMessages = localStorage.getItem(`currentMessages_${user.id}`);
+      if (savedMessages) {
+        setMessages(JSON.parse(savedMessages));
+      } else {
+        setMessages([]);
+      }
+      
+      // Load conversations
+      const savedConversations = localStorage.getItem(`conversations_${user.id}`);
+      if (savedConversations) {
+        setConversations(JSON.parse(savedConversations));
+      } else {
+        setConversations([]);
+      }
+      
+      // Load active conversation
+      const savedActiveConversation = localStorage.getItem(`activeConversation_${user.id}`);
+      setActiveConversation(savedActiveConversation || null);
+    }
+  }, [user?.id]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -131,11 +175,13 @@ function QueryPage() {
     setQuery('');
     
     // Clear localStorage for the current messages only
-    localStorage.removeItem('currentMessages');
-    
-    // Store the current state
-    localStorage.setItem('activeConversation', newConversationId);
-    localStorage.setItem('conversations', JSON.stringify([newConversation, ...conversations]));
+    if (user) {
+      localStorage.removeItem(`currentMessages_${user.id}`);
+      
+      // Store the current state
+      localStorage.setItem(`activeConversation_${user.id}`, newConversationId);
+      localStorage.setItem(`conversations_${user.id}`, JSON.stringify([newConversation, ...conversations]));
+    }
   };
 
   const handleSelectConversation = (conversationId) => {
@@ -209,12 +255,33 @@ function QueryPage() {
       // Clear input
       setQuery('');
       
+      // If we don't have a session ID yet, try to get it from the context
+      if (!sessionId && currentSession?.id) {
+        console.log('Using session ID from context:', currentSession.id);
+        setSessionId(currentSession.id);
+      }
+      
+      // Log the sessionId being used for the query
+      console.log('Submitting query with sessionId:', sessionId || 'none (will create new)');
+      
       // Get AI response using the existing session ID if available
       const response = await submitQuery(query, preferences, sessionId);
       
       // Store the session ID if this is the first message
-      if (!sessionId && response.sessionId) {
+      if (response.sessionId) {
+        console.log('Received sessionId in response:', response.sessionId);
         setSessionId(response.sessionId);
+        
+        // Also update the conversation with the session ID
+        setConversations(prev => prev.map(conv => {
+          if (conv.id === activeConversation) {
+            return {
+              ...conv,
+              sessionId: response.sessionId
+            };
+          }
+          return conv;
+        }));
       }
       
       // Add AI response with unique ID for feedback
@@ -243,8 +310,9 @@ function QueryPage() {
         return conv;
       }));
       
-      // Show feedback form for this message
+      // Show feedback for this message
       setShowFeedbackFor(responseId);
+      console.log('Showing feedback form for message:', responseId, 'with session:', sessionId);
     } catch (error) {
       console.error('Error processing query:', error);
       // Add error message
@@ -259,6 +327,7 @@ function QueryPage() {
 
   // Handle feedback submission complete
   const handleFeedbackSubmitted = (messageId) => {
+    console.log('Feedback submitted successfully for message:', messageId);
     // Clear the feedback form for this message
     setShowFeedbackFor(null);
   };

@@ -1,11 +1,13 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
 import SimpleFeedback from '../components/SimpleFeedback';
+import { useAuth } from '../contexts/AuthContext';
 
 // This is a very simple page to demonstrate the simplified feedback approach
 function SimpleFeedbackQueryPage() {
   const { responseId } = useParams();
-  const sessionId = localStorage.getItem('sessionId'); // If you store sessionId in localStorage
+  const { user } = useAuth();
+  const sessionId = user ? localStorage.getItem(`sessionId_${user.id}`) : localStorage.getItem('sessionId');
   
   const handleFeedbackSubmitted = () => {
     console.log('Feedback was submitted successfully');

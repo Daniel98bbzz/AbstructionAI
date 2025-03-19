@@ -39,6 +39,12 @@ app.post('/api/query', async (req, res) => {
   try {
     const { query, sessionId, preferences } = req.body;
     
+    console.log('Received query request:', { 
+      query, 
+      sessionId: sessionId || 'none', 
+      preferencesProvided: !!preferences 
+    });
+    
     if (!query) {
       return res.status(400).json({ error: 'Query is required' });
     }
@@ -46,14 +52,21 @@ app.post('/api/query', async (req, res) => {
     // Get or create session
     let sessionData;
     if (sessionId) {
+      console.log(`Looking for existing session ${sessionId}`);
       sessionData = await sessionManager.getSession(sessionId);
       if (!sessionData) {
-        return res.status(404).json({ error: 'Session not found' });
+        console.log(`Session ${sessionId} not found, will create new`);
+        // Instead of failing, create a new session if the requested one doesn't exist
+        const userId = req.user ? req.user.id : `anon_${Date.now()}`;
+        sessionData = await sessionManager.createSession(userId, preferences);
+        console.log(`Created new session ${sessionData.id} for user ${userId}`);
       }
     } else {
       // Create anonymous session if no user is authenticated
       const userId = req.user ? req.user.id : `anon_${Date.now()}`;
+      console.log(`No session provided, creating new session for user ${userId}`);
       sessionData = await sessionManager.createSession(userId, preferences);
+      console.log(`Created new session ${sessionData.id}`);
     }
     
     // Get conversation summary and history for context
@@ -190,7 +203,15 @@ Guidelines:
     res.json(response);
   } catch (error) {
     console.error('Error processing query:', error);
-    res.status(500).json({ error: 'Failed to process query' });
+    const errorMessage = error.message || 'Unknown server error';
+    const errorDetails = process.env.NODE_ENV === 'development' ? 
+      { stack: error.stack, details: error.toString() } : {};
+    
+    res.status(500).json({ 
+      error: 'Failed to process query', 
+      message: errorMessage,
+      ...errorDetails
+    });
   }
 });
 

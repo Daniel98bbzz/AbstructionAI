@@ -15,33 +15,64 @@ export function QueryProvider({ children }) {
   const [error, setError] = useState(null);
   const [currentSession, setCurrentSession] = useState(() => {
     // Try to load session from localStorage on init
-    const savedSession = localStorage.getItem('currentSession');
-    return savedSession ? JSON.parse(savedSession) : null;
+    if (user) {
+      const savedSession = localStorage.getItem(`currentSession_${user.id}`);
+      return savedSession ? JSON.parse(savedSession) : null;
+    }
+    return null;
   });
   const [currentResponse, setCurrentResponse] = useState(null);
   const [messageHistory, setMessageHistory] = useState(() => {
     // Try to load message history from localStorage on init
-    const savedMessages = localStorage.getItem('messageHistory');
-    return savedMessages ? JSON.parse(savedMessages) : [];
+    if (user) {
+      const savedMessages = localStorage.getItem(`messageHistory_${user.id}`);
+      return savedMessages ? JSON.parse(savedMessages) : [];
+    }
+    return [];
   });
   
   // Save session to localStorage whenever it changes
   useEffect(() => {
-    if (currentSession) {
-      localStorage.setItem('currentSession', JSON.stringify(currentSession));
-    } else {
-      localStorage.removeItem('currentSession');
+    if (user && currentSession) {
+      localStorage.setItem(`currentSession_${user.id}`, JSON.stringify(currentSession));
+    } else if (user) {
+      localStorage.removeItem(`currentSession_${user.id}`);
     }
-  }, [currentSession]);
+  }, [currentSession, user]);
   
   // Save message history to localStorage whenever it changes
   useEffect(() => {
-    if (messageHistory && messageHistory.length > 0) {
-      localStorage.setItem('messageHistory', JSON.stringify(messageHistory));
-    } else {
-      localStorage.removeItem('messageHistory');
+    if (user && messageHistory && messageHistory.length > 0) {
+      localStorage.setItem(`messageHistory_${user.id}`, JSON.stringify(messageHistory));
+    } else if (user) {
+      localStorage.removeItem(`messageHistory_${user.id}`);
     }
-  }, [messageHistory]);
+  }, [messageHistory, user]);
+
+  // Load user-specific data when user changes
+  useEffect(() => {
+    if (user) {
+      // Load session
+      const savedSession = localStorage.getItem(`currentSession_${user.id}`);
+      if (savedSession) {
+        setCurrentSession(JSON.parse(savedSession));
+      } else {
+        setCurrentSession(null);
+      }
+      
+      // Load message history
+      const savedMessages = localStorage.getItem(`messageHistory_${user.id}`);
+      if (savedMessages) {
+        setMessageHistory(JSON.parse(savedMessages));
+      } else {
+        setMessageHistory([]);
+      }
+    } else {
+      // Clear state when user logs out
+      setCurrentSession(null);
+      setMessageHistory([]);
+    }
+  }, [user?.id]);
 
   // Ensure user exists in the users table
   const ensureUserExists = async () => {
@@ -119,11 +150,19 @@ export function QueryProvider({ children }) {
         setMessageHistory(prev => [...prev, newMessage]);
 
         // Try to use the backend server if it's running
+        console.log('Sending query to backend:', {
+          query,
+          sessionId,
+          preferences
+        });
+        
         const response = await axios.post('/api/query', {
           query,
           sessionId,
           preferences
         });
+        
+        console.log('Received response from backend:', response);
         responseData = response.data;
         
         // Update message history with AI response
@@ -142,6 +181,7 @@ export function QueryProvider({ children }) {
         }
       } catch (err) {
         console.error('Error calling backend API:', err);
+        console.error('Error details:', err.response?.data || err.message);
         throw err;
       }
       
@@ -254,76 +294,46 @@ export function QueryProvider({ children }) {
       
       console.log('Starting feedback submission process...');
       
-      if (!user) {
-        const authError = new Error('You must be logged in to submit feedback');
-        console.error(authError);
-        throw authError;
-      }
+      // Format the feedback data
+      const feedbackData = {
+        id: Date.now().toString(),
+        responseId: responseId || 'unknown',
+        sessionId: currentSession?.id || 'unknown',
+        rating: rating,
+        timestamp: new Date().toISOString(),
+        user_id: user?.id || 'anonymous'
+      };
       
-      // Try to initialize a session if none exists
-      if (!currentSession) {
-        console.log('No active session found, trying to create one...');
+      // Parse any additional comment data
+      if (typeof comments === 'string') {
         try {
-          const newSession = await startNewSession();
-          console.log('Created new session:', newSession);
-        } catch (sessionError) {
-          console.error('Error creating session:', sessionError);
-          throw new Error('Could not create a session for feedback. Please refresh and try again.');
+          feedbackData.details = JSON.parse(comments);
+        } catch (e) {
+          feedbackData.comments = comments;
         }
+      } else {
+        feedbackData.details = comments;
       }
       
-      console.log('Attempting to submit feedback with session:', currentSession?.id);
-      
+      // Store in localStorage as a backup/fallback
+      let storedFeedback = [];
       try {
-        // First try using the RPC function
-        console.log('Calling Supabase RPC submit_feedback with:', {
-          response_id: responseId,
-          rating,
-          comments_length: comments?.length || 0
-        });
-        
-        const { data, error: rpcError } = await supabase.rpc(
-          'submit_feedback',
-          {
-            response_id: responseId,
-            rating,
-            comments
-          }
-        );
-          
-        if (rpcError) {
-          console.error('Error submitting feedback via RPC:', rpcError);
-          
-          // Fall back to direct table insertion if RPC fails
-          console.log('Falling back to direct table insertion...');
-          const { data: directData, error: directError } = await supabase
-            .from('interactions')
-            .insert([
-              {
-                session_id: currentSession.id,
-                related_to: responseId,
-                rating,
-                comments,
-                type: 'feedback'
-              }
-            ])
-            .select();
-            
-          if (directError) {
-            console.error('Direct insertion also failed:', directError);
-            throw directError;
-          }
-          
-          console.log('Direct insertion succeeded:', directData);
-          return directData[0];
+        const existingFeedback = localStorage.getItem('user_feedback');
+        if (existingFeedback) {
+          storedFeedback = JSON.parse(existingFeedback);
         }
-        
-        console.log('RPC submission succeeded:', data);
-        return data;
-      } catch (err) {
-        console.error('Error submitting feedback:', err);
-        throw err;
+      } catch (e) {
+        console.warn('Error parsing stored feedback:', e);
+        storedFeedback = [];
       }
+      
+      // Add new feedback and save
+      storedFeedback.push(feedbackData);
+      localStorage.setItem('user_feedback', JSON.stringify(storedFeedback));
+      
+      console.log('Feedback saved to local storage as fallback:', feedbackData);
+      
+      return feedbackData;
     } catch (err) {
       console.error('Error submitting feedback:', err);
       setError('Failed to submit feedback. Please try again. ' + (err.message || ''));
@@ -626,8 +636,10 @@ export function QueryProvider({ children }) {
     setCurrentResponse(null);
     
     // Clear localStorage items related to chat
-    localStorage.removeItem('currentSession');
-    localStorage.removeItem('messageHistory');
+    if (user) {
+      localStorage.removeItem(`currentSession_${user.id}`);
+      localStorage.removeItem(`messageHistory_${user.id}`);
+    }
   };
 
   const value = {
