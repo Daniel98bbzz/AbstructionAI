@@ -380,34 +380,185 @@ export function QueryProvider({ children }) {
         
         console.log('Adjusting preferences based on feedback...');
         
+        // Extract specific instructions from text comments
+        let specificInstructions = [];
+        let analogyRequest = '';
+        let analogyTopic = '';
+        
+        // Parse the comments field for specific instructions
+        if (feedbackDetails.comments) {
+          const commentsLower = feedbackDetails.comments.toLowerCase();
+          
+          // Look for analogy requests
+          if (commentsLower.includes('analogy') || commentsLower.includes('metaphor') || commentsLower.includes('comparison')) {
+            analogyRequest = 'Please provide a better analogy';
+            
+            // First check if there's a specific analogy preference provided in the feedback
+            if (feedbackDetails.analogyPreference && feedbackDetails.analogyPreference !== '') {
+              analogyTopic = feedbackDetails.analogyPreference;
+              analogyRequest = `Please provide a ${analogyTopic}-related analogy`;
+            } 
+            // Otherwise try to extract it from the comments
+            else {
+              // Try to identify the topic/domain for the analogy
+              const analogyTopics = [
+                { keywords: ['game', 'gaming', 'video game'], topic: 'gaming' },
+                { keywords: ['sports', 'sport', 'athletic'], topic: 'sports' },
+                { keywords: ['music', 'musical', 'instrument'], topic: 'music' },
+                { keywords: ['cook', 'cooking', 'food', 'kitchen'], topic: 'cooking' },
+                { keywords: ['car', 'driving', 'vehicle', 'automotive'], topic: 'automotive' },
+                { keywords: ['movie', 'film', 'cinema'], topic: 'movies' },
+                { keywords: ['nature', 'natural', 'outdoors'], topic: 'nature' }
+              ];
+              
+              for (const item of analogyTopics) {
+                if (item.keywords.some(keyword => commentsLower.includes(keyword))) {
+                  analogyTopic = item.topic;
+                  analogyRequest = `Please provide a ${analogyTopic}-related analogy`;
+                  break;
+                }
+              }
+            }
+            
+            specificInstructions.push(analogyRequest);
+          } 
+          // If a specific analogy preference is provided but not mentioned in comments
+          else if (feedbackDetails.analogyPreference && feedbackDetails.analogyPreference !== '') {
+            analogyTopic = feedbackDetails.analogyPreference;
+            analogyRequest = `Please provide a ${analogyTopic}-related analogy`;
+            specificInstructions.push(analogyRequest);
+          }
+          
+          // Look for simplification requests
+          if (commentsLower.includes('simple') || commentsLower.includes('easier') || commentsLower.includes('clearer')) {
+            specificInstructions.push('Please simplify the explanation');
+            updatedPreferences.technicalDepth = Math.max(0, (updatedPreferences.technicalDepth || 50) - 25);
+          }
+          
+          // Look for more detail requests
+          if (commentsLower.includes('more detail') || commentsLower.includes('deeper') || commentsLower.includes('technical')) {
+            specificInstructions.push('Please provide more technical details');
+            updatedPreferences.technicalDepth = Math.min(100, (updatedPreferences.technicalDepth || 50) + 25);
+          }
+          
+          // Look for more examples requests
+          if (commentsLower.includes('example') || commentsLower.includes('sample') || commentsLower.includes('case')) {
+            specificInstructions.push('Please include more practical examples');
+            updatedPreferences.practicalExamples = Math.min(100, (updatedPreferences.practicalExamples || 50) + 25);
+          }
+        }
+        
         // Adjust technical depth based on explanation detail preference
         if (feedbackDetails.explanationDetail === 'more_detailed') {
           updatedPreferences.technicalDepth = Math.min(100, (updatedPreferences.technicalDepth || 50) + 20);
           updatedPreferences.practicalExamples = Math.min(100, (updatedPreferences.practicalExamples || 50) + 10);
           console.log('Increasing technical depth and practical examples');
+          specificInstructions.push('Provide more detailed technical explanation');
         } else if (feedbackDetails.explanationDetail === 'simpler') {
           updatedPreferences.technicalDepth = Math.max(0, (updatedPreferences.technicalDepth || 50) - 20);
           console.log('Decreasing technical depth for simpler explanation');
+          specificInstructions.push('Simplify the explanation with less technical jargon');
+        }
+        
+        // Adjust analogy based on feedback
+        if (feedbackDetails.analogyHelpful === 'no' || feedbackDetails.analogyHelpful === 'partially') {
+          if (!analogyRequest) {
+            specificInstructions.push('Please provide a clearer and more relevant analogy');
+          }
         }
         
         // Adjust visual learning based on clarity feedback
         if (feedbackDetails.explanationClear === 'no') {
           updatedPreferences.visualLearning = Math.min(100, (updatedPreferences.visualLearning || 50) + 15);
           console.log('Increasing visual learning for clarity');
+          specificInstructions.push('Use more visual descriptions and clearer structure');
         }
         
         console.log('Updated preferences:', updatedPreferences);
+        console.log('Specific instructions:', specificInstructions);
         
         // Process the query with updated preferences
         let responseData;
         try {
           console.log('Sending regeneration request to backend API...');
+          
+          // Ensure analogyTopic is properly set if an analogyPreference was selected
+          if (feedbackDetails.analogyPreference && feedbackDetails.analogyPreference !== '') {
+            analogyTopic = feedbackDetails.analogyPreference;
+            
+            // Make sure there's a specific instruction about the analogy
+            const hasAnalogyCriteria = specificInstructions.some(
+              instr => instr.toLowerCase().includes('analogy') && instr.includes(analogyTopic)
+            );
+            
+            if (!hasAnalogyCriteria) {
+              // Add a strong instruction for the analogy type if it's not already there
+              specificInstructions.push(`Please provide a ${analogyTopic}-related analogy instead of the current one. Keep the explanation section the same.`);
+            }
+            
+            // Make sure there's a specific instruction to keep the explanation section the same
+            const hasKeepExplanationInstruction = specificInstructions.some(
+              instr => instr.toLowerCase().includes('keep') && instr.toLowerCase().includes('explanation')
+            );
+            
+            if (!hasKeepExplanationInstruction) {
+              specificInstructions.push('Keep the explanation section exactly the same as in the original response.');
+            }
+            
+            console.log(`Setting explicit analogy topic to: ${analogyTopic}`);
+          }
+          
+          // For any type of analogy feedback, ensure the explanation stays the same
+          // ONLY if that's the only negative feedback
+          if ((feedbackDetails.analogyHelpful === 'no' || feedbackDetails.analogyHelpful === 'partially') &&
+              feedbackDetails.explanationClear === 'yes' && 
+              feedbackDetails.explanationDetail === 'exactly_right') {
+              
+            const hasKeepExplanationInstruction = specificInstructions.some(
+              instr => instr.toLowerCase().includes('keep') && instr.toLowerCase().includes('explanation')
+            );
+            
+            if (!hasKeepExplanationInstruction) {
+              specificInstructions.push('Keep the explanation section exactly the same as in the original response.');
+            }
+          } 
+          // For other feedback types, make sure we don't preserve the explanation
+          else if (feedbackDetails.explanationClear === 'no' || 
+                  feedbackDetails.explanationClear === 'partially' ||
+                  feedbackDetails.explanationDetail === 'more_detailed' ||
+                  feedbackDetails.explanationDetail === 'simpler') {
+              
+            // Remove any instructions to keep the explanation the same
+            specificInstructions = specificInstructions.filter(
+              instr => !(instr.toLowerCase().includes('keep') && instr.toLowerCase().includes('explanation'))
+            );
+              
+            // Add appropriate instructions based on feedback
+            if (feedbackDetails.explanationDetail === 'more_detailed') {
+              specificInstructions.push('Provide a more detailed and comprehensive explanation with deeper technical information.');
+            }
+            
+            if (feedbackDetails.explanationDetail === 'simpler') {
+              specificInstructions.push('Simplify the explanation significantly. Use easier language and less technical jargon.');
+            }
+            
+            if (feedbackDetails.explanationClear === 'no' || feedbackDetails.explanationClear === 'partially') {
+              specificInstructions.push('Make the explanation more straightforward and easier to understand.');
+            }
+          }
+          
           // Include feedback in the API call so the backend can adapt
           const response = await axios.post('/api/query', {
             query,
             sessionId: currentSession.id,
             preferences: updatedPreferences,
-            feedback: feedbackDetails,
+            feedback: {
+              ...feedbackDetails,
+              specificInstructions,
+              analogyTopic: analogyTopic || null,
+              // Add explicit flag if user requested a specific analogy type
+              forceAnalogy: analogyTopic ? true : false
+            },
             originalResponseId,
             isRegeneration: true
           });

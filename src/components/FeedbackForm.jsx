@@ -25,6 +25,7 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
     explanationClear: 'partially',
     explanationDetail: 'exactly_right',
     analogyHelpful: 'partially',
+    analogyPreference: '',
     comments: ''
   });
 
@@ -41,16 +42,25 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
       
       console.log('Submitting comprehensive feedback...');
       
+      // Add specific comment about gaming analogy if selected but no comment provided
+      let updatedFeedback = { ...feedback };
+      if (feedback.analogyPreference === 'gaming' && (!feedback.comments || !feedback.comments.toLowerCase().includes('game'))) {
+        updatedFeedback.comments = feedback.comments 
+          ? `${feedback.comments}\nPlease use a gaming analogy instead.` 
+          : 'Please use a gaming analogy that relates to video games.';
+      }
+      
       // Store feedback in local storage since we're having server issues
       const feedbackData = {
         id: Date.now().toString(),
         responseId: responseId || 'unknown',
         sessionId: sessionId || 'unknown',
-        rating: feedback.rating,
-        explanationClear: feedback.explanationClear,
-        explanationDetail: feedback.explanationDetail,
-        analogyHelpful: feedback.analogyHelpful,
-        comments: feedback.comments,
+        rating: updatedFeedback.rating,
+        explanationClear: updatedFeedback.explanationClear,
+        explanationDetail: updatedFeedback.explanationDetail,
+        analogyHelpful: updatedFeedback.analogyHelpful,
+        analogyPreference: updatedFeedback.analogyPreference,
+        comments: updatedFeedback.comments,
         timestamp: new Date().toISOString()
       };
       
@@ -82,7 +92,7 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
       setTimeout(() => {
         if (onRegenerateAnswer) {
           console.log('Auto-triggering regeneration based on feedback');
-          onRegenerateAnswer(feedback);
+          onRegenerateAnswer(updatedFeedback);
         }
       }, 500);
     } catch (err) {
@@ -95,8 +105,52 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
 
   const handleRegenerateClick = () => {
     if (onRegenerateAnswer) {
-      onRegenerateAnswer(feedback);
+      // Add specific comment about gaming analogy if selected but no comment provided
+      let updatedFeedback = { ...feedback };
+      if (feedback.analogyPreference === 'gaming' && (!feedback.comments || !feedback.comments.toLowerCase().includes('game'))) {
+        updatedFeedback.comments = feedback.comments 
+          ? `${feedback.comments}\nPlease use a gaming analogy instead.` 
+          : 'Please use a gaming analogy that relates to video games.';
+      }
+      
+      console.log('Manually triggering regeneration with feedback:', updatedFeedback);
+      onRegenerateAnswer(updatedFeedback);
     }
+  };
+
+  const renderAnalogySuggestion = () => {
+    if (feedback.analogyHelpful === 'no' || feedback.analogyHelpful === 'partially') {
+      return (
+        <div className="mt-3 pl-8">
+          <label htmlFor="analogyPreference" className="block text-sm font-medium text-gray-700">
+            What type of analogy would help you understand better?
+          </label>
+          <select
+            id="analogyPreference"
+            name="analogyPreference"
+            value={feedback.analogyPreference}
+            onChange={handleChange}
+            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md"
+          >
+            <option value="">Select a domain for analogy</option>
+            <option value="gaming">Gaming/Video Games</option>
+            <option value="sports">Sports</option>
+            <option value="music">Music</option>
+            <option value="cooking">Cooking/Food</option>
+            <option value="automotive">Cars/Vehicles</option>
+            <option value="movies">Movies/Films</option>
+            <option value="nature">Nature/Outdoors</option>
+            <option value="other">Other (please specify in comments)</option>
+          </select>
+          <p className="mt-1 text-xs text-gray-500">
+            Selecting a domain will generate a new analogy related to that topic. {feedback.explanationClear === 'yes' && feedback.explanationDetail === 'exactly_right' 
+              ? "Since you marked the explanation as clear and appropriate, only the analogy will change." 
+              : "Other parts of the answer will also be updated based on your other feedback selections."}
+          </p>
+        </div>
+      );
+    }
+    return null;
   };
 
   if (submitted) {
@@ -120,6 +174,7 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
   return (
     <div className="mt-4 p-4 bg-gray-50 rounded-md">
       <h3 className="text-sm font-medium text-gray-900">Help us improve</h3>
+      <p className="text-xs text-gray-500 mt-1">Your feedback will affect how we regenerate this response. Different feedback types will change different sections of the answer.</p>
       
       {error && (
         <div className="mt-2 text-sm text-red-600">
@@ -190,6 +245,7 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
               <span className="ml-2 text-sm text-gray-700">No</span>
             </label>
           </div>
+          <p className="text-xs text-gray-500 mt-1">Selecting "Partially" or "No" will cause the explanation to be rewritten more clearly</p>
         </div>
         
         <div>
@@ -231,6 +287,7 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
               <span className="ml-2 text-sm text-gray-700">Simpler</span>
             </label>
           </div>
+          <p className="text-xs text-gray-500 mt-1">Selecting "More detailed" or "Simpler" will rewrite the explanation with more or less technical detail</p>
         </div>
         
         <div>
@@ -272,7 +329,10 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
               <span className="ml-2 text-sm text-gray-700">No</span>
             </label>
           </div>
+          <p className="text-xs text-gray-500 mt-1">Selecting "Partially" or "No" will generate a new analogy while keeping the explanation if it was marked as clear and exactly right</p>
         </div>
+        
+        {renderAnalogySuggestion()}
         
         <div>
           <label htmlFor="comments" className="block text-sm font-medium text-gray-700">
@@ -289,6 +349,9 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
               onChange={handleChange}
             />
           </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Your specific comments will be used to improve the response. Include keywords like "simpler", "more detail", or mention specific topics you'd like included.
+          </p>
         </div>
         
         <div className="flex justify-end">

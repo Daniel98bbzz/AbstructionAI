@@ -37,13 +37,34 @@ const supervisor = new Supervisor();
 // Routes
 app.post('/api/query', async (req, res) => {
   try {
-    const { query, sessionId, preferences } = req.body;
+    const { query, sessionId, preferences, feedback, isRegeneration, originalResponseId } = req.body;
     
     console.log('Received query request:', { 
       query, 
       sessionId: sessionId || 'none', 
-      preferencesProvided: !!preferences 
+      preferencesProvided: !!preferences,
+      isRegeneration: !!isRegeneration,
+      hasFeedback: !!feedback
     });
+    
+    if (isRegeneration) {
+      console.log('Processing regeneration request with feedback:', {
+        originalResponseId: originalResponseId || 'unknown',
+        feedbackRating: feedback?.rating,
+        specificInstructions: feedback?.specificInstructions || [],
+        analogyTopic: feedback?.analogyTopic || 'not specified',
+        forceAnalogy: feedback?.forceAnalogy || false
+      });
+      
+      // Log more detailed feedback info to help with debugging
+      if (feedback?.analogyTopic) {
+        console.log(`User explicitly requested a ${feedback.analogyTopic}-themed analogy. This will be enforced in the response.`);
+      }
+      
+      if (feedback?.specificInstructions && feedback.specificInstructions.length > 0) {
+        console.log('Specific instructions from feedback:', feedback.specificInstructions);
+      }
+    }
     
     if (!query) {
       return res.status(400).json({ error: 'Query is required' });
@@ -75,6 +96,9 @@ app.post('/api/query', async (req, res) => {
     // Prepare conversation history messages with better context handling
     const historyMessages = [];
     
+    // Use the isRegeneration and feedback from the request
+    // No need to redeclare these variables as they were already destructured from req.body
+    
     // Add system context about the current conversation
     const systemContext = {
       role: "system",
@@ -86,6 +110,39 @@ Last explanation: ${conversationSummary.lastExplanation}`
 ${conversationSummary.lastAnalogy
   ? `\nLast analogy: ${conversationSummary.lastAnalogy}`
   : ""}
+
+${isRegeneration && feedback ? `This is a REGENERATION request based on user feedback. Please address these specific points:
+${feedback.specificInstructions ? feedback.specificInstructions.map(instr => `- ${instr}`).join('\n') : ''}
+
+${feedback.analogyTopic ? `\nCRITICAL INSTRUCTION: You MUST provide an analogy specifically related to ${feedback.analogyTopic}.
+${feedback.analogyTopic === 'gaming' ? `For the gaming analogy:
+- Use concepts from video games like levels, characters, power-ups, quests, or game mechanics
+- Reference popular games if relevant (Minecraft, Mario, League of Legends, etc.)
+- Ensure the gaming metaphor clearly explains the original concept
+- Make it accessible even to casual gamers` : ''}
+This is the user's explicit request.` : ''}
+
+${feedback.analogyHelpful === 'no' || feedback.analogyHelpful === 'partially' ? 
+`IMPORTANT: Provide a more relatable and clearer analogy.` : ''}
+
+${feedback.explanationClear === 'no' || feedback.explanationClear === 'partially' ? 
+`IMPORTANT: The previous explanation was not clear enough. Make it more straightforward and easier to understand.` : ''}
+
+${feedback.explanationDetail === 'more_detailed' ? 
+`IMPORTANT: Provide a more detailed and comprehensive explanation with deeper technical information.` : ''}
+
+${feedback.explanationDetail === 'simpler' ? 
+`IMPORTANT: Simplify the explanation significantly. Use easier language and less technical jargon.` : ''}
+
+${(feedback.explanationDetail === 'exactly_right' && feedback.explanationClear === 'yes' && feedback.analogyHelpful !== 'yes' && feedback.analogyTopic) ? 
+`IMPORTANT: Keep the original explanation section exactly the same - only change the analogy section.` : ''}
+
+${feedback.rating <= 3 ? 
+`The user rated the previous response as ${feedback.rating}/5, indicating it needs significant improvement.` : ''}
+
+${feedback.comments ? `\nUser comments: "${feedback.comments}"` : ''}
+\nMake improvements to the previous response based on this feedback.
+` : ''}
 
 Your responses must ALWAYS follow this format:
 
@@ -99,7 +156,7 @@ Explanation:
 [A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
 
 Analogy:
-[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable]
+[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable${feedback && feedback.analogyTopic ? `. IMPORTANT: This MUST be a ${feedback.analogyTopic}-related analogy as explicitly requested by the user` : ''}]
 
 Additional Sources:
 [Provide 3-5 relevant learning resources with URLs when possible]

@@ -410,39 +410,30 @@ function QueryPage() {
   const handleRegenerateAnswer = async (messageId, feedbackData) => {
     try {
       setRegenerating(true);
-      console.log('Starting answer regeneration with feedback:', feedbackData);
-      console.log('Using session ID:', sessionId || currentSession?.id);
       
-      // Check if we have a valid session ID
-      if (!sessionId && !currentSession?.id) {
-        console.warn('No session ID available for regeneration, this might cause issues');
+      // Find the original query that generated this response
+      const responseIndex = messages.findIndex(msg => msg.id === messageId);
+      if (responseIndex === -1) {
+        throw new Error('Could not find the original message to regenerate');
       }
       
-      // Find the original message and query that initiated this response
-      const messageIndex = messages.findIndex(m => m.id === messageId);
-      if (messageIndex < 0) {
-        console.error('Message not found for regeneration, ID:', messageId);
-        return;
-      }
-
-      // Find the corresponding user query (should be the previous message)
+      // Find the most recent user query before this response
       let userQuery = '';
-      for (let i = messageIndex - 1; i >= 0; i--) {
+      for (let i = responseIndex - 1; i >= 0; i--) {
         if (messages[i].type === 'user') {
           userQuery = messages[i].content;
           break;
         }
       }
-
-      // If we couldn't find the user query, we can't regenerate
-      if (!userQuery) {
-        console.error('Could not find original user query for regeneration');
-        return;
-      }
-
-      console.log('Found original query for regeneration:', userQuery);
       
-      // Add a "Regenerating..." message
+      if (!userQuery) {
+        throw new Error('Could not find the original query for this response');
+      }
+      
+      console.log(`Regenerating answer for message ${messageId} with original query: "${userQuery}"`);
+      console.log('Feedback data:', feedbackData);
+      
+      // Temporarily show a message about regeneration
       const regeneratingMsg = {
         type: 'system',
         content: 'Regenerating answer based on your feedback...',
@@ -467,10 +458,21 @@ function QueryPage() {
 
       // Add the regenerated response
       const regeneratedResponseId = response.id || Date.now().toString();
+      
+      // Find the original message to preserve its explanation if we're only changing the analogy
+      const originalMessage = messages.find(msg => msg.id === messageId);
+      const isOnlyAnalogyFeedback = originalMessage && 
+                                 (feedbackData.analogyHelpful === 'no' || 
+                                  feedbackData.analogyHelpful === 'partially' || 
+                                  feedbackData.analogyPreference) &&
+                                 feedbackData.explanationClear === 'yes' &&
+                                 feedbackData.explanationDetail === 'exactly_right';
+                                 
       const regeneratedMessage = {
         id: regeneratedResponseId,
         type: 'assistant',
-        content: response.explanation,
+        // Only preserve the original explanation if ONLY the analogy feedback was given
+        content: isOnlyAnalogyFeedback ? originalMessage.content : response.explanation,
         introduction: response.introduction,
         analogy: response.analogy,
         resources: response.resources,
