@@ -6,7 +6,20 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
   const { submitFeedback } = useQuery();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(() => {
+    // Check if this message has already received feedback
+    try {
+      const existingFeedback = localStorage.getItem('user_feedback');
+      if (existingFeedback) {
+        const feedbackArray = JSON.parse(existingFeedback);
+        // Check if there's already feedback for this specific response
+        return feedbackArray.some(item => item.responseId === responseId);
+      }
+    } catch (e) {
+      console.warn('Error checking existing feedback:', e);
+    }
+    return false;
+  });
   const [feedback, setFeedback] = useState({
     rating: 3,
     explanationClear: 'partially',

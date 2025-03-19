@@ -4,7 +4,20 @@ import { supabase } from '../lib/supabaseClient';
 function SimpleFeedback({ responseId, onFeedbackSubmitted, sessionId }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(() => {
+    // Check if this message has already received feedback
+    try {
+      const existingFeedback = localStorage.getItem('user_feedback');
+      if (existingFeedback) {
+        const feedbackArray = JSON.parse(existingFeedback);
+        // Check if there's already feedback for this specific response
+        return feedbackArray.some(item => item.responseId === responseId);
+      }
+    } catch (e) {
+      console.warn('Error checking existing feedback:', e);
+    }
+    return false;
+  });
   const [rating, setRating] = useState(3);
   
   const handleSubmit = async (e) => {

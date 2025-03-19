@@ -36,7 +36,11 @@ function QueryPage() {
     const key = user ? `activeConversation_${user.id}` : 'activeConversation';
     return localStorage.getItem(key) || null;
   });
-  const [showFeedbackFor, setShowFeedbackFor] = useState(null);
+  const [showFeedbackFor, setShowFeedbackFor] = useState(() => {
+    // Try to load feedback state from localStorage with user namespace
+    const key = user ? `showFeedbackFor_${user.id}` : 'showFeedbackFor';
+    return localStorage.getItem(key) || null;
+  });
   const [regenerating, setRegenerating] = useState(false);
   const messagesEndRef = useRef(null);
   const { submitQuery, loading, error, regenerateAnswer, currentSession } = useQuery();
@@ -83,7 +87,18 @@ function QueryPage() {
       }
     }
   }, [activeConversation, user]);
-
+  
+  // Save showFeedbackFor state to localStorage whenever it changes
+  useEffect(() => {
+    if (user) {
+      if (showFeedbackFor) {
+        localStorage.setItem(`showFeedbackFor_${user.id}`, showFeedbackFor);
+      } else {
+        localStorage.removeItem(`showFeedbackFor_${user.id}`);
+      }
+    }
+  }, [showFeedbackFor, user]);
+  
   // Load user-specific data when user changes
   useEffect(() => {
     if (user) {
@@ -112,6 +127,12 @@ function QueryPage() {
       // Load active conversation
       const savedActiveConversation = localStorage.getItem(`activeConversation_${user.id}`);
       setActiveConversation(savedActiveConversation || null);
+      
+      // Load feedback state
+      const savedFeedbackFor = localStorage.getItem(`showFeedbackFor_${user.id}`);
+      if (savedFeedbackFor) {
+        setShowFeedbackFor(savedFeedbackFor);
+      }
     }
   }, [user?.id]);
 
@@ -170,13 +191,14 @@ function QueryPage() {
     // but if we want a completely fresh session, uncomment the next line
     // setSessionId(null);
     
-    // Reset the UI state
+    // Reset the UI state and clear feedback form
     setShowFeedbackFor(null);
     setQuery('');
     
-    // Clear localStorage for the current messages only
+    // Clear localStorage for the current messages and feedback state
     if (user) {
       localStorage.removeItem(`currentMessages_${user.id}`);
+      localStorage.removeItem(`showFeedbackFor_${user.id}`);
       
       // Store the current state
       localStorage.setItem(`activeConversation_${user.id}`, newConversationId);
@@ -190,6 +212,12 @@ function QueryPage() {
       setActiveConversation(conversationId);
       setMessages(conversation.messages);
       setSessionId(conversation.sessionId);
+      
+      // Reset feedback form when switching conversations
+      setShowFeedbackFor(null);
+      if (user) {
+        localStorage.removeItem(`showFeedbackFor_${user.id}`);
+      }
     }
   };
 
