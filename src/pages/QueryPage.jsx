@@ -3,6 +3,7 @@ import { useQuery } from '../contexts/QueryContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import ConversationHistory from '../components/ConversationHistory';
+import FeedbackForm from '../components/FeedbackForm';
 
 function QueryPage() {
   const { user } = useAuth();
@@ -17,8 +18,10 @@ function QueryPage() {
   const [sessionId, setSessionId] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
+  const [showFeedbackFor, setShowFeedbackFor] = useState(null);
+  const [regenerating, setRegenerating] = useState(false);
   const messagesEndRef = useRef(null);
-  const { submitQuery, loading, error } = useQuery();
+  const { submitQuery, loading, error, regenerateAnswer } = useQuery();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -142,8 +145,10 @@ function QueryPage() {
         setSessionId(response.sessionId);
       }
       
-      // Add AI response
+      // Add AI response with unique ID for feedback
+      const responseId = response.id || Date.now().toString();
       const aiMessage = {
+        id: responseId,
         type: 'assistant',
         content: response.explanation,
         analogy: response.analogy,
@@ -165,6 +170,9 @@ function QueryPage() {
         }
         return conv;
       }));
+      
+      // Show feedback form for this message
+      setShowFeedbackFor(responseId);
     } catch (error) {
       console.error('Error processing query:', error);
       // Add error message
@@ -174,6 +182,100 @@ function QueryPage() {
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, errorMessage]);
+    }
+  };
+
+  // Handle feedback submission complete
+  const handleFeedbackSubmitted = (messageId) => {
+    // Clear the feedback form for this message
+    setShowFeedbackFor(null);
+  };
+
+  // Handle regenerating an answer based on feedback
+  const handleRegenerateAnswer = async (messageId, feedbackData) => {
+    try {
+      setRegenerating(true);
+      // Find the original message and query that initiated this response
+      const messageIndex = messages.findIndex(m => m.id === messageId);
+      if (messageIndex < 0) return;
+
+      // Find the corresponding user query (should be the previous message)
+      let userQuery = '';
+      for (let i = messageIndex - 1; i >= 0; i--) {
+        if (messages[i].type === 'user') {
+          userQuery = messages[i].content;
+          break;
+        }
+      }
+
+      // If we couldn't find the user query, we can't regenerate
+      if (!userQuery) {
+        console.error('Could not find original user query for regeneration');
+        return;
+      }
+
+      // Add a "Regenerating..." message
+      const regeneratingMsg = {
+        type: 'system',
+        content: 'Regenerating answer based on your feedback...',
+        timestamp: new Date().toISOString()
+      };
+      
+      setMessages(prev => [...prev, regeneratingMsg]);
+
+      // Call the regenerateAnswer function
+      const response = await regenerateAnswer(
+        userQuery,
+        messageId,
+        feedbackData,
+        preferences
+      );
+
+      // Remove the regenerating message
+      setMessages(prev => prev.filter(m => m !== regeneratingMsg));
+
+      // Add the regenerated response
+      const regeneratedResponseId = response.id || Date.now().toString();
+      const regeneratedMessage = {
+        id: regeneratedResponseId,
+        type: 'assistant',
+        content: response.explanation,
+        analogy: response.analogy,
+        resources: response.resources,
+        isRegenerated: true,
+        timestamp: new Date().toISOString()
+      };
+
+      setMessages(prev => [...prev, regeneratedMessage]);
+
+      // Update the conversation
+      setConversations(prev => prev.map(conv => {
+        if (conv.id === activeConversation) {
+          return {
+            ...conv,
+            messages: [...messages, regeneratedMessage],
+            lastMessageTime: new Date().toISOString(),
+          };
+        }
+        return conv;
+      }));
+
+      // Show feedback for the new message after a delay
+      setTimeout(() => {
+        setShowFeedbackFor(regeneratedResponseId);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error regenerating answer:', error);
+      // Add error message
+      const errorMessage = {
+        type: 'error',
+        content: 'Sorry, there was an error regenerating the answer. Please try again.',
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -212,61 +314,80 @@ function QueryPage() {
         {/* Chat container */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((message, index) => (
-            <div
-              key={index}
-              className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
+            <div key={index}>
               <div
-                className={`max-w-3xl rounded-lg p-4 ${
-                  message.type === 'user'
-                    ? 'bg-primary-600 text-white'
-                    : message.type === 'error'
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-white shadow'
-                }`}
+                className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                {message.type === 'assistant' ? (
-                  <div className="space-y-4">
+                <div
+                  className={`max-w-3xl rounded-lg p-4 ${
+                    message.type === 'user'
+                      ? 'bg-primary-600 text-white'
+                      : message.type === 'error'
+                      ? 'bg-red-100 text-red-700'
+                      : message.type === 'system'
+                      ? 'bg-yellow-50 text-yellow-700'
+                      : 'bg-white shadow'
+                  }`}
+                >
+                  {message.type === 'assistant' ? (
+                    <div className="space-y-4">
+                      {message.isRegenerated && (
+                        <div className="text-sm text-green-600 font-medium mb-2">
+                          Improved answer based on your feedback:
+                        </div>
+                      )}
+                      <div className="prose max-w-none">
+                        {message.content}
+                      </div>
+                      {message.analogy && (
+                        <div>
+                          <h4 className="font-medium text-gray-900 mt-4 mb-2">Real-World Analogy:</h4>
+                          <div className="prose max-w-none">
+                            {message.analogy}
+                          </div>
+                        </div>
+                      )}
+                      {message.resources && message.resources.length > 0 && (
+                        <div>
+                          <h4 className="font-medium text-gray-900 mt-4 mb-2">Additional Resources:</h4>
+                          <ul className="list-disc pl-5 space-y-1">
+                            {message.resources.map((resource, idx) => (
+                              <li key={idx}>
+                                <a
+                                  href={resource.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary-600 hover:text-primary-500"
+                                >
+                                  {resource.title}
+                                </a>
+                                {resource.description && (
+                                  <p className="text-sm text-gray-500">{resource.description}</p>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
                     <div className="prose max-w-none">
                       {message.content}
                     </div>
-                    {message.analogy && (
-                      <div>
-                        <h4 className="font-medium text-gray-900 mt-4 mb-2">Real-World Analogy:</h4>
-                        <div className="prose max-w-none">
-                          {message.analogy}
-                        </div>
-                      </div>
-                    )}
-                    {message.resources && message.resources.length > 0 && (
-                      <div>
-                        <h4 className="font-medium text-gray-900 mt-4 mb-2">Additional Resources:</h4>
-                        <ul className="list-disc pl-5 space-y-1">
-                          {message.resources.map((resource, idx) => (
-                            <li key={idx}>
-                              <a
-                                href={resource.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary-600 hover:text-primary-500"
-                              >
-                                {resource.title}
-                              </a>
-                              {resource.description && (
-                                <p className="text-sm text-gray-500">{resource.description}</p>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="prose max-w-none">
-                    {message.content}
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
+              
+              {/* Feedback form below AI responses */}
+              {message.type === 'assistant' && showFeedbackFor === message.id && (
+                <div className="mt-3 ml-4 mr-4">
+                  <FeedbackForm 
+                    responseId={message.id} 
+                    onFeedbackSubmitted={() => handleFeedbackSubmitted(message.id)}
+                    onRegenerateAnswer={(feedbackData) => handleRegenerateAnswer(message.id, feedbackData)} 
+                  />
+                </div>
+              )}
             </div>
           ))}
           <div ref={messagesEndRef} />
@@ -289,14 +410,15 @@ function QueryPage() {
                       handleSubmit(e);
                     }
                   }}
+                  disabled={loading || regenerating}
                 />
               </div>
               <button
                 type="submit"
-                disabled={loading || !query.trim()}
+                disabled={loading || regenerating || !query.trim()}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
               >
-                {loading ? (
+                {loading || regenerating ? (
                   <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>

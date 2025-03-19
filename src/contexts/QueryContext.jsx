@@ -264,6 +264,84 @@ export function QueryProvider({ children }) {
     }
   };
 
+  // Regenerate an answer based on feedback
+  const regenerateAnswer = async (query, originalResponseId, feedbackDetails, preferences = {}) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      if (!user) {
+        throw new Error('You must be logged in to regenerate an answer');
+      }
+      
+      if (!currentSession) {
+        throw new Error('No active session found');
+      }
+      
+      try {
+        // Format the preferences to adapt based on feedback
+        const updatedPreferences = { ...preferences };
+        
+        // Adjust technical depth based on explanation detail preference
+        if (feedbackDetails.explanationDetail === 'more_detailed') {
+          updatedPreferences.technicalDepth = Math.min(100, updatedPreferences.technicalDepth + 20);
+          updatedPreferences.practicalExamples = Math.min(100, updatedPreferences.practicalExamples + 10);
+        } else if (feedbackDetails.explanationDetail === 'simpler') {
+          updatedPreferences.technicalDepth = Math.max(0, updatedPreferences.technicalDepth - 20);
+        }
+        
+        // Adjust visual learning based on clarity feedback
+        if (feedbackDetails.explanationClear === 'no') {
+          updatedPreferences.visualLearning = Math.min(100, updatedPreferences.visualLearning + 15);
+        }
+        
+        // Process the query with updated preferences
+        let responseData;
+        try {
+          // Include feedback in the API call so the backend can adapt
+          const response = await axios.post('/api/query', {
+            query,
+            sessionId: currentSession.id,
+            preferences: updatedPreferences,
+            feedback: feedbackDetails,
+            originalResponseId,
+            isRegeneration: true
+          });
+          responseData = response.data;
+        } catch (err) {
+          console.error('Error calling backend API for regeneration:', err);
+          
+          // Fall back to local processing
+          responseData = await processQueryLocally(query, updatedPreferences);
+          
+          // Add regeneration context to the response
+          responseData.explanation = `[Improved response based on your feedback]\n\n${responseData.explanation}`;
+          
+          if (feedbackDetails.explanationDetail === 'more_detailed') {
+            responseData.explanation += '\n\nThis improved answer provides more details as requested in your feedback.';
+          } else if (feedbackDetails.explanationDetail === 'simpler') {
+            responseData.explanation += '\n\nThis improved answer uses simpler explanations as requested in your feedback.';
+          }
+          
+          if (feedbackDetails.analogyHelpful === 'no' && responseData.analogy) {
+            responseData.analogy = `I've revised this analogy based on your feedback: ${responseData.analogy}`;
+          }
+        }
+        
+        return responseData;
+      } catch (err) {
+        console.error('Error regenerating answer:', err);
+        throw err;
+      }
+    } catch (err) {
+      console.error('Error regenerating answer:', err);
+      setError('Failed to regenerate answer. Please try again.');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Get user's query history
   const getQueryHistory = async (limit = 10, offset = 0) => {
     try {
@@ -451,6 +529,7 @@ export function QueryProvider({ children }) {
     messageHistory,
     submitQuery,
     submitFeedback,
+    regenerateAnswer,
     getQueryHistory,
     getSessionDetails,
     startNewSession,
