@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import ConversationHistory from '../components/ConversationHistory';
 import FeedbackForm from '../components/FeedbackForm';
+import { supabase } from '../lib/supabaseClient';
 
 function QueryPage() {
   const { user } = useAuth();
@@ -319,9 +320,10 @@ function QueryPage() {
         setSessionId(currentSession.id);
       }
       
-      // Log the sessionId being used for the query
-      console.log('Submitting query with sessionId:', sessionId || 'none (will create new)');
-      
+      // Get the current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+
       // Get AI response using the existing session ID if available
       const response = await submitQuery(query, preferences, sessionId);
       
@@ -352,11 +354,55 @@ function QueryPage() {
         analogy: response.analogy,
         resources: response.resources,
         recap: response.recap,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        messageId: responseId // Add messageId to the message object
       };
       
       const updatedMessages = [...messages, userMessage, aiMessage];
       setMessages(updatedMessages);
+      
+      // First, store the user prompt
+      const { data: promptData, error: promptError } = await supabase
+        .from('user_prompts')
+        .insert({
+          user_id: user.id,
+          prompt_text: query,
+          category: response.category,
+          metadata: {
+            session_id: response.sessionId,
+            difficulty_level: response.difficulty_level,
+            conversation_id: activeConversation
+          }
+        })
+        .select()
+        .single();
+
+      if (promptError) throw promptError;
+
+      // Then, store the query with the prompt_id
+      const { data: queryData, error: queryError } = await supabase
+        .from('queries')
+        .insert({
+          user_id: user.id,
+          query: query,
+          response: response,
+          explanation: response.explanation,
+          category: response.category,
+          difficulty_level: response.difficulty_level,
+          prompt_id: promptData.id
+        })
+        .select()
+        .single();
+
+      if (queryError) throw queryError;
+
+      // Update the user_prompts with the query_id
+      const { error: updatePromptError } = await supabase
+        .from('user_prompts')
+        .update({ query_id: queryData.id })
+        .eq('id', promptData.id);
+
+      if (updatePromptError) throw updatePromptError;
       
       // Update conversations with a more descriptive title based on the AI response
       setConversations(prev => prev.map(conv => {
@@ -396,6 +442,8 @@ function QueryPage() {
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -407,30 +455,25 @@ function QueryPage() {
   };
 
   // Handle regenerating an answer based on feedback
-  const handleRegenerateAnswer = async (messageId, feedbackData) => {
+  const handleRegenerateAnswer = async (feedbackData) => {
     try {
       setRegenerating(true);
       
-      // Find the original query that generated this response
-      const responseIndex = messages.findIndex(msg => msg.id === messageId);
-      if (responseIndex === -1) {
+      // Find the most recent assistant message
+      const lastAssistantMessage = messages.find(msg => msg.type === 'assistant');
+      if (!lastAssistantMessage) {
         throw new Error('Could not find the original message to regenerate');
       }
       
       // Find the most recent user query before this response
-      let userQuery = '';
-      for (let i = responseIndex - 1; i >= 0; i--) {
-        if (messages[i].type === 'user') {
-          userQuery = messages[i].content;
-          break;
-        }
-      }
-      
-      if (!userQuery) {
+      const userMessageIndex = messages.findIndex(msg => msg.id === lastAssistantMessage.id) - 1;
+      if (userMessageIndex < 0) {
         throw new Error('Could not find the original query for this response');
       }
       
-      console.log(`Regenerating answer for message ${messageId} with original query: "${userQuery}"`);
+      const userQuery = messages[userMessageIndex].content;
+      
+      console.log(`Regenerating answer for message ${lastAssistantMessage.id} with original query: "${userQuery}"`);
       console.log('Feedback data:', feedbackData);
       
       // Temporarily show a message about regeneration
@@ -446,7 +489,7 @@ function QueryPage() {
       console.log('Calling regenerateAnswer with preferences:', preferences);
       const response = await regenerateAnswer(
         userQuery,
-        messageId,
+        lastAssistantMessage.id,
         feedbackData,
         preferences
       );
@@ -460,7 +503,7 @@ function QueryPage() {
       const regeneratedResponseId = response.id || Date.now().toString();
       
       // Find the original message to preserve its explanation if we're only changing the analogy
-      const originalMessage = messages.find(msg => msg.id === messageId);
+      const originalMessage = messages.find(msg => msg.id === lastAssistantMessage.id);
       const isOnlyAnalogyFeedback = originalMessage && 
                                  (feedbackData.analogyHelpful === 'no' || 
                                   feedbackData.analogyHelpful === 'partially' || 
@@ -651,19 +694,13 @@ function QueryPage() {
               
               {/* Feedback form below AI responses */}
               {message.type === 'assistant' && showFeedbackFor === message.id && (
-                <div className="mt-3 ml-4 mr-4">
-                  <FeedbackForm 
-                    responseId={message.id} 
-                    onFeedbackSubmitted={() => handleFeedbackSubmitted(message.id)}
-                    onRegenerateAnswer={(feedbackData) => handleRegenerateAnswer(message.id, feedbackData)}
-                    originalQuery={
-                      // Find the user query that preceded this message
-                      messages.find((m, idx) => {
-                        const msgIndex = messages.findIndex(msg => msg.id === message.id);
-                        return idx < msgIndex && m.type === 'user';
-                      })?.content || ''
-                    }
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <FeedbackForm
+                    responseId={message.id}
+                    onFeedbackSubmitted={() => setShowFeedbackFor(null)}
+                    originalQuery={query}
                     preferences={preferences}
+                    onRegenerateAnswer={handleRegenerateAnswer}
                     sessionId={sessionId}
                   />
                 </div>

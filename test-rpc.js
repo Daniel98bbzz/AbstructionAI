@@ -1,3 +1,6 @@
+// Add this at the top of the file
+import 'dotenv/config';
+
 // Test script to check if the submit_feedback RPC function exists
 import { createClient } from '@supabase/supabase-js'
 

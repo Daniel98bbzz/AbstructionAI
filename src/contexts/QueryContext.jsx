@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from './AuthContext';
 import axios from 'axios';
+import { API_URL } from '../config';
 
 const QueryContext = createContext();
 
@@ -159,7 +160,7 @@ export function QueryProvider({ children }) {
           preferences
         });
         
-        const response = await axios.post('/api/query', {
+        const response = await axios.post(`${API_URL}/api/query`, {
           query,
           sessionId,
           preferences
@@ -550,7 +551,7 @@ export function QueryProvider({ children }) {
           // Include feedback in the API call so the backend can adapt
           const response = await axios.post('/api/query', {
             query,
-            sessionId: currentSession.id,
+            sessionId: currentSession?.id,
             preferences: updatedPreferences,
             feedback: {
               ...feedbackDetails,

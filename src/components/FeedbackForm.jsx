@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '../contexts/QueryContext';
 import { supabase } from '../lib/supabaseClient';
+import { toast } from 'react-hot-toast';
 
 function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferences, onRegenerateAnswer, sessionId }) {
   const { submitFeedback } = useQuery();
@@ -29,6 +30,82 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
     comments: ''
   });
 
+  // Add state for highly rated queries
+  const [highlyRatedQueries, setHighlyRatedQueries] = useState([]);
+  const [similarAnalogyQueries, setSimilarAnalogyQueries] = useState([]);
+
+  // Add function to fetch highly rated queries
+  const fetchHighlyRatedQueries = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('queries')
+        .select(`
+          id,
+          query,
+          response,
+          category,
+          feedbacks!inner (
+            rating
+          )
+        `)
+        .gte('feedbacks.rating', 4)
+        .order('feedbacks.rating', { ascending: false });
+
+      if (error) throw error;
+
+      // Group queries by analogy category
+      const groupedQueries = data.reduce((acc, query) => {
+        const analogyCategory = query.response?.analogy?.category || 'Uncategorized';
+        if (!acc[analogyCategory]) {
+          acc[analogyCategory] = [];
+        }
+        acc[analogyCategory].push(query);
+        return acc;
+      }, {});
+
+      setHighlyRatedQueries(groupedQueries);
+    } catch (error) {
+      console.error('Error fetching highly rated queries:', error);
+    }
+  };
+
+  // Add function to fetch similar queries by analogy category
+  const fetchSimilarAnalogyQueries = async (analogyCategory) => {
+    if (!analogyCategory) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('queries')
+        .select(`
+          id,
+          query,
+          response,
+          category,
+          feedbacks!inner (
+            rating
+          )
+        `)
+        .gte('feedbacks.rating', 4)
+        .order('feedbacks.rating', { ascending: false });
+
+      if (error) throw error;
+
+      // Filter queries that have the same analogy category
+      const similarQueries = data.filter(query => 
+        query.response?.analogy?.category === analogyCategory
+      );
+
+      setSimilarAnalogyQueries(similarQueries);
+    } catch (error) {
+      console.error('Error fetching similar analogy queries:', error);
+    }
+  };
+
+  // Fetch highly rated queries when component mounts
+  useEffect(() => {
+    fetchHighlyRatedQueries();
+  }, []);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFeedback(prev => ({ ...prev, [name]: value }));
@@ -50,8 +127,8 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
           : 'Please use a gaming analogy that relates to video games.';
       }
       
-      // Store feedback in local storage since we're having server issues
-      const feedbackData = {
+      // Store feedback in local storage as backup
+      const feedbackStorageData = {
         id: Date.now().toString(),
         responseId: responseId || 'unknown',
         sessionId: sessionId || 'unknown',
@@ -61,10 +138,11 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
         analogyHelpful: updatedFeedback.analogyHelpful,
         analogyPreference: updatedFeedback.analogyPreference,
         comments: updatedFeedback.comments,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        query_id: responseId || 'unknown'
       };
       
-      // Store in localStorage until we can submit to server later
+      // Store in localStorage as backup
       let storedFeedback = [];
       try {
         const existingFeedback = localStorage.getItem('user_feedback');
@@ -76,11 +154,123 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
         storedFeedback = [];
       }
       
-      // Add new feedback and save
-      storedFeedback.push(feedbackData);
+      storedFeedback.push(feedbackStorageData);
       localStorage.setItem('user_feedback', JSON.stringify(storedFeedback));
       
-      console.log('Feedback saved to local storage:', feedbackData);
+      console.log('Feedback saved to local storage:', feedbackStorageData);
+      
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+
+      if (!user) {
+        throw new Error('You must be logged in to submit feedback');
+      }
+
+      // First, find the associated query for this response
+      const { data: queryData, error: queryError } = await supabase
+        .from('queries')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (queryError) {
+        console.error('Error finding associated query:', queryError);
+        // Instead of throwing an error, we'll create a new query
+        const { data: newQuery, error: createQueryError } = await supabase
+          .from('queries')
+          .insert([
+            {
+              user_id: user.id,
+              query: originalQuery || 'Feedback for response',
+              response: { id: responseId },
+              explanation: 'Feedback submission'
+            }
+          ])
+          .select()
+          .single();
+
+        if (createQueryError) {
+          console.error('Error creating new query:', createQueryError);
+          throw new Error('Failed to create associated query for feedback');
+        }
+
+        queryData = newQuery;
+      }
+
+      // Store in new feedbacks table with the correct query_id
+      const { data: feedbackRecord, error: feedbackError } = await supabase
+        .from('feedbacks')
+        .insert([
+          {
+            user_id: user.id,
+            content: updatedFeedback.comments,
+            rating: parseInt(updatedFeedback.rating),
+            query_id: queryData.id // Use the query ID we found or created
+          }
+        ])
+        .select()
+        .single();
+
+      if (feedbackError) {
+        console.error('Error storing feedback in feedbacks table:', feedbackError);
+        throw feedbackError;
+      }
+
+      // Update the query with the feedback_id
+      const { error: updateQueryError } = await supabase
+        .from('queries')
+        .update({ feedback_id: feedbackRecord.id })
+        .eq('id', queryData.id);
+
+      if (updateQueryError) {
+        console.error('Error updating query with feedback:', updateQueryError);
+      }
+
+      // Store in interactions table (existing functionality)
+      try {
+        // Either use the submit_feedback RPC function if it exists
+        const { data, error } = await supabase.rpc('submit_feedback', {
+          response_id: responseId,
+          rating: updatedFeedback.rating,
+          comments: updatedFeedback.comments,
+          message_id: responseId,
+          query_id: queryData.id // Use the query ID we found or created
+        });
+        
+        if (error) {
+          console.error('Error submitting feedback to database via RPC:', error);
+          
+          // Fallback: Insert directly into interactions table
+          const { data: insertData, error: insertError } = await supabase
+            .from('interactions')
+            .insert([
+              {
+                session_id: sessionId,
+                type: 'feedback',
+                rating: updatedFeedback.rating,
+                comments: updatedFeedback.comments,
+                related_to: responseId,
+                feedback_content: updatedFeedback,
+                message_id: responseId,
+                query_id: queryData.id // Use the query ID we found or created
+              }
+            ]);
+            
+          if (insertError) {
+            console.error('Error inserting feedback directly:', insertError);
+          } else {
+            console.log('Feedback successfully stored in database via direct insert');
+          }
+        } else {
+          console.log('Feedback successfully stored in database via RPC function:', data);
+        }
+      } catch (dbError) {
+        console.error('Database operation failed:', dbError);
+        // Continue with the rest of the function even if database storage fails
+      }
       
       // Consider feedback as submitted successfully
       setSubmitted(true);
@@ -95,9 +285,18 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
           onRegenerateAnswer(updatedFeedback);
         }
       }, 500);
+      
+      // Show success message
+      toast.success('Thank you for your feedback!');
+
+      // After successful feedback submission, fetch similar queries if analogy category is specified
+      if (feedback.analogyPreference) {
+        await fetchSimilarAnalogyQueries(feedback.analogyPreference);
+      }
     } catch (err) {
       setError('Failed to save feedback. Please try again. Error: ' + (err.message || 'Unknown error'));
       console.error('Error saving feedback:', err);
+      toast.error('Failed to submit feedback. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -153,6 +352,66 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
     return null;
   };
 
+  // Add this before the return statement
+  const renderHighlyRatedQueries = () => {
+    if (!highlyRatedQueries || Object.keys(highlyRatedQueries).length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="mt-6 p-4 bg-blue-50 rounded-md">
+        <h3 className="text-sm font-medium text-blue-900">Highly Rated Similar Queries</h3>
+        <div className="mt-2 space-y-4">
+          {Object.entries(highlyRatedQueries).map(([category, queries]) => (
+            <div key={category} className="border-b border-blue-200 pb-4 last:border-0">
+              <h4 className="text-sm font-medium text-blue-800">{category}</h4>
+              <ul className="mt-2 space-y-2">
+                {queries.map((query) => (
+                  <li key={query.id} className="text-sm text-blue-700">
+                    <div className="font-medium">{query.query}</div>
+                    <div className="text-xs text-blue-600 mt-1">
+                      Rating: {query.feedbacks[0]?.rating}/5
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Add function to render similar analogy queries
+  const renderSimilarAnalogyQueries = () => {
+    if (!similarAnalogyQueries.length) return null;
+
+    return (
+      <div className="mt-6 p-4 bg-purple-50 rounded-md">
+        <h3 className="text-sm font-medium text-purple-900">
+          Similar Queries with {feedback.analogyPreference} Analogies
+        </h3>
+        <div className="mt-2 space-y-4">
+          <ul className="space-y-3">
+            {similarAnalogyQueries.map((query) => (
+              <li key={query.id} className="text-sm text-purple-700">
+                <div className="font-medium">{query.query}</div>
+                <div className="text-xs text-purple-600 mt-1">
+                  Rating: {query.feedbacks[0]?.rating}/5
+                </div>
+                {query.response?.analogy?.text && (
+                  <div className="text-xs text-purple-500 mt-1 italic">
+                    Analogy: {query.response.analogy.text}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    );
+  };
+
   if (submitted) {
     return (
       <div className="mt-4 p-4 bg-green-50 rounded-md">
@@ -167,6 +426,9 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
             Regenerate Answer Based on Feedback
           </button>
         </div>
+
+        {renderHighlyRatedQueries()}
+        {renderSimilarAnalogyQueries()}
       </div>
     );
   }
@@ -364,6 +626,9 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
           </button>
         </div>
       </form>
+
+      {renderHighlyRatedQueries()}
+      {renderSimilarAnalogyQueries()}
     </div>
   );
 }
