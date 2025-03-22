@@ -414,15 +414,23 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
 
   if (submitted) {
     return (
-      <div className="mt-4 p-4 bg-green-50 rounded-md">
-        <p className="text-green-700 text-sm">Thank you for your feedback!</p>
+      <div className="mt-4 p-6 bg-gradient-to-r from-green-50 to-green-100 rounded-lg shadow-sm border border-green-200">
+        <div className="flex items-center space-x-2 mb-4">
+          <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+          </svg>
+          <p className="text-green-700 font-medium">Thank you for your feedback!</p>
+        </div>
         
-        <div className="mt-3 flex justify-end">
+        <div className="mt-4 flex justify-end">
           <button
             type="button"
             onClick={handleRegenerateClick}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors duration-200"
           >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
             Regenerate Answer Based on Feedback
           </button>
         </div>
@@ -434,195 +442,157 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
   }
 
   return (
-    <div className="mt-4 p-4 bg-gray-50 rounded-md">
-      <h3 className="text-sm font-medium text-gray-900">Help us improve</h3>
-      <p className="text-xs text-gray-500 mt-1">Your feedback will affect how we regenerate this response. Different feedback types will change different sections of the answer.</p>
+    <div className="mt-4 p-6 bg-white rounded-lg shadow-sm border border-gray-200">
+      <h3 className="text-lg font-medium text-gray-900 mb-4">Help us improve this explanation</h3>
       
-      {error && (
-        <div className="mt-2 text-sm text-red-600">
-          {error}
-        </div>
-      )}
-      
-      <form onSubmit={handleSubmit} className="mt-3 space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Rate the quality of the answer (1-5)
-          </label>
-          <div className="mt-1 flex items-center space-x-2">
-            <span className="text-xs text-gray-500">Poor</span>
-            {[1, 2, 3, 4, 5].map((value) => (
-              <label key={value} className="flex items-center">
-                <input
-                  type="radio"
-                  name="rating"
-                  value={value}
-                  checked={parseInt(feedback.rating) === value}
-                  onChange={handleChange}
-                  className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300"
-                />
-                <span className="ml-1 text-sm text-gray-700">{value}</span>
-              </label>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Rating Section */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">How helpful was this explanation?</label>
+          <div className="flex space-x-4">
+            {[1, 2, 3, 4, 5].map((rating) => (
+              <button
+                key={rating}
+                type="button"
+                onClick={() => setFeedback(prev => ({ ...prev, rating: rating.toString() }))}
+                className={`p-2 rounded-full transition-colors duration-200 ${
+                  parseInt(feedback.rating) >= rating
+                    ? 'bg-primary-100 text-primary-600'
+                    : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                }`}
+              >
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.363 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.363-1.118l-2.8-2.034c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+              </button>
             ))}
-            <span className="text-xs text-gray-500">Excellent</span>
           </div>
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Was the explanation clear to you?
-          </label>
-          <div className="mt-1 space-x-4">
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                name="explanationClear"
-                value="yes"
-                checked={feedback.explanationClear === 'yes'}
-                onChange={handleChange}
-                className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300"
-              />
-              <span className="ml-2 text-sm text-gray-700">Yes</span>
-            </label>
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                name="explanationClear"
-                value="partially"
-                checked={feedback.explanationClear === 'partially'}
-                onChange={handleChange}
-                className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300"
-              />
-              <span className="ml-2 text-sm text-gray-700">Partially</span>
-            </label>
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                name="explanationClear"
-                value="no"
-                checked={feedback.explanationClear === 'no'}
-                onChange={handleChange}
-                className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300"
-              />
-              <span className="ml-2 text-sm text-gray-700">No</span>
-            </label>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">Selecting "Partially" or "No" will cause the explanation to be rewritten more clearly</p>
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Would you prefer a more detailed or simpler explanation?
-          </label>
-          <div className="mt-1 space-x-4">
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                name="explanationDetail"
-                value="more_detailed"
-                checked={feedback.explanationDetail === 'more_detailed'}
-                onChange={handleChange}
-                className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300"
-              />
-              <span className="ml-2 text-sm text-gray-700">More detailed</span>
-            </label>
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                name="explanationDetail"
-                value="exactly_right"
-                checked={feedback.explanationDetail === 'exactly_right'}
-                onChange={handleChange}
-                className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300"
-              />
-              <span className="ml-2 text-sm text-gray-700">Exactly right</span>
-            </label>
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                name="explanationDetail"
-                value="simpler"
-                checked={feedback.explanationDetail === 'simpler'}
-                onChange={handleChange}
-                className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300"
-              />
-              <span className="ml-2 text-sm text-gray-700">Simpler</span>
-            </label>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">Selecting "More detailed" or "Simpler" will rewrite the explanation with more or less technical detail</p>
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Did the analogy help you better understand the concept?
-          </label>
-          <div className="mt-1 space-x-4">
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                name="analogyHelpful"
-                value="yes"
-                checked={feedback.analogyHelpful === 'yes'}
-                onChange={handleChange}
-                className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300"
-              />
-              <span className="ml-2 text-sm text-gray-700">Yes</span>
-            </label>
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                name="analogyHelpful"
-                value="partially"
-                checked={feedback.analogyHelpful === 'partially'}
-                onChange={handleChange}
-                className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300"
-              />
-              <span className="ml-2 text-sm text-gray-700">Partially</span>
-            </label>
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                name="analogyHelpful"
-                value="no"
-                checked={feedback.analogyHelpful === 'no'}
-                onChange={handleChange}
-                className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300"
-              />
-              <span className="ml-2 text-sm text-gray-700">No</span>
-            </label>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">Selecting "Partially" or "No" will generate a new analogy while keeping the explanation if it was marked as clear and exactly right</p>
-        </div>
-        
-        {renderAnalogySuggestion()}
-        
-        <div>
-          <label htmlFor="comments" className="block text-sm font-medium text-gray-700">
-            What would you like to improve in the provided answer?
-          </label>
-          <div className="mt-1">
-            <textarea
-              id="comments"
-              name="comments"
-              rows="3"
-              className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
-              placeholder="Additional comments and suggestions..."
-              value={feedback.comments}
-              onChange={handleChange}
-            />
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            Your specific comments will be used to improve the response. Include keywords like "simpler", "more detail", or mention specific topics you'd like included.
+          <p className="text-xs text-gray-500 mt-1">
+            {parseInt(feedback.rating) === 1 ? 'Poor' :
+             parseInt(feedback.rating) === 2 ? 'Fair' :
+             parseInt(feedback.rating) === 3 ? 'Good' :
+             parseInt(feedback.rating) === 4 ? 'Very Good' :
+             'Excellent'}
           </p>
         </div>
-        
+
+        {/* Clarity Section */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">Was the explanation clear?</label>
+          <div className="grid grid-cols-3 gap-4">
+            {['yes', 'partially', 'no'].map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setFeedback(prev => ({ ...prev, explanationClear: option }))}
+                className={`p-3 rounded-lg border transition-colors duration-200 ${
+                  feedback.explanationClear === option
+                    ? 'border-primary-500 bg-primary-50 text-primary-700'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {option.charAt(0).toUpperCase() + option.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Analogy Section */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">Was the analogy helpful?</label>
+          <div className="grid grid-cols-3 gap-4">
+            {['yes', 'partially', 'no'].map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setFeedback(prev => ({ ...prev, analogyHelpful: option }))}
+                className={`p-3 rounded-lg border transition-colors duration-200 ${
+                  feedback.analogyHelpful === option
+                    ? 'border-primary-500 bg-primary-50 text-primary-700'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {option.charAt(0).toUpperCase() + option.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Detail Level Section */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">How detailed should the explanation be?</label>
+          <div className="grid grid-cols-3 gap-4">
+            {['more_detailed', 'current_level', 'simpler'].map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setFeedback(prev => ({ ...prev, explanationDetail: option }))}
+                className={`p-3 rounded-lg border transition-colors duration-200 ${
+                  feedback.explanationDetail === option
+                    ? 'border-primary-500 bg-primary-50 text-primary-700'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {option === 'more_detailed' ? 'More Detailed' :
+                 option === 'current_level' ? 'Current Level' :
+                 'Simpler'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Analogy Preference Section */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">What type of analogy would help you understand better?</label>
+          <select
+            value={feedback.analogyPreference}
+            onChange={(e) => setFeedback(prev => ({ ...prev, analogyPreference: e.target.value }))}
+            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary-500 focus:border-primary-500 rounded-md"
+          >
+            <option value="">Select a category</option>
+            <option value="gaming">Gaming</option>
+            <option value="sports">Sports</option>
+            <option value="cooking">Cooking</option>
+            <option value="music">Music</option>
+            <option value="art">Art</option>
+            <option value="nature">Nature</option>
+            <option value="technology">Technology</option>
+            <option value="business">Business</option>
+            <option value="education">Education</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        {/* Comments Section */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">Additional comments or suggestions</label>
+          <textarea
+            value={feedback.comments}
+            onChange={(e) => setFeedback(prev => ({ ...prev, comments: e.target.value }))}
+            rows="3"
+            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500"
+            placeholder="What could be improved?"
+          />
+        </div>
+
+        {/* Submit Button */}
         <div className="flex justify-end">
           <button
             type="submit"
             disabled={loading}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors duration-200 disabled:opacity-50"
           >
-            {loading ? 'Submitting...' : 'Submit Feedback'}
+            {loading ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Submitting...
+              </>
+            ) : (
+              'Submit Feedback'
+            )}
           </button>
         </div>
       </form>
