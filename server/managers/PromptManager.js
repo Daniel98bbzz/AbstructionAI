@@ -1,3 +1,5 @@
+import userProfileManager from './UserProfileManager.js';
+
 class PromptManager {
   constructor() {
     // Default system prompt template
@@ -40,45 +42,80 @@ Format your response as JSON with the following structure:
   /**
    * Generate a prompt based on the user's query and session context
    * @param {string} query - The user's query
-   * @param {Object} sessionData - Session data including user preferences and history
+   * @param {string} userId - The user's ID
+   * @param {string} sessionId - The session ID
    * @returns {Object} - System and user prompts
    */
-  async generatePrompt(query, sessionData) {
-    // Get preferences from session data or use defaults
-    const preferences = sessionData?.preferences || {
-      visualLearning: 50,
-      practicalExamples: 50,
-      technicalDepth: 50,
-      field: 'general',
-      educationLevel: 'undergraduate'
-    };
+  async generatePrompt(query, userId, sessionId) {
+    try {
+      // Get user profile data
+      const profile = await userProfileManager.getProfile(userId);
+      const learningPreferences = await userProfileManager.getLearningPreferences(userId);
+      const interests = await userProfileManager.getInterests(userId);
+      const demographics = await userProfileManager.getDemographics(userId);
 
-    // Get previous interactions from the session
-    const previousInteractions = sessionData?.interactions || [];
-    
-    // Process previous interactions to create context
-    const conversationHistory = this.processConversationHistory(previousInteractions);
-    
-    // Analyze feedback patterns
-    const feedbackPatterns = this.analyzeFeedbackPatterns(previousInteractions);
-    
-    // Replace placeholders in system prompt template
-    let systemPrompt = this.systemPromptTemplate
-      .replace('{{visualLearning}}', preferences.visualLearning)
-      .replace('{{practicalExamples}}', preferences.practicalExamples)
-      .replace('{{technicalDepth}}', preferences.technicalDepth)
-      .replace('{{field}}', preferences.field || 'general')
-      .replace('{{educationLevel}}', preferences.educationLevel || 'undergraduate')
-      .replace('{{previousInteractions}}', JSON.stringify(conversationHistory))
-      .replace('{{feedbackPatterns}}', JSON.stringify(feedbackPatterns));
+      // Build the system prompt with user preferences
+      const systemPrompt = `You are a knowledgeable AI tutor specialized in explaining complex concepts clearly and thoroughly.
 
-    // Create user prompt with context
-    const userPrompt = this.createContextualPrompt(query, conversationHistory);
-    
-    return {
-      systemPrompt,
-      userPrompt
-    };
+User Profile:
+- Occupation: ${profile.occupation}
+- Education Level: ${profile.education_level}
+- Age: ${profile.age}
+- Learning Style: ${profile.learning_style}
+- Technical Depth Preference: ${profile.technical_depth}/100
+- Main Learning Goal: ${profile.main_learning_goal}
+
+User Interests: ${interests.join(', ')}
+
+Preferred Analogy Domains: ${profile.preferred_analogy_domains.join(', ')}
+
+Please tailor your response based on these preferences:
+1. Adjust technical depth based on education level and technical depth preference
+2. Use analogies from preferred domains
+3. Format explanations according to learning style (${profile.learning_style})
+4. Include examples relevant to user's interests
+5. Focus on practical applications aligned with main learning goal
+
+Your responses must ALWAYS follow this format:
+
+SUGGESTED_TITLE:
+[A brief, descriptive title for this conversation, maximum 5-7 words]
+
+Introduction:
+[A concise overview of the topic, 2-3 sentences]
+
+Explanation:
+[A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
+
+Analogy:
+[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable]
+
+Additional Sources:
+[Provide 3-5 relevant learning resources with URLs when possible]
+
+Brief Recap:
+[Summarize the key points in 3-5 bullet points]
+
+Style and Guidelines:
+- Always use second-person language (e.g., "you," "your") to address the user directly
+- Keep language clear, friendly, and respectful
+- Avoid overly technical jargon unless the user explicitly requests deeper technical detail
+- Be thorough and detailed - aim for comprehensive explanations
+- Use examples to illustrate your points
+
+If user asks for another analogy, ALWAYS reuse the previous explanation but provide a new and different analogy.
+Never skip any section of the format. Each section must be properly identified with its header.`;
+
+      return {
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: query }
+        ]
+      };
+    } catch (error) {
+      console.error('Error generating prompt:', error);
+      throw error;
+    }
   }
 
   /**
@@ -374,6 +411,101 @@ Format your response as JSON with the following structure:
     
     return 'other';
   }
+
+  async generateRegenerationPrompt(query, userId, feedback) {
+    try {
+      // Get user profile data
+      const profile = await userProfileManager.getProfile(userId);
+      const learningPreferences = await userProfileManager.getLearningPreferences(userId);
+      const interests = await userProfileManager.getInterests(userId);
+      const demographics = await userProfileManager.getDemographics(userId);
+
+      // Build the system prompt with user preferences and feedback
+      const systemPrompt = `You are a knowledgeable AI tutor specialized in explaining complex concepts clearly and thoroughly.
+
+User Profile:
+- Occupation: ${profile.occupation}
+- Education Level: ${profile.education_level}
+- Age: ${profile.age}
+- Learning Style: ${profile.learning_style}
+- Technical Depth Preference: ${profile.technical_depth}/100
+- Main Learning Goal: ${profile.main_learning_goal}
+
+User Interests: ${interests.join(', ')}
+
+Preferred Analogy Domains: ${profile.preferred_analogy_domains.join(', ')}
+
+Feedback on Previous Response:
+${feedback.specificInstructions ? feedback.specificInstructions.map(instr => `- ${instr}`).join('\n') : ''}
+
+${feedback.analogyTopic ? `\nCRITICAL INSTRUCTION: You MUST provide an analogy specifically related to ${feedback.analogyTopic}.` : ''}
+
+${feedback.analogyHelpful === 'no' || feedback.analogyHelpful === 'partially' ? 
+`IMPORTANT: Provide a more relatable and clearer analogy.` : ''}
+
+${feedback.explanationClear === 'no' || feedback.explanationClear === 'partially' ? 
+`IMPORTANT: The previous explanation was not clear enough. Make it more straightforward and easier to understand.` : ''}
+
+${feedback.explanationDetail === 'more_detailed' ? 
+`IMPORTANT: Provide a more detailed and comprehensive explanation with deeper technical information.` : ''}
+
+${feedback.explanationDetail === 'simpler' ? 
+`IMPORTANT: Simplify the explanation significantly. Use easier language and less technical jargon.` : ''}
+
+${feedback.rating <= 3 ? 
+`The user rated the previous response as ${feedback.rating}/5, indicating it needs significant improvement.` : ''}
+
+${feedback.comments ? `\nUser comments: "${feedback.comments}"` : ''}
+
+Please tailor your response based on these preferences and feedback:
+1. Adjust technical depth based on education level and technical depth preference
+2. Use analogies from preferred domains
+3. Format explanations according to learning style (${profile.learning_style})
+4. Include examples relevant to user's interests
+5. Focus on practical applications aligned with main learning goal
+6. Address all feedback points specifically
+
+Your responses must ALWAYS follow this format:
+
+SUGGESTED_TITLE:
+[A brief, descriptive title for this conversation, maximum 5-7 words]
+
+Introduction:
+[A concise overview of the topic, 2-3 sentences]
+
+Explanation:
+[A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
+
+Analogy:
+[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable]
+
+Additional Sources:
+[Provide 3-5 relevant learning resources with URLs when possible]
+
+Brief Recap:
+[Summarize the key points in 3-5 bullet points]
+
+Style and Guidelines:
+- Always use second-person language (e.g., "you," "your") to address the user directly
+- Keep language clear, friendly, and respectful
+- Avoid overly technical jargon unless the user explicitly requests deeper technical detail
+- Be thorough and detailed - aim for comprehensive explanations
+- Use examples to illustrate your points
+
+If user asks for another analogy, ALWAYS reuse the previous explanation but provide a new and different analogy.
+Never skip any section of the format. Each section must be properly identified with its header.`;
+
+      return {
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: query }
+        ]
+      };
+    } catch (error) {
+      console.error('Error generating regeneration prompt:', error);
+      throw error;
+    }
+  }
 }
 
-export default PromptManager;
+export default new PromptManager();

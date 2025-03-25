@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import { OpenAI } from 'openai';
+import { supabase } from './lib/supabaseClient.js';
 
 // Initialize Express app
 const app = express();
@@ -26,10 +27,11 @@ import PromptManager from './managers/PromptManager.js';
 import SessionManager from './managers/SessionManager.js';
 import FeedbackProcessor from './managers/FeedbackProcessor.js';
 import Supervisor from './managers/Supervisor.js';
+import UserProfileManager from './managers/UserProfileManager.js';
 
 // Initialize managers
 const userManager = new UserManager();
-const promptManager = new PromptManager();
+// const promptManager = new PromptManager();  // Comment out this line
 const sessionManager = new SessionManager();
 const feedbackProcessor = new FeedbackProcessor();
 const supervisor = new Supervisor();
@@ -46,6 +48,28 @@ app.post('/api/query', async (req, res) => {
       isRegeneration: !!isRegeneration,
       hasFeedback: !!feedback
     });
+    
+    // Identify the user
+    const userId = req.user?.id;
+    let userProfile = null;
+    
+    // Fetch user profile if authenticated
+    if (userId) {
+      try {
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+          
+        if (!error && data) {
+          userProfile = data;
+          console.log('Using user profile preferences for personalized response');
+        }
+      } catch (profileError) {
+        console.error('Error fetching user profile:', profileError);
+      }
+    }
     
     if (isRegeneration) {
       console.log('Processing regeneration request with feedback:', {
@@ -78,15 +102,15 @@ app.post('/api/query', async (req, res) => {
       if (!sessionData) {
         console.log(`Session ${sessionId} not found, will create new`);
         // Instead of failing, create a new session if the requested one doesn't exist
-        const userId = req.user ? req.user.id : `anon_${Date.now()}`;
-        sessionData = await sessionManager.createSession(userId, preferences);
-        console.log(`Created new session ${sessionData.id} for user ${userId}`);
+        const tempUserId = userId || `anon_${Date.now()}`;
+        sessionData = await sessionManager.createSession(tempUserId, preferences);
+        console.log(`Created new session ${sessionData.id} for user ${tempUserId}`);
       }
     } else {
       // Create anonymous session if no user is authenticated
-      const userId = req.user ? req.user.id : `anon_${Date.now()}`;
-      console.log(`No session provided, creating new session for user ${userId}`);
-      sessionData = await sessionManager.createSession(userId, preferences);
+      const tempUserId = userId || `anon_${Date.now()}`;
+      console.log(`No session provided, creating new session for user ${tempUserId}`);
+      sessionData = await sessionManager.createSession(tempUserId, preferences);
       console.log(`Created new session ${sessionData.id}`);
     }
     
@@ -96,10 +120,7 @@ app.post('/api/query', async (req, res) => {
     // Prepare conversation history messages with better context handling
     const historyMessages = [];
     
-    // Use the isRegeneration and feedback from the request
-    // No need to redeclare these variables as they were already destructured from req.body
-    
-    // Add system context about the current conversation
+    // Add system context about the current conversation with user profile data
     const systemContext = {
       role: "system",
       content: `You are a knowledgeable AI tutor specialized in explaining complex concepts clearly and thoroughly.
@@ -110,6 +131,24 @@ Last explanation: ${conversationSummary.lastExplanation}`
 ${conversationSummary.lastAnalogy
   ? `\nLast analogy: ${conversationSummary.lastAnalogy}`
   : ""}
+
+${userProfile ? `USER PROFILE INFORMATION:
+- Occupation: ${userProfile.occupation}
+- Education Level: ${userProfile.education_level}
+- Age: ${userProfile.age}
+- Learning Style: ${userProfile.learning_style}
+- Technical Depth Preference: ${userProfile.technical_depth}/100
+- Main Learning Goal: ${userProfile.main_learning_goal}
+- Interests: ${userProfile.interests ? userProfile.interests.join(', ') : 'Not specified'}
+- Preferred Analogy Domains: ${userProfile.preferred_analogy_domains ? userProfile.preferred_analogy_domains.join(', ') : 'Not specified'}
+
+PERSONALIZATION INSTRUCTIONS:
+1. Use the user's preferred analogy domains when creating analogies. This is EXTREMELY important.
+2. Adjust technical depth based on education level and technical depth preference.
+3. Present information in a way that matches their learning style.
+4. Connect explanations to their interests when possible.
+5. Align examples with their main learning goal.
+` : ''}
 
 ${isRegeneration && feedback ? `This is a REGENERATION request based on user feedback. Please address these specific points:
 ${feedback.specificInstructions ? feedback.specificInstructions.map(instr => `- ${instr}`).join('\n') : ''}
@@ -156,7 +195,7 @@ Explanation:
 [A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
 
 Analogy:
-[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable${feedback && feedback.analogyTopic ? `. IMPORTANT: This MUST be a ${feedback.analogyTopic}-related analogy as explicitly requested by the user` : ''}]
+[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable${feedback && feedback.analogyTopic ? `. IMPORTANT: This MUST be a ${feedback.analogyTopic}-related analogy as explicitly requested by the user` : userProfile && userProfile.preferred_analogy_domains && userProfile.preferred_analogy_domains.length > 0 ? `. IMPORTANT: This should be a ${userProfile.preferred_analogy_domains[0]}-related analogy as per user's profile preferences` : ''}]
 
 Additional Sources:
 [Provide 3-5 relevant learning resources with URLs when possible]
@@ -167,7 +206,7 @@ Brief Recap:
 Style and Guidelines:
 - Always use second-person language (e.g., "you," "your") to address the user directly.
 - Keep language clear, friendly, and respectful.
-- Avoid overly technical jargon unless the user explicitly requests deeper technical detail.
+${userProfile ? `- Adjust technical depth to match the user's preference (${userProfile.technical_depth}/100).` : '- Avoid overly technical jargon unless the user explicitly requests deeper technical detail.'}
 - Be thorough and detailed - aim for comprehensive explanations.
 - Use examples to illustrate your points.
 
@@ -350,6 +389,63 @@ app.get('/api/context/:sessionId', async (req, res) => {
   } catch (error) {
     console.error('Error getting context:', error);
     res.status(500).json({ error: 'Failed to get context' });
+  }
+});
+
+// User Profile Routes
+app.get('/api/user/profile', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const profile = await UserProfileManager.getProfile(userId);
+    res.json(profile);
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    res.status(500).json({ error: 'Failed to fetch user profile' });
+  }
+});
+
+app.put('/api/user/profile', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const profileData = req.body;
+    const updatedProfile = await UserProfileManager.updateProfile(userId, profileData);
+    res.json(updatedProfile);
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    res.status(500).json({ error: 'Failed to update user profile' });
+  }
+});
+
+app.get('/api/user/learning-preferences', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const preferences = await UserProfileManager.getLearningPreferences(userId);
+    res.json(preferences);
+  } catch (error) {
+    console.error('Error fetching learning preferences:', error);
+    res.status(500).json({ error: 'Failed to fetch learning preferences' });
+  }
+});
+
+app.get('/api/user/interests', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const interests = await UserProfileManager.getInterests(userId);
+    res.json(interests);
+  } catch (error) {
+    console.error('Error fetching user interests:', error);
+    res.status(500).json({ error: 'Failed to fetch user interests' });
+  }
+});
+
+app.get('/api/user/demographics', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const demographics = await UserProfileManager.getDemographics(userId);
+    res.json(demographics);
+  } catch (error) {
+    console.error('Error fetching user demographics:', error);
+    res.status(500).json({ error: 'Failed to fetch user demographics' });
   }
 });
 
