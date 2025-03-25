@@ -200,300 +200,367 @@ function Register() {
     }
   };
 
+  // Render step 1: Basic Information
+  const renderStep1 = () => (
+    <div className="space-y-8">
+      <h2 className="text-2xl font-semibold">Basic Information</h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div>
+          <label htmlFor="username" className="block text-base font-medium text-gray-700 mb-2">
+            Username
+          </label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autoComplete="username"
+            value={formData.username}
+            onChange={handleInputChange}
+            placeholder="Choose a username"
+            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          />
+          {errors.username && <p className="mt-1 text-sm text-red-600">{errors.username}</p>}
+        </div>
+        
+        <div>
+          <label htmlFor="email" className="block text-base font-medium text-gray-700 mb-2">
+            Email
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            value={formData.email}
+            onChange={handleInputChange}
+            placeholder="Enter your email address"
+            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          />
+          {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
+        </div>
+        
+        <div>
+          <label htmlFor="password" className="block text-base font-medium text-gray-700 mb-2">
+            Password
+          </label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            value={formData.password}
+            onChange={handleInputChange}
+            placeholder="Create a secure password"
+            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          />
+          {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
+        </div>
+      </div>
+      
+      <div className="pt-4">
+        <button
+          type="button"
+          onClick={handleNext}
+          className="w-full md:w-auto md:min-w-[200px] rounded-md bg-primary-600 py-3 px-5 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+
+  // Render step 2: Demographics
+  const renderStep2 = () => (
+    <div className="space-y-8">
+      <h2 className="text-2xl font-semibold">Demographics</h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div>
+          <label htmlFor="occupation" className="block text-base font-medium text-gray-700 mb-2">
+            Occupation
+          </label>
+          <select
+            id="occupation"
+            name="occupation"
+            value={formData.occupation}
+            onChange={handleInputChange}
+            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          >
+            <option value="">Select your occupation</option>
+            {OCCUPATIONS.map(occupation => (
+              <option key={occupation} value={occupation}>
+                {occupation}
+              </option>
+            ))}
+          </select>
+          {errors.occupation && <p className="mt-1 text-sm text-red-600">{errors.occupation}</p>}
+        </div>
+        
+        <div>
+          <label htmlFor="age" className="block text-base font-medium text-gray-700 mb-2">
+            Age
+          </label>
+          <select
+            id="age"
+            name="age"
+            value={formData.age}
+            onChange={handleInputChange}
+            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          >
+            <option value="">Select your age range</option>
+            <option value="13-18">13-18</option>
+            <option value="19-24">19-24</option>
+            <option value="25-34">25-34</option>
+            <option value="35-44">35-44</option>
+            <option value="45-54">45-54</option>
+            <option value="55+">55+</option>
+          </select>
+          {errors.age && <p className="mt-1 text-sm text-red-600">{errors.age}</p>}
+        </div>
+        
+        <div>
+          <label htmlFor="education_level" className="block text-base font-medium text-gray-700 mb-2">
+            Education Level
+          </label>
+          <select
+            id="education_level"
+            name="education_level"
+            value={formData.education_level}
+            onChange={handleInputChange}
+            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          >
+            <option value="">Select your education level</option>
+            {EDUCATION_LEVELS.map(level => (
+              <option key={level} value={level}>
+                {level}
+              </option>
+            ))}
+          </select>
+          {errors.education_level && <p className="mt-1 text-sm text-red-600">{errors.education_level}</p>}
+        </div>
+      </div>
+      
+      <div className="pt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="mr-4 rounded-md border border-gray-300 bg-white py-3 px-6 text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          onClick={handleNext}
+          className="rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+
+  // Render step 3: Interests
+  const renderStep3 = () => (
+    <div className="space-y-8">
+      <h2 className="text-2xl font-semibold">Interests</h2>
+      
+      <div className="space-y-6">
+        <div>
+          <label className="block text-base font-medium text-gray-700 mb-2">
+            Which topics are you most interested in learning?
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-10 gap-4 p-2">
+            {INTERESTS.map(interest => (
+              <div key={interest} className="flex items-center">
+                <input
+                  id={`interest-${interest}`}
+                  name="interests"
+                  type="checkbox"
+                  value={interest}
+                  checked={formData.interests.includes(interest)}
+                  onChange={handleInputChange}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <label htmlFor={`interest-${interest}`} className="ml-2 text-sm text-gray-700">
+                  {interest}
+                </label>
+              </div>
+            ))}
+          </div>
+          {errors.interests && <p className="mt-1 text-sm text-red-600">{errors.interests}</p>}
+        </div>
+        
+        <div className="pt-4">
+          <label className="block text-base font-medium text-gray-700 mb-2">
+            What level of technical depth do you prefer?
+          </label>
+          <div className="bg-gray-50 p-4 rounded-md">
+            <input
+              type="range"
+              name="technical_depth"
+              min="1"
+              max="10"
+              value={formData.technical_depth || 5}
+              onChange={handleInputChange}
+              className="w-full accent-primary-600"
+            />
+            <div className="flex justify-between mt-2 text-sm text-gray-600">
+              <span>Beginner-friendly</span>
+              <span>Technically detailed</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div className="pt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="mr-4 rounded-md border border-gray-300 bg-white py-3 px-6 text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          onClick={handleNext}
+          className="rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+
+  // Render step 4: Learning Preferences
+  const renderStep4 = () => (
+    <div className="space-y-8">
+      <h2 className="text-2xl font-semibold">Learning Preferences</h2>
+      
+      <div className="space-y-6">
+        <div>
+          <label className="block text-base font-medium text-gray-700 mb-2">
+            What is your preferred learning style?
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 gap-8 p-2">
+            {LEARNING_STYLES.map(style => (
+              <div key={style} className="flex items-center">
+                <input
+                  id={`learning-style-${style}`}
+                  name="learning_style"
+                  type="radio"
+                  value={style}
+                  checked={formData.learning_style === style}
+                  onChange={handleInputChange}
+                  className="h-4 w-4 border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <label htmlFor={`learning-style-${style}`} className="ml-2 text-sm text-gray-700">
+                  {style}
+                </label>
+              </div>
+            ))}
+          </div>
+          {errors.learning_style && <p className="mt-1 text-sm text-red-600">{errors.learning_style}</p>}
+        </div>
+        
+        <div>
+          <label className="block text-base font-medium text-gray-700 mb-2">
+            What types of analogies help you understand complex concepts best?
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4 p-2">
+            {ANALOGY_DOMAINS.map(domain => (
+              <div key={domain} className="flex items-center">
+                <input
+                  id={`analogy-${domain}`}
+                  name="preferred_analogy_domains"
+                  type="checkbox"
+                  value={domain}
+                  checked={formData.preferred_analogy_domains.includes(domain)}
+                  onChange={handleInputChange}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <label htmlFor={`analogy-${domain}`} className="ml-2 text-sm text-gray-700">
+                  {domain}
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        <div>
+          <label htmlFor="main_learning_goal" className="block text-base font-medium text-gray-700 mb-2">
+            What is your main learning goal?
+          </label>
+          <select
+            id="main_learning_goal"
+            name="main_learning_goal"
+            value={formData.main_learning_goal}
+            onChange={handleInputChange}
+            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          >
+            <option value="">Select your main learning goal</option>
+            {LEARNING_GOALS.map(goal => (
+              <option key={goal} value={goal}>
+                {goal}
+              </option>
+            ))}
+          </select>
+          {errors.main_learning_goal && <p className="mt-1 text-sm text-red-600">{errors.main_learning_goal}</p>}
+        </div>
+      </div>
+      
+      <div className="pt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="mr-4 rounded-md border border-gray-300 bg-white py-3 px-6 text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        >
+          Back
+        </button>
+        <button
+          type="submit"
+          className="rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        >
+          Complete Registration
+        </button>
+      </div>
+    </div>
+  );
+
+  // Render current step
   const renderStep = () => {
     switch (currentStep) {
       case 1:
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold mb-6">Basic Information</h2>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Username</label>
-              <input
-                type="text"
-                name="username"
-                value={formData.username}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-              />
-              {errors.username && <p className="mt-1 text-sm text-red-600">{errors.username}</p>}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Email</label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-              />
-              {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Password</label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-              />
-              {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
-            </div>
-            
-            <button
-              type="button"
-              onClick={handleNext}
-              className="w-full bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-            >
-              Next
-            </button>
-          </div>
-        );
-        
+        return renderStep1();
       case 2:
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold mb-6">Demographics</h2>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Occupation</label>
-              <select
-                name="occupation"
-                value={formData.occupation}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-              >
-                <option value="">Select occupation</option>
-                {OCCUPATIONS.map(occupation => (
-                  <option key={occupation} value={occupation}>
-                    {occupation}
-                  </option>
-                ))}
-              </select>
-              {errors.occupation && <p className="mt-1 text-sm text-red-600">{errors.occupation}</p>}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Age</label>
-              <input
-                type="number"
-                name="age"
-                value={formData.age}
-                onChange={handleInputChange}
-                min="13"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-              />
-              {errors.age && <p className="mt-1 text-sm text-red-600">{errors.age}</p>}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Education Level</label>
-              <select
-                name="education_level"
-                value={formData.education_level}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-              >
-                <option value="">Select education level</option>
-                {EDUCATION_LEVELS.map(level => (
-                  <option key={level} value={level}>
-                    {level}
-                  </option>
-                ))}
-              </select>
-              {errors.education_level && <p className="mt-1 text-sm text-red-600">{errors.education_level}</p>}
-            </div>
-            
-            <div className="flex justify-between">
-              <button
-                type="button"
-                onClick={handleBack}
-                className="bg-gray-200 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={handleNext}
-                className="bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        );
-        
+        return renderStep2();
       case 3:
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold mb-6">Interests</h2>
-            
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-              {INTERESTS.map(interest => (
-                <label key={interest} className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    name="interests"
-                    value={interest}
-                    checked={formData.interests.includes(interest)}
-                    onChange={handleInputChange}
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  />
-                  <span className="text-sm text-gray-700">{interest}</span>
-                </label>
-              ))}
-            </div>
-            
-            {errors.interests && <p className="mt-1 text-sm text-red-600">{errors.interests}</p>}
-            
-            <div className="flex justify-between">
-              <button
-                type="button"
-                onClick={handleBack}
-                className="bg-gray-200 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={handleNext}
-                className="bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        );
-        
+        return renderStep3();
       case 4:
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold mb-6">Learning Preferences</h2>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Preferred Learning Style</label>
-              <select
-                name="learning_style"
-                value={formData.learning_style}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-              >
-                <option value="">Select learning style</option>
-                {LEARNING_STYLES.map(style => (
-                  <option key={style} value={style}>
-                    {style}
-                  </option>
-                ))}
-              </select>
-              {errors.learning_style && <p className="mt-1 text-sm text-red-600">{errors.learning_style}</p>}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Technical Depth Preference</label>
-              <input
-                type="range"
-                name="technical_depth"
-                value={formData.technical_depth}
-                onChange={handleInputChange}
-                min="0"
-                max="100"
-                className="mt-1 block w-full"
-              />
-              <div className="flex justify-between text-sm text-gray-600">
-                <span>Beginner</span>
-                <span>Expert</span>
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Analogy Domains</label>
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                {ANALOGY_DOMAINS.map(domain => (
-                  <label key={domain} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      name="preferred_analogy_domains"
-                      value={domain}
-                      checked={formData.preferred_analogy_domains.includes(domain)}
-                      onChange={handleInputChange}
-                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                    />
-                    <span className="text-sm text-gray-700">{domain}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Main Learning Goal</label>
-              <select
-                name="main_learning_goal"
-                value={formData.main_learning_goal}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-              >
-                <option value="">Select learning goal</option>
-                {LEARNING_GOALS.map(goal => (
-                  <option key={goal} value={goal}>
-                    {goal}
-                  </option>
-                ))}
-              </select>
-              {errors.main_learning_goal && <p className="mt-1 text-sm text-red-600">{errors.main_learning_goal}</p>}
-            </div>
-            
-            <div className="flex justify-between">
-              <button
-                type="button"
-                onClick={handleBack}
-                className="bg-gray-200 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-              >
-                Back
-              </button>
-              <button
-                type="submit"
-                className="bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-              >
-                Complete Registration
-              </button>
-            </div>
-          </div>
-        );
-        
+        return renderStep4();
       default:
         return null;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Create your account
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Step {currentStep} of 4
-        </p>
+    <div className="w-full">
+      <div className="text-center mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">Create your account</h1>
+        <p className="mt-2 text-sm text-gray-600">Step {currentStep} of 4</p>
       </div>
-
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md md:max-w-lg lg:max-w-xl">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {renderStep()}
-          </form>
-        </div>
-
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-600">
-            Already have an account?{' '}
-            <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
-              Log in
-            </Link>
-          </p>
-        </div>
+      
+      <form onSubmit={handleSubmit}>
+        {renderStep()}
+      </form>
+      
+      <div className="mt-8 text-center">
+        <p className="text-sm text-gray-600">
+          Already have an account?{' '}
+          <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
+            Log in
+          </Link>
+        </p>
       </div>
     </div>
   );
