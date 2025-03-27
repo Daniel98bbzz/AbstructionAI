@@ -174,24 +174,50 @@ function Register() {
       if (authError) throw authError;
       
       // Create user profile
+      // Make sure arrays are properly formatted before saving to the database
+      const userProfile = {
+        id: authData.user.id,
+        username: formData.username,
+        occupation: formData.occupation.toLowerCase(),
+        age: parseInt(formData.age),
+        education_level: formData.education_level.toLowerCase(),
+        // Ensure interests is an array of strings
+        interests: formData.interests && Array.isArray(formData.interests) ? formData.interests : [],
+        learning_style: formData.learning_style.toLowerCase(),
+        technical_depth: parseInt(formData.technical_depth),
+        // Ensure preferred_analogy_domains is an array of strings
+        preferred_analogy_domains: formData.preferred_analogy_domains && Array.isArray(formData.preferred_analogy_domains) 
+          ? formData.preferred_analogy_domains 
+          : [],
+        main_learning_goal: formData.main_learning_goal.toLowerCase()
+      };
+      
+      console.log('Saving user profile with arrays:', {
+        interests: userProfile.interests,
+        preferred_analogy_domains: userProfile.preferred_analogy_domains
+      });
+      
       const { error: profileError } = await supabase
         .from('user_profiles')
-        .insert([
-          {
-            id: authData.user.id,
-            username: formData.username,
-            occupation: formData.occupation.toLowerCase(),
-            age: parseInt(formData.age),
-            education_level: formData.education_level.toLowerCase(),
-            interests: formData.interests,
-            learning_style: formData.learning_style.toLowerCase(),
-            technical_depth: parseInt(formData.technical_depth),
-            preferred_analogy_domains: formData.preferred_analogy_domains,
-            main_learning_goal: formData.main_learning_goal.toLowerCase()
-          }
-        ]);
+        .insert([userProfile]);
       
       if (profileError) throw profileError;
+      
+      // Also store profile in memory cache for immediate use
+      try {
+        await fetch('/api/hooks/profile-updated', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            table: 'user_profiles',
+            record: userProfile
+          })
+        });
+        console.log('Profile cache updated after registration');
+      } catch (cacheError) {
+        console.error('Failed to update profile cache:', cacheError);
+        // Non-fatal error, continue
+      }
       
       toast.success('Registration successful! Please check your email to verify your account.');
       navigate('/login');
@@ -465,34 +491,9 @@ function Register() {
         
         <div>
           <label className="block text-base font-medium text-gray-700 mb-2">
-            What types of analogies help you understand complex concepts best?
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4 p-2">
-            {ANALOGY_DOMAINS.map(domain => (
-              <div key={domain} className="flex items-center">
-                <input
-                  id={`analogy-${domain}`}
-                  name="preferred_analogy_domains"
-                  type="checkbox"
-                  value={domain}
-                  checked={formData.preferred_analogy_domains.includes(domain)}
-                  onChange={handleInputChange}
-                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <label htmlFor={`analogy-${domain}`} className="ml-2 text-sm text-gray-700">
-                  {domain}
-                </label>
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        <div>
-          <label htmlFor="main_learning_goal" className="block text-base font-medium text-gray-700 mb-2">
             What is your main learning goal?
           </label>
           <select
-            id="main_learning_goal"
             name="main_learning_goal"
             value={formData.main_learning_goal}
             onChange={handleInputChange}
@@ -518,49 +519,36 @@ function Register() {
           Back
         </button>
         <button
-          type="submit"
+          type="button"
+          onClick={handleSubmit}
           className="rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
         >
-          Complete Registration
+          Submit
         </button>
       </div>
     </div>
   );
 
-  // Render current step
-  const renderStep = () => {
-    switch (currentStep) {
-      case 1:
-        return renderStep1();
-      case 2:
-        return renderStep2();
-      case 3:
-        return renderStep3();
-      case 4:
-        return renderStep4();
-      default:
-        return null;
-    }
-  };
-
   return (
-    <div className="w-full">
-      <div className="text-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Create your account</h1>
-        <p className="mt-2 text-sm text-gray-600">Step {currentStep} of 4</p>
-      </div>
-      
-      <form onSubmit={handleSubmit}>
-        {renderStep()}
-      </form>
-      
-      <div className="mt-8 text-center">
-        <p className="text-sm text-gray-600">
-          Already have an account?{' '}
-          <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
-            Log in
-          </Link>
-        </p>
+    <div className="flex min-h-full items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="w-full max-w-md space-y-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
+            Create your account
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            Already have an account?{' '}
+            <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
+              Log in
+            </Link>
+          </p>
+        </div>
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {currentStep === 1 && renderStep1()}
+          {currentStep === 2 && renderStep2()}
+          {currentStep === 3 && renderStep3()}
+          {currentStep === 4 && renderStep4()}
+        </form>
       </div>
     </div>
   );

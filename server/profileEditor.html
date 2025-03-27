@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AbstructionAI Profile Editor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            white-space: pre-wrap;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #f1f1f1;
+            margin-right: 5px;
+            border-radius: 4px 4px 0 0;
+        }
+        .tab.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>AbstructionAI Profile Editor</h1>
+    
+    <div class="tabs">
+        <div class="tab active" data-tab="view">View Profile</div>
+        <div class="tab" data-tab="update">Update Profile</div>
+    </div>
+    
+    <div class="tab-content active" id="view-tab">
+        <div class="form-group">
+            <label for="view-userId">User ID:</label>
+            <input type="text" id="view-userId" placeholder="Enter user ID">
+        </div>
+        <button onclick="getProfile()">Get Profile</button>
+        <div id="profile-result" class="result"></div>
+    </div>
+    
+    <div class="tab-content" id="update-tab">
+        <div class="form-group">
+            <label for="userId">User ID:</label>
+            <input type="text" id="userId" placeholder="Enter user ID">
+        </div>
+        
+        <div class="form-group">
+            <label for="occupation">Occupation:</label>
+            <input type="text" id="occupation" placeholder="e.g. Software Developer, Student">
+        </div>
+        
+        <div class="form-group">
+            <label for="age">Age:</label>
+            <input type="number" id="age" min="13" max="100">
+        </div>
+        
+        <div class="form-group">
+            <label for="education">Education Level:</label>
+            <select id="education">
+                <option value="High School">High School</option>
+                <option value="Undergraduate">Undergraduate</option>
+                <option value="Graduate">Graduate</option>
+                <option value="Postgraduate">Postgraduate</option>
+                <option value="Self-taught">Self-taught</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="interests">Interests (comma separated):</label>
+            <input type="text" id="interests" placeholder="e.g. Video Games, Art, Technology">
+        </div>
+        
+        <div class="form-group">
+            <label for="learning-style">Learning Style:</label>
+            <select id="learning-style">
+                <option value="Visual">Visual</option>
+                <option value="Auditory">Auditory</option>
+                <option value="Reading/Writing">Reading/Writing</option>
+                <option value="Kinesthetic">Kinesthetic</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="technical-depth">Technical Depth (0-100):</label>
+            <input type="range" id="technical-depth" min="0" max="100" step="5" value="50">
+            <span id="depth-value">50</span>
+        </div>
+        
+        <div class="form-group">
+            <label for="analogy-domains">Preferred Analogy Domains (comma separated):</label>
+            <input type="text" id="analogy-domains" placeholder="e.g. Gaming, Cooking, Sports">
+        </div>
+        
+        <div class="form-group">
+            <label for="learning-goal">Main Learning Goal:</label>
+            <select id="learning-goal">
+                <option value="Personal Interest">Personal Interest</option>
+                <option value="Professional Development">Professional Development</option>
+                <option value="Academic Achievement">Academic Achievement</option>
+                <option value="Skill Building">Skill Building</option>
+                <option value="Problem Solving">Problem Solving</option>
+            </select>
+        </div>
+        
+        <button onclick="updateProfile()">Update Profile</button>
+        <button onclick="updateAndTest()" style="background-color: #ff9800; margin-left: 10px;">Update & Test</button>
+        <div id="update-result" class="result"></div>
+    </div>
+    
+    <script>
+        // Update technical depth value display
+        document.getElementById('technical-depth').addEventListener('input', function() {
+            document.getElementById('depth-value').textContent = this.value;
+        });
+        
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                // Remove active class from all tabs
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                
+                // Add active class to clicked tab
+                this.classList.add('active');
+                document.getElementById(this.dataset.tab + '-tab').classList.add('active');
+            });
+        });
+        
+        // Get profile function
+        async function getProfile() {
+            const userId = document.getElementById('view-userId').value;
+            if (!userId) {
+                alert('Please enter a user ID');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/view-memory-profile?userId=${userId}`);
+                const data = await response.json();
+                
+                document.getElementById('profile-result').textContent = JSON.stringify(data, null, 2);
+                
+                // If profile exists, pre-fill the update form
+                if (data.success && data.profile) {
+                    document.getElementById('userId').value = data.profile.id;
+                    document.getElementById('occupation').value = data.profile.occupation || '';
+                    document.getElementById('age').value = data.profile.age || '';
+                    document.getElementById('education').value = data.profile.education_level || 'Undergraduate';
+                    document.getElementById('interests').value = Array.isArray(data.profile.interests) ? 
+                        data.profile.interests.join(', ') : data.profile.interests || '';
+                    document.getElementById('learning-style').value = data.profile.learning_style || 'Visual';
+                    document.getElementById('technical-depth').value = data.profile.technical_depth || 50;
+                    document.getElementById('depth-value').textContent = data.profile.technical_depth || 50;
+                    document.getElementById('analogy-domains').value = Array.isArray(data.profile.preferred_analogy_domains) ? 
+                        data.profile.preferred_analogy_domains.join(', ') : data.profile.preferred_analogy_domains || '';
+                    document.getElementById('learning-goal').value = data.profile.main_learning_goal || 'Personal Interest';
+                    
+                    // Switch to update tab
+                    document.querySelector('.tab[data-tab="update"]').click();
+                }
+            } catch (error) {
+                document.getElementById('profile-result').textContent = `Error: ${error.message}`;
+            }
+        }
+        
+        // Update profile function
+        async function updateProfile() {
+            const userId = document.getElementById('userId').value;
+            if (!userId) {
+                alert('Please enter a user ID');
+                return;
+            }
+            
+            // Parse comma-separated lists into arrays
+            const interestsText = document.getElementById('interests').value;
+            const interestsArray = interestsText.split(',').map(item => item.trim()).filter(item => item);
+            
+            const analogyDomainsText = document.getElementById('analogy-domains').value;
+            const analogyDomainsArray = analogyDomainsText.split(',').map(item => item.trim()).filter(item => item);
+            
+            const profileData = {
+                userId: userId,
+                occupation: document.getElementById('occupation').value,
+                age: parseInt(document.getElementById('age').value),
+                education_level: document.getElementById('education').value,
+                interests: interestsArray,
+                learning_style: document.getElementById('learning-style').value,
+                technical_depth: parseInt(document.getElementById('technical-depth').value),
+                preferred_analogy_domains: analogyDomainsArray,
+                main_learning_goal: document.getElementById('learning-goal').value
+            };
+            
+            try {
+                const response = await fetch('/api/update-memory-profile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(profileData)
+                });
+                
+                const data = await response.json();
+                document.getElementById('update-result').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('update-result').textContent = `Error: ${error.message}`;
+            }
+        }
+        
+        // Update profile and force a test query
+        async function updateAndTest() {
+            // First update the profile
+            await updateProfile();
+            
+            // Wait a moment for the profile to be processed
+            setTimeout(async () => {
+                const userId = document.getElementById('userId').value;
+                if (!userId) return;
+                
+                try {
+                    // Make a test query request to see if the profile works
+                    const testQuery = "Explain how memory works in computers";
+                    
+                    const queryResponse = await fetch('/api/query', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            query: testQuery,
+                            userId: userId
+                        })
+                    });
+                    
+                    const queryData = await queryResponse.json();
+                    
+                    // Show the analogy
+                    document.getElementById('update-result').textContent += '\n\nTEST QUERY RESULT:\n\n' + 
+                        'Title: ' + queryData.suggested_title + '\n\n' +
+                        'Analogy: ' + queryData.analogy;
+                } catch (error) {
+                    document.getElementById('update-result').textContent += '\n\nTest query error: ' + error.message;
+                }
+            }, 500);
+        }
+    </script>
+</body>
+</html> 

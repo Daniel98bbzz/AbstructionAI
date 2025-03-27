@@ -155,7 +155,7 @@ function Profile() {
       setSuccessMessage('');
       setError(null);
       
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('user_profiles')
         .update({
           username: formData.username,
@@ -169,9 +169,41 @@ function Profile() {
           main_learning_goal: formData.main_learning_goal,
           updated_at: new Date().toISOString()
         })
-        .eq('id', user.id);
+        .eq('id', user.id)
+        .select();
       
       if (error) throw error;
+      
+      // Call the webhook to update the memory cache
+      try {
+        const response = await fetch('/api/hooks/profile-updated', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            table: 'user_profiles',
+            record: {
+              id: user.id,
+              username: formData.username,
+              occupation: formData.occupation,
+              age: formData.age,
+              education_level: formData.education_level,
+              interests: formData.interests,
+              learning_style: formData.learning_style,
+              technical_depth: formData.technical_depth,
+              preferred_analogy_domains: formData.preferred_analogy_domains,
+              main_learning_goal: formData.main_learning_goal
+            }
+          })
+        });
+        
+        const hookResult = await response.json();
+        console.log('Profile webhook result:', hookResult);
+      } catch (hookError) {
+        console.error('Warning: Failed to call profile webhook:', hookError);
+        // Don't throw error here, just log it
+      }
       
       toast.success('Profile updated successfully');
       setSuccessMessage('Profile updated successfully');
