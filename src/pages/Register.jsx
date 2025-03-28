@@ -229,11 +229,11 @@ function Register() {
   // Render step 1: Basic Information
   const renderStep1 = () => (
     <div className="space-y-8">
-      <h2 className="text-2xl font-semibold">Basic Information</h2>
+      <h2 className="text-2xl font-semibold text-gray-900">Basic Information</h2>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 gap-6">
         <div>
-          <label htmlFor="username" className="block text-base font-medium text-gray-700 mb-2">
+          <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
             Username
           </label>
           <input
@@ -244,13 +244,13 @@ function Register() {
             value={formData.username}
             onChange={handleInputChange}
             placeholder="Choose a username"
-            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 placeholder-gray-400"
           />
           {errors.username && <p className="mt-1 text-sm text-red-600">{errors.username}</p>}
         </div>
         
         <div>
-          <label htmlFor="email" className="block text-base font-medium text-gray-700 mb-2">
+          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
             Email
           </label>
           <input
@@ -261,13 +261,13 @@ function Register() {
             value={formData.email}
             onChange={handleInputChange}
             placeholder="Enter your email address"
-            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 placeholder-gray-400"
           />
           {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
         </div>
         
         <div>
-          <label htmlFor="password" className="block text-base font-medium text-gray-700 mb-2">
+          <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
             Password
           </label>
           <input
@@ -278,17 +278,17 @@ function Register() {
             value={formData.password}
             onChange={handleInputChange}
             placeholder="Create a secure password"
-            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 placeholder-gray-400"
           />
           {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
         </div>
       </div>
       
-      <div className="pt-4">
+      <div className="pt-6">
         <button
           type="button"
           onClick={handleNext}
-          className="w-full md:w-auto md:min-w-[200px] rounded-md bg-primary-600 py-3 px-5 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          className="w-full rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200"
         >
           Next
         </button>
@@ -299,11 +299,11 @@ function Register() {
   // Render step 2: Demographics
   const renderStep2 = () => (
     <div className="space-y-8">
-      <h2 className="text-2xl font-semibold">Demographics</h2>
+      <h2 className="text-2xl font-semibold text-gray-900">Demographics</h2>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 gap-6">
         <div>
-          <label htmlFor="occupation" className="block text-base font-medium text-gray-700 mb-2">
+          <label htmlFor="occupation" className="block text-sm font-medium text-gray-700 mb-1">
             Occupation
           </label>
           <select
@@ -324,7 +324,7 @@ function Register() {
         </div>
         
         <div>
-          <label htmlFor="age" className="block text-base font-medium text-gray-700 mb-2">
+          <label htmlFor="age" className="block text-sm font-medium text-gray-700 mb-1">
             Age
           </label>
           <select
@@ -346,7 +346,7 @@ function Register() {
         </div>
         
         <div>
-          <label htmlFor="education_level" className="block text-base font-medium text-gray-700 mb-2">
+          <label htmlFor="education_level" className="block text-sm font-medium text-gray-700 mb-1">
             Education Level
           </label>
           <select
@@ -367,18 +367,18 @@ function Register() {
         </div>
       </div>
       
-      <div className="pt-4 flex justify-end">
+      <div className="pt-6 flex justify-end space-x-4">
         <button
           type="button"
           onClick={handleBack}
-          className="mr-4 rounded-md border border-gray-300 bg-white py-3 px-6 text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          className="rounded-md border border-gray-300 bg-white py-3 px-6 text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200"
         >
           Back
         </button>
         <button
           type="button"
           onClick={handleNext}
-          className="rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          className="rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200"
         >
           Next
         </button>
@@ -389,39 +389,41 @@ function Register() {
   // Render step 3: Interests
   const renderStep3 = () => (
     <div className="space-y-8">
-      <h2 className="text-2xl font-semibold">Interests</h2>
+      <h2 className="text-2xl font-semibold text-gray-900">Interests</h2>
       
       <div className="space-y-6">
         <div>
-          <label className="block text-base font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-3">
             Which topics are you most interested in learning?
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-10 gap-4 p-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {INTERESTS.map(interest => (
-              <div key={interest} className="flex items-center">
-                <input
-                  id={`interest-${interest}`}
-                  name="interests"
-                  type="checkbox"
-                  value={interest}
-                  checked={formData.interests.includes(interest)}
-                  onChange={handleInputChange}
-                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
+              <div key={interest} className="relative flex items-start">
+                <div className="flex h-5 items-center">
+                  <input
+                    id={`interest-${interest}`}
+                    name="interests"
+                    type="checkbox"
+                    value={interest}
+                    checked={formData.interests.includes(interest)}
+                    onChange={handleInputChange}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                </div>
                 <label htmlFor={`interest-${interest}`} className="ml-2 text-sm text-gray-700">
                   {interest}
                 </label>
               </div>
             ))}
           </div>
-          {errors.interests && <p className="mt-1 text-sm text-red-600">{errors.interests}</p>}
+          {errors.interests && <p className="mt-2 text-sm text-red-600">{errors.interests}</p>}
         </div>
         
         <div className="pt-4">
-          <label className="block text-base font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-3">
             What level of technical depth do you prefer?
           </label>
-          <div className="bg-gray-50 p-4 rounded-md">
+          <div className="bg-gray-50 p-6 rounded-lg">
             <input
               type="range"
               name="technical_depth"
@@ -439,18 +441,18 @@ function Register() {
         </div>
       </div>
       
-      <div className="pt-4 flex justify-end">
+      <div className="pt-6 flex justify-end space-x-4">
         <button
           type="button"
           onClick={handleBack}
-          className="mr-4 rounded-md border border-gray-300 bg-white py-3 px-6 text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          className="rounded-md border border-gray-300 bg-white py-3 px-6 text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200"
         >
           Back
         </button>
         <button
           type="button"
           onClick={handleNext}
-          className="rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          className="rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200"
         >
           Next
         </button>
@@ -461,36 +463,38 @@ function Register() {
   // Render step 4: Learning Preferences
   const renderStep4 = () => (
     <div className="space-y-8">
-      <h2 className="text-2xl font-semibold">Learning Preferences</h2>
+      <h2 className="text-2xl font-semibold text-gray-900">Learning Preferences</h2>
       
       <div className="space-y-6">
         <div>
-          <label className="block text-base font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-3">
             What is your preferred learning style?
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 gap-8 p-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {LEARNING_STYLES.map(style => (
-              <div key={style} className="flex items-center">
-                <input
-                  id={`learning-style-${style}`}
-                  name="learning_style"
-                  type="radio"
-                  value={style}
-                  checked={formData.learning_style === style}
-                  onChange={handleInputChange}
-                  className="h-4 w-4 border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
+              <div key={style} className="relative flex items-start p-4 border border-gray-200 rounded-lg hover:border-primary-500 transition-colors duration-200">
+                <div className="flex h-5 items-center">
+                  <input
+                    id={`learning-style-${style}`}
+                    name="learning_style"
+                    type="radio"
+                    value={style}
+                    checked={formData.learning_style === style}
+                    onChange={handleInputChange}
+                    className="h-4 w-4 border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                </div>
                 <label htmlFor={`learning-style-${style}`} className="ml-2 text-sm text-gray-700">
                   {style}
                 </label>
               </div>
             ))}
           </div>
-          {errors.learning_style && <p className="mt-1 text-sm text-red-600">{errors.learning_style}</p>}
+          {errors.learning_style && <p className="mt-2 text-sm text-red-600">{errors.learning_style}</p>}
         </div>
         
         <div>
-          <label className="block text-base font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-3">
             What is your main learning goal?
           </label>
           <select
@@ -506,22 +510,22 @@ function Register() {
               </option>
             ))}
           </select>
-          {errors.main_learning_goal && <p className="mt-1 text-sm text-red-600">{errors.main_learning_goal}</p>}
+          {errors.main_learning_goal && <p className="mt-2 text-sm text-red-600">{errors.main_learning_goal}</p>}
         </div>
       </div>
       
-      <div className="pt-4 flex justify-end">
+      <div className="pt-6 flex justify-end space-x-4">
         <button
           type="button"
           onClick={handleBack}
-          className="mr-4 rounded-md border border-gray-300 bg-white py-3 px-6 text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          className="rounded-md border border-gray-300 bg-white py-3 px-6 text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200"
         >
           Back
         </button>
         <button
           type="button"
           onClick={handleSubmit}
-          className="rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          className="rounded-md bg-primary-600 py-3 px-6 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200"
         >
           Submit
         </button>
@@ -531,7 +535,7 @@ function Register() {
 
   return (
     <div className="flex min-h-full items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-8">
+      <div className="w-full max-w-2xl space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
             Create your account
@@ -543,7 +547,7 @@ function Register() {
             </Link>
           </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form className="mt-8 space-y-6 bg-white shadow rounded-lg p-8" onSubmit={handleSubmit}>
           {currentStep === 1 && renderStep1()}
           {currentStep === 2 && renderStep2()}
           {currentStep === 3 && renderStep3()}

@@ -155,14 +155,14 @@ app.post('/api/query', async (req, res) => {
         
         // Fallback to direct query if UserProfileManager fails
         if (!userProfile) {
-          const { data, error } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', userId)
-            .single();
-            
-          if (!error && data) {
-            userProfile = data;
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+          
+        if (!error && data) {
+          userProfile = data;
             console.log('Using user profile from direct query');
           } else if (error) {
             console.error('Error in direct query for user profile:', error);
@@ -522,42 +522,42 @@ Never skip any section of the format. Each section must be properly identified w
       } else {
         // Regular parsing for well-formatted responses
         // Split by section headers with improved pattern matching
-        const titleMatch = responseText.match(/SUGGESTED_TITLE:[\s\S]*?(?=Introduction:|$)/i);
-        const introMatch = responseText.match(/Introduction:[\s\S]*?(?=Explanation:|$)/i);
-        const explanationMatch = responseText.match(/Explanation:[\s\S]*?(?=Analogy:|$)/i);
-        const analogyMatch = responseText.match(/Analogy:[\s\S]*?(?=Additional Sources:|$)/i);
-        const sourcesMatch = responseText.match(/Additional Sources:[\s\S]*?(?=Brief Recap:|$)/i);
-        const recapMatch = responseText.match(/Brief Recap:[\s\S]*?(?=Style and Guidelines:|$)/i);
+      const titleMatch = responseText.match(/SUGGESTED_TITLE:[\s\S]*?(?=Introduction:|$)/i);
+      const introMatch = responseText.match(/Introduction:[\s\S]*?(?=Explanation:|$)/i);
+      const explanationMatch = responseText.match(/Explanation:[\s\S]*?(?=Analogy:|$)/i);
+      const analogyMatch = responseText.match(/Analogy:[\s\S]*?(?=Additional Sources:|$)/i);
+      const sourcesMatch = responseText.match(/Additional Sources:[\s\S]*?(?=Brief Recap:|$)/i);
+      const recapMatch = responseText.match(/Brief Recap:[\s\S]*?(?=Style and Guidelines:|$)/i);
+      
+      if (titleMatch) sections.suggested_title = titleMatch[0].replace(/SUGGESTED_TITLE:/i, '').trim();
+      if (introMatch) sections.introduction = introMatch[0].replace(/Introduction:/i, '').trim();
+      if (explanationMatch) sections.explanation = explanationMatch[0].replace(/Explanation:/i, '').trim();
+      if (analogyMatch) sections.analogy = analogyMatch[0].replace(/Analogy:/i, '').trim();
+      
+      // Process resources
+      if (sourcesMatch) {
+        const sourcesContent = sourcesMatch[0].replace(/Additional Sources:/i, '').trim();
+        const resourceLines = sourcesContent.split('\n').filter(line => line.trim());
         
-        if (titleMatch) sections.suggested_title = titleMatch[0].replace(/SUGGESTED_TITLE:/i, '').trim();
-        if (introMatch) sections.introduction = introMatch[0].replace(/Introduction:/i, '').trim();
-        if (explanationMatch) sections.explanation = explanationMatch[0].replace(/Explanation:/i, '').trim();
-        if (analogyMatch) sections.analogy = analogyMatch[0].replace(/Analogy:/i, '').trim();
-        
-        // Process resources
-        if (sourcesMatch) {
-          const sourcesContent = sourcesMatch[0].replace(/Additional Sources:/i, '').trim();
-          const resourceLines = sourcesContent.split('\n').filter(line => line.trim());
-          
-          sections.additional_sources = resourceLines.map(line => {
-            const urlMatch = line.match(/\[(.*?)\]\((.*?)\)/);
-            if (urlMatch) {
-              return {
-                title: urlMatch[1],
-                url: urlMatch[2],
-                description: ''
-              };
-            } else {
-              return {
-                title: line,
-                url: '',
-                description: ''
-              };
-            }
-          });
-        }
-        
-        if (recapMatch) sections.recap = recapMatch[0].replace(/Brief Recap:/i, '').trim();
+        sections.additional_sources = resourceLines.map(line => {
+          const urlMatch = line.match(/\[(.*?)\]\((.*?)\)/);
+          if (urlMatch) {
+            return {
+              title: urlMatch[1],
+              url: urlMatch[2],
+              description: ''
+            };
+          } else {
+            return {
+              title: line,
+              url: '',
+              description: ''
+            };
+          }
+        });
+      }
+      
+      if (recapMatch) sections.recap = recapMatch[0].replace(/Brief Recap:/i, '').trim();
       }
       
       // Check if analogy uses preferred domains
