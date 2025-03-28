@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from './AuthContext';
 import axios from 'axios';
+import { API_URL } from '../config';
 
 const QueryContext = createContext();
 
@@ -156,13 +157,22 @@ export function QueryProvider({ children }) {
         console.log('Sending query to backend:', {
           query,
           sessionId,
-          preferences
+          preferences,
+          userId: user.id
         });
         
-        const response = await axios.post('/api/query', {
+        // Log the user's full profile info for debugging
+        console.log('Current user:', {
+          id: user.id,
+          email: user.email,
+          metadata: user.user_metadata
+        });
+        
+        const response = await axios.post(`${API_URL}/api/query`, {
           query,
           sessionId,
-          preferences
+          preferences,
+          userId: user.id  // Explicitly include user ID
         });
         
         console.log('Received response from backend:', response);
@@ -550,7 +560,7 @@ export function QueryProvider({ children }) {
           // Include feedback in the API call so the backend can adapt
           const response = await axios.post('/api/query', {
             query,
-            sessionId: currentSession.id,
+            sessionId: currentSession?.id,
             preferences: updatedPreferences,
             feedback: {
               ...feedbackDetails,

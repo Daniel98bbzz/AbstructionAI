@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery } from '../contexts/QueryContext';
 
@@ -13,6 +13,7 @@ function Dashboard() {
     averageRating: 0,
     topCategories: []
   });
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -108,7 +109,47 @@ function Dashboard() {
   }
 
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-8">Welcome, {user?.email}</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Query Card */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold mb-4">New Query</h2>
+          <p className="text-gray-600 mb-4">Start a new query to analyze your data</p>
+          <button
+            onClick={() => navigate('/query')}
+            className="w-full px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+          >
+            Start Query
+          </button>
+        </div>
+
+        {/* History Card */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold mb-4">Query History</h2>
+          <p className="text-gray-600 mb-4">View your past queries and results</p>
+          <button
+            onClick={() => navigate('/history')}
+            className="w-full px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+          >
+            View History
+          </button>
+        </div>
+
+        {/* Feedbacks Card */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold mb-4">User Feedbacks</h2>
+          <p className="text-gray-600 mb-4">View and manage user feedbacks</p>
+          <button
+            onClick={() => navigate('/admin/feedbacks')}
+            className="w-full px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+          >
+            View Feedbacks
+          </button>
+        </div>
+      </div>
+
       <div className="md:flex md:items-center md:justify-between mb-8">
         <div className="flex-1 min-w-0">
           <h1 className="text-3xl font-bold text-gray-900">
