@@ -91,9 +91,16 @@ app.post('/api/query', async (req, res) => {
       userProfile.interests = ensureArray(userProfile.interests);
       userProfile.preferred_analogy_domains = ensureArray(userProfile.preferred_analogy_domains);
       
-      console.log('User profile from memory cache has arrays:', {
+      // Add comprehensive logging of all profile parameters that affect AI responses
+      console.log('User profile parameters affecting AI response:', {
         interests: userProfile.interests,
-        preferred_analogy_domains: userProfile.preferred_analogy_domains
+        preferred_analogy_domains: userProfile.preferred_analogy_domains,
+        occupation: userProfile.occupation,
+        education_level: userProfile.education_level,
+        age: userProfile.age,
+        learning_style: userProfile.learning_style,
+        technical_depth: userProfile.technical_depth,
+        main_learning_goal: userProfile.main_learning_goal
       });
       
       // Reload in background to keep memory cache fresh
@@ -421,6 +428,25 @@ Never skip any section of the format. Each section must be properly identified w
     // Add current query
     historyMessages.push({ role: "user", content: query });
 
+    // Prepare the system prompt
+    let systemPrompt = systemContext;
+
+    // If we have a user profile, add personalization checks to the logs
+    if (userProfile) {
+      console.log('Analogy domain check - Using preferred domains?:', !!userProfile.preferred_analogy_domains.length);
+      if (userProfile.preferred_analogy_domains.length > 0) {
+        console.log('Preferred domains:', userProfile.preferred_analogy_domains.join(', ').toLowerCase());
+      }
+      
+      console.log('Technical depth check - Value:', userProfile.technical_depth);
+      console.log('Learning style check - Using style:', userProfile.learning_style);
+      console.log('Education level check - Level:', userProfile.education_level);
+      console.log('Occupation check - Occupation:', userProfile.occupation);
+      console.log('Age check - Age:', userProfile.age);
+      console.log('Learning goal check - Goal:', userProfile.main_learning_goal);
+      console.log('Interests check - Using interests:', userProfile.interests.join(', '));
+    }
+
     // Call OpenAI API with enhanced context
     const completion = await openai.chat.completions.create({
       model: "gpt-4",  // Use GPT-4 for more comprehensive responses
@@ -698,6 +724,36 @@ No exceptions. No other domains. If you fail to follow this instruction exactly,
     sections.additional_sources = sections.additional_sources.length ? sections.additional_sources : [];
     sections.recap = sections.recap || 'No recap provided';
     
+    // Parse the AI response into sections
+    console.log('Parsing AI response into sections...');
+    
+    // Log a snippet of the analogy to see if it matches preferred domains
+    if (userProfile && sections.analogy) {
+      const analogySnippet = sections.analogy.toLowerCase().substring(0, 100) + '...';
+      console.log('Analogy snippet:', analogySnippet);
+      
+      // Check if analogy uses preferred domains
+      userProfile.preferred_analogy_domains.forEach(domain => {
+        if (sections.analogy.toLowerCase().includes(domain.toLowerCase())) {
+          console.log(`✓ Analogy uses preferred domain: ${domain}`);
+        }
+      });
+      
+      // Check if technical depth matches preference
+      const technicalTerms = ['algorithm', 'function', 'parameter', 'variable', 'implementation', 'architecture', 
+                            'protocol', 'framework', 'runtime', 'compiler', 'interface'];
+      let technicalTermCount = 0;
+      technicalTerms.forEach(term => {
+        const regex = new RegExp(term, 'gi');
+        const matches = (sections.explanation.match(regex) || []).length;
+        technicalTermCount += matches;
+      });
+      console.log(`Technical term usage count: ${technicalTermCount} (user preference: ${userProfile.technical_depth}/100)`);
+      
+      // Check if learning style is addressed
+      console.log(`Learning style check (${userProfile.learning_style}): Response length ${sections.explanation.length} chars`);
+    }
+    
     // Prepare final response
     const response = {
       id: uuidv4(),
@@ -828,9 +884,15 @@ app.put('/api/user/profile', async (req, res) => {
     // Update in memory cache
     global.userProfiles[userId] = formattedProfile;
     
-    console.log('Profile updated. New preferences:', {
+    console.log('Profile updated. New profile parameters:', {
       interests: formattedProfile.interests,
-      preferred_analogy_domains: formattedProfile.preferred_analogy_domains
+      preferred_analogy_domains: formattedProfile.preferred_analogy_domains,
+      occupation: formattedProfile.occupation,
+      education_level: formattedProfile.education_level,
+      age: formattedProfile.age,
+      learning_style: formattedProfile.learning_style,
+      technical_depth: formattedProfile.technical_depth,
+      main_learning_goal: formattedProfile.main_learning_goal
     });
     
     res.json(formattedProfile);
@@ -1122,9 +1184,15 @@ app.post('/api/update-memory-profile', async (req, res) => {
     global.userProfiles[userId] = updatedProfile;
     
     console.log('Updated memory profile for user:', userId);
-    console.log('New preferences:', {
+    console.log('User profile parameters after memory update:', {
       interests: updatedProfile.interests,
-      preferred_analogy_domains: updatedProfile.preferred_analogy_domains
+      preferred_analogy_domains: updatedProfile.preferred_analogy_domains,
+      occupation: updatedProfile.occupation,
+      education_level: updatedProfile.education_level,
+      age: updatedProfile.age,
+      learning_style: updatedProfile.learning_style,
+      technical_depth: updatedProfile.technical_depth,
+      main_learning_goal: updatedProfile.main_learning_goal
     });
     
     res.json({
@@ -1211,9 +1279,15 @@ app.post('/api/hooks/profile-updated', async (req, res) => {
       global.userProfiles[record.id] = formattedProfile;
       
       console.log('Memory cache updated from webhook for user:', record.id);
-      console.log('New preferences:', {
+      console.log('User profile parameters after update:', {
         interests: formattedProfile.interests,
-        preferred_analogy_domains: formattedProfile.preferred_analogy_domains
+        preferred_analogy_domains: formattedProfile.preferred_analogy_domains,
+        occupation: formattedProfile.occupation,
+        education_level: formattedProfile.education_level,
+        age: formattedProfile.age,
+        learning_style: formattedProfile.learning_style,
+        technical_depth: formattedProfile.technical_depth,
+        main_learning_goal: formattedProfile.main_learning_goal
       });
       
       res.json({ success: true, message: 'Profile updated in memory cache' });
