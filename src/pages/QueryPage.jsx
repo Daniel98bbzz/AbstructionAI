@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom';
 import ConversationHistory from '../components/ConversationHistory';
 import FeedbackForm from '../components/FeedbackForm';
 import { supabase } from '../lib/supabaseClient';
+import QueryToQuiz from '../components/QueryToQuiz';
+
 
 function QueryPage() {
   const { user } = useAuth();
@@ -691,6 +693,30 @@ function QueryPage() {
                   )}
                 </div>
               </div>
+                    {/* Quiz Generation Option */}
+              {message.type === 'assistant' && !showFeedbackFor && (
+                <div className="mt-4">
+                  <QueryToQuiz 
+                    query={messages.find(m => m.type === 'user' && m.timestamp < message.timestamp)?.content || ''}
+                    responseContent={message.content}
+                  />
+                </div>
+              )}
+
+              // This should be placed just before this block:
+              {/* Feedback form below AI responses */}
+              {message.type === 'assistant' && showFeedbackFor === message.id && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <FeedbackForm
+                    responseId={message.id}
+                    onFeedbackSubmitted={() => setShowFeedbackFor(null)}
+                    originalQuery={query}
+                    preferences={preferences}
+                    onRegenerateAnswer={handleRegenerateAnswer}
+                    sessionId={sessionId}
+                  />
+                </div>
+              )}
               
               {/* Feedback form below AI responses */}
               {message.type === 'assistant' && showFeedbackFor === message.id && (

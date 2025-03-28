@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery } from '../contexts/QueryContext';
+import QuizStats from '../components/QuizStats';
+
 
 function Dashboard() {
   const { user } = useAuth();
@@ -300,6 +302,10 @@ function Dashboard() {
             </div>
           )}
         </div>
+      </div>
+      {/* Quiz Stats */}
+      <div className="mb-8">
+        <QuizStats />
       </div>
 
       {/* Suggested Topics */}

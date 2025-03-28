@@ -1,3 +1,4 @@
+// src/App.jsx - Updated with Quiz Route
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
@@ -14,6 +15,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import QueryPage from './pages/QueryPage';
+import QuizPage from './pages/QuizPage'; // Import the new quiz page
 import History from './pages/History';
 import NotFound from './pages/NotFound';
 import VerifyEmail from './pages/VerifyEmail';
@@ -49,16 +51,14 @@ const AdminRoute = ({ children }) => {
   }
   
   // Check if user has admin role
-  // const isAdmin = user && (
-  //   user.user_metadata?.role === 'admin' || 
-  //   user.email === 'admin@example.com' // Add your admin email here or other verification logic
-  // );
-
-  const isAdmin = true;
+  const isAdmin = user && (
+    user.user_metadata?.role === 'admin' || 
+    user.email === 'admin@example.com' // Add your admin email here or other verification logic
+  );
   
-  // if (!isAdmin) {
-  //   return <Navigate to="/dashboard" replace />;
-  // }
+  if (!user || !isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
   
   return children;
 };
@@ -89,6 +89,7 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="profile" element={<Profile />} />
           <Route path="query" element={<QueryPage />} />
+          <Route path="quiz" element={<QuizPage />} /> {/* New quiz route */}
           <Route path="history" element={<History />} />
         </Route>
         
