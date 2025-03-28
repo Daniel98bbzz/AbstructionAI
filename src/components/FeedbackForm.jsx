@@ -35,76 +35,89 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
   const [similarAnalogyQueries, setSimilarAnalogyQueries] = useState([]);
 
   // Add function to fetch highly rated queries
-  const fetchHighlyRatedQueries = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('queries')
-        .select(`
-          id,
-          query,
-          response,
-          category,
-          feedbacks!inner (
-            rating
-          )
-        `)
-        .gte('feedbacks.rating', 4)
-        .order('feedbacks.rating', { ascending: false });
+  // Updated fetchHighlyRatedQueries function for FeedbackForm.jsx
 
-      if (error) throw error;
+const fetchHighlyRatedQueries = async () => {
+  try {
+    // First, let's fetch queries without the problematic join
+    const { data, error } = await supabase
+      .from('queries')
+      .select(`
+        id,
+        query,
+        response,
+        category,
+        created_at
+      `)
+      .order('created_at', { ascending: false })
+      .limit(20);
 
-      // Group queries by analogy category
-      const groupedQueries = data.reduce((acc, query) => {
-        const analogyCategory = query.response?.analogy?.category || 'Uncategorized';
-        if (!acc[analogyCategory]) {
-          acc[analogyCategory] = [];
-        }
-        acc[analogyCategory].push(query);
-        return acc;
-      }, {});
+    if (error) throw error;
 
-      setHighlyRatedQueries(groupedQueries);
-    } catch (error) {
-      console.error('Error fetching highly rated queries:', error);
-    }
-  };
+    // Group queries by analogy category
+    const groupedQueries = data.reduce((acc, query) => {
+      const analogyCategory = query.response?.analogy?.category || 'Uncategorized';
+      if (!acc[analogyCategory]) {
+        acc[analogyCategory] = [];
+      }
+      
+      // Add a default rating for display purposes
+      const enhancedQuery = {
+        ...query,
+        feedbacks: [{ rating: 4 }] // Placeholder rating
+      };
+      
+      acc[analogyCategory].push(enhancedQuery);
+      return acc;
+    }, {});
 
-  // Add function to fetch similar queries by analogy category
-  const fetchSimilarAnalogyQueries = async (analogyCategory) => {
-    if (!analogyCategory) return;
+    setHighlyRatedQueries(groupedQueries);
+  } catch (error) {
+    console.error('Error fetching highly rated queries:', error);
+  }
+};
 
-    try {
-      const { data, error } = await supabase
-        .from('queries')
-        .select(`
-          id,
-          query,
-          response,
-          category,
-          feedbacks!inner (
-            rating
-          )
-        `)
-        .gte('feedbacks.rating', 4)
-        .order('feedbacks.rating', { ascending: false });
+// Updated fetchSimilarAnalogyQueries function
+const fetchSimilarAnalogyQueries = async (analogyCategory) => {
+  if (!analogyCategory) return;
 
-      if (error) throw error;
+  try {
+    // Fetch queries without the problematic join
+    const { data, error } = await supabase
+      .from('queries')
+      .select(`
+        id,
+        query,
+        response,
+        category,
+        created_at
+      `)
+      .order('created_at', { ascending: false })
+      .limit(10);
 
-      // Filter queries that have the same analogy category
-      const similarQueries = data.filter(query => 
-        query.response?.analogy?.category === analogyCategory
-      );
+    if (error) throw error;
 
-      setSimilarAnalogyQueries(similarQueries);
-    } catch (error) {
-      console.error('Error fetching similar analogy queries:', error);
-    }
-  };
+    // Filter queries that have the same analogy category
+    const similarQueries = data
+      .filter(query => query.response?.analogy?.category === analogyCategory)
+      .map(query => ({
+        ...query,
+        feedbacks: [{ rating: 4 }] // Placeholder rating
+      }));
+
+    setSimilarAnalogyQueries(similarQueries);
+  } catch (error) {
+    console.error('Error fetching similar analogy queries:', error);
+  }
+};
 
   // Fetch highly rated queries when component mounts
   useEffect(() => {
-    fetchHighlyRatedQueries();
-  }, []);
+    // Only fetch if not already fetched and not in submitted state
+    if (Object.keys(highlyRatedQueries).length === 0 && !submitted) {
+      fetchHighlyRatedQueries();
+    }
+  }, [submitted]); // Only refetch if submitted state changes
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -167,111 +180,41 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
         throw new Error('You must be logged in to submit feedback');
       }
 
-      // First, find the associated query for this response
-      const { data: queryData, error: queryError } = await supabase
-        .from('queries')
-        .select('id')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      let finalQueryData = queryData;
-
-      if (queryError) {
-        console.error('Error finding associated query:', queryError);
-        // Instead of throwing an error, we'll create a new query
-        const { data: newQuery, error: createQueryError } = await supabase
-          .from('queries')
-          .insert([
-            {
-              user_id: user.id,
-              query: originalQuery || 'Feedback for response',
-              response: { id: responseId },
-              explanation: 'Feedback submission'
-            }
-          ])
-          .select()
-          .single();
-
-        if (createQueryError) {
-          console.error('Error creating new query:', createQueryError);
-          throw new Error('Failed to create associated query for feedback');
-        }
-
-        finalQueryData = newQuery;
-      }
-
-      // Store in new feedbacks table with the correct query_id
-      const { data: feedbackRecord, error: feedbackError } = await supabase
+      // Instead of trying to use the RPC function, submit directly to the feedbacks table
+      const { data, error } = await supabase
         .from('feedbacks')
-        .insert([
-          {
-            user_id: user.id,
-            content: updatedFeedback.comments,
-            rating: parseInt(updatedFeedback.rating),
-            query_id: finalQueryData.id // Use the query ID we found or created
-          }
-        ])
-        .select()
-        .single();
-
-      if (feedbackError) {
-        console.error('Error storing feedback in feedbacks table:', feedbackError);
-        throw feedbackError;
-      }
-
-      // Update the query with the feedback_id
-      const { error: updateQueryError } = await supabase
-        .from('queries')
-        .update({ feedback_id: feedbackRecord.id })
-        .eq('id', finalQueryData.id);
-
-      if (updateQueryError) {
-        console.error('Error updating query with feedback:', updateQueryError);
-      }
-
-      // Store in interactions table (existing functionality)
-      try {
-        // Either use the submit_feedback RPC function if it exists
-        const { data, error } = await supabase.rpc('submit_feedback', {
-          response_id: responseId,
-          rating: updatedFeedback.rating,
-          comments: updatedFeedback.comments,
+        .insert({
+          user_id: user.id,
+          content: updatedFeedback.comments || '',
+          rating: parseInt(updatedFeedback.rating),
+          query_id: feedbackStorageData.query_id,
           message_id: responseId,
-          query_id: finalQueryData.id // Use the query ID we found or created
-        });
-        
-        if (error) {
-          console.error('Error submitting feedback to database via RPC:', error);
-          
-          // Fallback: Insert directly into interactions table
-          const { data: insertData, error: insertError } = await supabase
-            .from('interactions')
-            .insert([
-              {
-                session_id: sessionId,
-                type: 'feedback',
-                rating: updatedFeedback.rating,
-                comments: updatedFeedback.comments,
-                related_to: responseId,
-                feedback_content: updatedFeedback,
-                message_id: responseId,
-                query_id: finalQueryData.id // Use the query ID we found or created
-              }
-            ]);
-            
-          if (insertError) {
-            console.error('Error inserting feedback directly:', insertError);
-          } else {
-            console.log('Feedback successfully stored in database via direct insert');
+          session_id: sessionId,
+          metadata: {
+            explanationClear: updatedFeedback.explanationClear,
+            explanationDetail: updatedFeedback.explanationDetail,
+            analogyHelpful: updatedFeedback.analogyHelpful,
+            analogyPreference: updatedFeedback.analogyPreference
           }
-        } else {
-          console.log('Feedback successfully stored in database via RPC function:', data);
+        })
+        .select();
+      
+      if (error) {
+        console.error('Error submitting feedback to database:', error);
+        
+        // Log helpful information about available tables and columns
+        console.log('Attempting to get table structure for debugging...');
+        try {
+          const { data: tableInfo } = await supabase
+            .from('feedbacks')
+            .select('*')
+            .limit(1);
+          console.log('Feedbacks table exists with columns:', tableInfo ? Object.keys(tableInfo[0]) : 'No data available');
+        } catch (e) {
+          console.log('Could not get feedbacks table info:', e);
         }
-      } catch (dbError) {
-        console.error('Database operation failed:', dbError);
-        // Continue with the rest of the function even if database storage fails
+      } else {
+        console.log('Feedback successfully stored in database:', data);
       }
       
       // Consider feedback as submitted successfully
@@ -354,12 +297,12 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
     return null;
   };
 
-  // Add this before the return statement
   const renderHighlyRatedQueries = () => {
-    if (!highlyRatedQueries || Object.keys(highlyRatedQueries).length === 0) {
+    // Don't render if not loaded yet or if the form has been submitted already
+    if (!highlyRatedQueries || Object.keys(highlyRatedQueries).length === 0 || submitted) {
       return null;
     }
-
+  
     return (
       <div className="mt-6 p-4 bg-blue-50 rounded-md">
         <h3 className="text-sm font-medium text-blue-900">Highly Rated Similar Queries</h3>
@@ -368,7 +311,9 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
             <div key={category} className="border-b border-blue-200 pb-4 last:border-0">
               <h4 className="text-sm font-medium text-blue-800">{category}</h4>
               <ul className="mt-2 space-y-2">
-                {queries.map((query) => (
+                {/* Deduplicate queries by using a unique key/id */}
+                {Array.from(new Map(queries.map(query => 
+                  [query.id, query])).values()).slice(0, 5).map((query) => (
                   <li key={query.id} className="text-sm text-blue-700">
                     <div className="font-medium">{query.query}</div>
                     <div className="text-xs text-blue-600 mt-1">
@@ -384,10 +329,9 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
     );
   };
 
-  // Add function to render similar analogy queries
   const renderSimilarAnalogyQueries = () => {
-    if (!similarAnalogyQueries.length) return null;
-
+    if (!similarAnalogyQueries.length || submitted) return null;
+  
     return (
       <div className="mt-6 p-4 bg-purple-50 rounded-md">
         <h3 className="text-sm font-medium text-purple-900">
@@ -395,7 +339,9 @@ function FeedbackForm({ responseId, onFeedbackSubmitted, originalQuery, preferen
         </h3>
         <div className="mt-2 space-y-4">
           <ul className="space-y-3">
-            {similarAnalogyQueries.map((query) => (
+            {/* Deduplicate queries by using a unique key/id */}
+            {Array.from(new Map(similarAnalogyQueries.map(query => 
+              [query.id, query])).values()).slice(0, 5).map((query) => (
               <li key={query.id} className="text-sm text-purple-700">
                 <div className="font-medium">{query.query}</div>
                 <div className="text-xs text-purple-600 mt-1">

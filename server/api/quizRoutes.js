@@ -34,6 +34,7 @@ export default function setupQuizRoutes(app, supabase) {
         3. Make the incorrect answers plausible but clearly wrong upon inspection
         4. Vary the position of the correct answer (don't always make A or B the correct answer)
         5. Create questions of ${difficulty} difficulty level
+        6. Base the questions on the provided content when available
         
         Format your response as a JSON object with the following structure:
         {

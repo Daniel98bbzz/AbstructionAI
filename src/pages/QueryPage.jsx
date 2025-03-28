@@ -6,9 +6,18 @@ import ConversationHistory from '../components/ConversationHistory';
 import FeedbackForm from '../components/FeedbackForm';
 import { supabase } from '../lib/supabaseClient';
 import QueryToQuiz from '../components/QueryToQuiz';
-
+import { generateQuizQuestions as generateQuizAPI } from '../api/quizApi';
+import { toast } from 'react-hot-toast';
 
 function QueryPage() {
+  const [quizMode, setQuizMode] = useState(false);
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
+  const [quizScore, setQuizScore] = useState(0);
+  const [activeQuizMessage, setActiveQuizMessage] = useState(null);
+  const [isUsingFallback, setIsUsingFallback] = useState(false);
+
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [showPreferences, setShowPreferences] = useState(false);
@@ -44,6 +53,7 @@ function QueryPage() {
     const key = user ? `showFeedbackFor_${user.id}` : 'showFeedbackFor';
     return localStorage.getItem(key) || null;
   });
+  const [activeFeedbackMessage, setActiveFeedbackMessage] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
   const messagesEndRef = useRef(null);
   const { submitQuery, loading, error, regenerateAnswer, currentSession } = useQuery();
@@ -170,6 +180,14 @@ function QueryPage() {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    return () => {
+      // Cleanup function
+      setShowFeedbackFor(null);
+      setActiveFeedbackMessage(null);
+    };
+  }, []);
+
   const handlePreferenceChange = (e) => {
     const { name, value } = e.target;
     setPreferences(prev => ({ ...prev, [name]: parseInt(value, 10) }));
@@ -248,6 +266,7 @@ function QueryPage() {
       
       // Reset feedback form when switching conversations
       setShowFeedbackFor(null);
+      setActiveFeedbackMessage(null);
       if (user) {
         localStorage.removeItem(`showFeedbackFor_${user.id}`);
       }
@@ -325,7 +344,7 @@ function QueryPage() {
       // Get the current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
-
+    
       // Get AI response using the existing session ID if available
       const response = await submitQuery(query, preferences, sessionId);
       
@@ -378,9 +397,9 @@ function QueryPage() {
         })
         .select()
         .single();
-
+    
       if (promptError) throw promptError;
-
+    
       // Then, store the query with the prompt_id
       const { data: queryData, error: queryError } = await supabase
         .from('queries')
@@ -395,15 +414,15 @@ function QueryPage() {
         })
         .select()
         .single();
-
+    
       if (queryError) throw queryError;
-
+    
       // Update the user_prompts with the query_id
       const { error: updatePromptError } = await supabase
         .from('user_prompts')
         .update({ query_id: queryData.id })
         .eq('id', promptData.id);
-
+    
       if (updatePromptError) throw updatePromptError;
       
       // Update conversations with a more descriptive title based on the AI response
@@ -432,8 +451,8 @@ function QueryPage() {
         return conv;
       }));
       
-      // Show feedback for this message
       setShowFeedbackFor(responseId);
+      setActiveFeedbackMessage(responseId);
       console.log('Showing feedback form for message:', responseId, 'with session:', sessionId);
     } catch (error) {
       console.error('Error processing query:', error);
@@ -444,20 +463,28 @@ function QueryPage() {
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setLoading(false);
     }
   };
 
   // Handle feedback submission complete
   const handleFeedbackSubmitted = (messageId) => {
     console.log('Feedback submitted successfully for message:', messageId);
-    // Clear the feedback form for this message
     setShowFeedbackFor(null);
+    setActiveFeedbackMessage(null);
+    
+    // Don't affect active quiz state here
+    
+    // Also clear from localStorage if stored
+    if (user) {
+      localStorage.removeItem(`showFeedbackFor_${user.id}`);
+    }
   };
 
   // Handle regenerating an answer based on feedback
   const handleRegenerateAnswer = async (feedbackData) => {
+    // Save current quiz state
+    const quizMessageId = activeQuizMessage;
+    
     try {
       setRegenerating(true);
       
@@ -552,9 +579,15 @@ function QueryPage() {
         setShowFeedbackFor(regeneratedResponseId);
       }, 1000);
 
+      // After regeneration completes, restore quiz state if it was active
+      if (quizMessageId) {
+        setTimeout(() => {
+          setActiveQuizMessage(quizMessageId);
+        }, 1000);
+      }
+      
     } catch (error) {
       console.error('Error regenerating answer:', error);
-      // Add error message
       const errorMessage = {
         type: 'error',
         content: 'Sorry, there was an error regenerating the answer. Please try again. Error: ' + (error.message || ''),
@@ -565,6 +598,125 @@ function QueryPage() {
       setRegenerating(false);
     }
   };
+
+  // Update the generateQuizQuestions function
+  const generateQuizQuestions = async (topic) => {
+    try {
+      const lastAssistantMessage = messages
+        .filter(msg => msg.type === 'assistant')
+        .pop();
+        
+      if (!lastAssistantMessage) {
+        console.error('No assistant messages found to generate quiz from');
+        return;
+      }
+      
+      try {
+        // Try the API first
+        const response = await generateQuizAPI(lastAssistantMessage.content, {
+          difficultyLevel: 'medium',
+          userId: user?.id,
+          content: lastAssistantMessage.content
+        });
+        
+        if (!response || !response.questions) {
+          throw new Error('Invalid quiz response format');
+        }
+        
+        const questions = response.questions.map(q => ({
+          question: q.question,
+          options: q.options,
+          correctIndex: q.correctAnswer,
+          explanation: q.explanation
+        }));
+        
+        setQuizQuestions(questions);
+        setCurrentQuestionIndex(0);
+        setSelectedAnswer(null);
+        setQuizScore(0);
+        setQuizMode(true);
+        
+      } catch (apiError) {
+        console.warn('API failed, falling back to local generation:', apiError);
+        setIsUsingFallback(true);
+        toast.warning('Using offline quiz mode due to API unavailability');
+        
+        // Fallback to local generation when API fails
+        const mockQuestions = generateLocalQuestions(lastAssistantMessage.content);
+        setQuizQuestions(mockQuestions);
+        setCurrentQuestionIndex(0);
+        setSelectedAnswer(null);
+        setQuizScore(0);
+        setQuizMode(true);
+      }
+      
+    } catch (error) {
+      console.error('Error generating quiz:', error);
+      toast.error('Failed to generate quiz. Please try again.');
+    }
+  };
+
+  // Add this helper function for local question generation
+  const generateLocalQuestions = (content) => {
+    // Extract key phrases from content
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    const questions = [];
+    
+    // Generate questions from content
+    for (let i = 0; i < Math.min(5, sentences.length); i++) {
+      const sentence = sentences[i].trim();
+      // Find a key term to ask about
+      const words = sentence.split(' ').filter(w => w.length > 4);
+      const keyTerm = words[Math.floor(Math.random() * words.length)];
+      
+      questions.push({
+        question: `Based on the explanation, what is the significance of ${keyTerm}?`,
+        options: [
+          sentence, // Correct answer is the original sentence
+          `${keyTerm} is not relevant to this topic`,
+          `${keyTerm} is a minor detail that can be ignored`,
+          `${keyTerm} is only used in theoretical scenarios`
+        ],
+        correctIndex: 0,
+        explanation: `This is directly stated in the original explanation: "${sentence}"`
+      });
+    }
+    
+    return questions;
+  };
+
+  const handleAnswerSelect = (answerIndex) => {
+    setSelectedAnswer(answerIndex);
+    if (answerIndex === quizQuestions[currentQuestionIndex].correctIndex) {
+      setQuizScore(prevScore => prevScore + 1);
+    }
+  };
+
+  const handleNextQuestion = () => {
+    if (currentQuestionIndex < quizQuestions.length - 1) {
+      setCurrentQuestionIndex(prevIndex => prevIndex + 1);
+      setSelectedAnswer(null);
+    } else {
+      alert(`Quiz complete! Your score: ${quizScore}/${quizQuestions.length}`);
+      setQuizMode(false);
+    }
+  };
+
+  const handleExitQuiz = () => {
+    setQuizMode(false);
+    setQuizQuestions([]);
+  };
+
+  useEffect(() => {
+    // If there's an active quiz and we're regenerating, keep the quiz visible
+    if (activeQuizMessage && regenerating) {
+      const timer = setTimeout(() => {
+        setActiveQuizMessage(activeQuizMessage);
+      }, 1500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [regenerating, activeQuizMessage]);
 
   if (!user) {
     return (
@@ -694,37 +846,38 @@ function QueryPage() {
                 </div>
               </div>
                     {/* Quiz Generation Option */}
-              {message.type === 'assistant' && !showFeedbackFor && (
-                <div className="mt-4">
+              {message.type === 'assistant' && (
+                <div className="mt-4 relative" style={{ zIndex: activeQuizMessage === message.id ? 10 : 1 }}>
                   <QueryToQuiz 
+                    key={`quiz-${message.id}`}
                     query={messages.find(m => m.type === 'user' && m.timestamp < message.timestamp)?.content || ''}
                     responseContent={message.content}
+                    onQuizStart={() => {
+                      console.log('Quiz started for message:', message.id);
+                      setActiveQuizMessage(message.id);
+                      // Hide any feedback forms when quiz starts
+                      setShowFeedbackFor(null);
+                      setActiveFeedbackMessage(null);
+                    }}
+                    onQuizEnd={() => {
+                      console.log('Quiz ended for message:', message.id);
+                      setActiveQuizMessage(null);
+                    }}
+                    isActive={activeQuizMessage === message.id}
+                    alwaysVisible={true} // Add this prop to always show the quiz button
                   />
                 </div>
               )}
 
-              // This should be placed just before this block:
               {/* Feedback form below AI responses */}
-              {message.type === 'assistant' && showFeedbackFor === message.id && (
+              {message.type === 'assistant' && showFeedbackFor === message.id && activeFeedbackMessage === message.id && !activeQuizMessage && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                   <FeedbackForm
+                    key={`feedback-${message.id}`}
                     responseId={message.id}
-                    onFeedbackSubmitted={() => setShowFeedbackFor(null)}
-                    originalQuery={query}
-                    preferences={preferences}
-                    onRegenerateAnswer={handleRegenerateAnswer}
-                    sessionId={sessionId}
-                  />
-                </div>
-              )}
-              
-              {/* Feedback form below AI responses */}
-              {message.type === 'assistant' && showFeedbackFor === message.id && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                  <FeedbackForm
-                    responseId={message.id}
-                    onFeedbackSubmitted={() => setShowFeedbackFor(null)}
-                    originalQuery={query}
+                    onFeedbackSubmitted={handleFeedbackSubmitted}
+                    originalQuery={messages.find(m => m.type === 'user' && 
+                      messages.indexOf(m) < messages.indexOf(message))?.content || ''}
                     preferences={preferences}
                     onRegenerateAnswer={handleRegenerateAnswer}
                     sessionId={sessionId}
@@ -756,22 +909,35 @@ function QueryPage() {
                   disabled={loading || regenerating}
                 />
               </div>
-              <button
-                type="submit"
-                disabled={loading || regenerating || !query.trim()}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
-              >
-                {loading || regenerating ? (
-                  <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="submit"
+                  disabled={loading || regenerating || !query.trim()}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+                >
+                  {loading || regenerating ? (
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => generateQuizQuestions(query.trim() || 'this topic')}
+                  disabled={loading || regenerating || !messages.some(m => m.type === 'assistant')}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-secondary-600 hover:bg-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary-500 disabled:opacity-50"
+                >
+                  <svg className="h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                ) : (
-                  <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                  </svg>
-                )}
-              </button>
+                  Quiz Me
+                </button>
+              </div>
             </form>
             
             <div className="mt-2">
@@ -852,6 +1018,70 @@ function QueryPage() {
           </div>
         </div>
       </div>
+
+      {/* Add quiz UI */}
+      {quizMode && quizQuestions.length > 0 && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 m-4">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-medium text-gray-900">
+                Quiz Question {currentQuestionIndex + 1}/{quizQuestions.length}
+              </h3>
+              <button 
+                onClick={handleExitQuiz}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <p className="text-gray-800 mb-4">
+              {quizQuestions[currentQuestionIndex].question}
+            </p>
+            
+            <div className="space-y-3 mb-6">
+              {quizQuestions[currentQuestionIndex].options.map((option, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleAnswerSelect(index)}
+                  disabled={selectedAnswer !== null}
+                  className={`w-full text-left p-3 rounded-md border ${
+                    selectedAnswer === index 
+                      ? index === quizQuestions[currentQuestionIndex].correctIndex
+                        ? 'bg-green-50 border-green-500 text-green-700'
+                        : 'bg-red-50 border-red-500 text-red-700'
+                      : 'border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {option}
+                  {selectedAnswer === index && (
+                    <span className="float-right">
+                      {index === quizQuestions[currentQuestionIndex].correctIndex 
+                        ? '✓' 
+                        : '✗'}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            
+            <div className="flex justify-between">
+              <div className="text-sm text-gray-500">
+                Score: {quizScore}/{quizQuestions.length}
+              </div>
+              <button
+                onClick={handleNextQuestion}
+                disabled={selectedAnswer === null}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md disabled:opacity-50"
+              >
+                {currentQuestionIndex < quizQuestions.length - 1 ? 'Next Question' : 'Finish Quiz'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
