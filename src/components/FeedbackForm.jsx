@@ -132,6 +132,11 @@ const fetchSimilarAnalogyQueries = async (analogyCategory) => {
       
       console.log('Submitting comprehensive feedback...');
       
+      // Validate that we have a valid query_id
+      if (!responseId) {
+        throw new Error('No query ID provided. Cannot submit feedback without a valid query.');
+      }
+
       // Add specific comment about gaming analogy if selected but no comment provided
       let updatedFeedback = { ...feedback };
       if (feedback.analogyPreference === 'gaming' && (!feedback.comments || !feedback.comments.toLowerCase().includes('game'))) {
@@ -143,7 +148,7 @@ const fetchSimilarAnalogyQueries = async (analogyCategory) => {
       // Store feedback in local storage as backup
       const feedbackStorageData = {
         id: Date.now().toString(),
-        responseId: responseId || 'unknown',
+        responseId: responseId,
         sessionId: sessionId || 'unknown',
         rating: updatedFeedback.rating,
         explanationClear: updatedFeedback.explanationClear,
@@ -152,7 +157,7 @@ const fetchSimilarAnalogyQueries = async (analogyCategory) => {
         analogyPreference: updatedFeedback.analogyPreference,
         comments: updatedFeedback.comments,
         timestamp: new Date().toISOString(),
-        query_id: responseId || 'unknown'
+        query_id: responseId
       };
       
       // Store in localStorage as backup
@@ -174,7 +179,10 @@ const fetchSimilarAnalogyQueries = async (analogyCategory) => {
       
       // Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
+      if (userError) {
+        console.error('Error getting user:', userError);
+        throw new Error('Authentication error: ' + userError.message);
+      }
 
       if (!user) {
         throw new Error('You must be logged in to submit feedback');
@@ -189,36 +197,58 @@ const fetchSimilarAnalogyQueries = async (analogyCategory) => {
         comments: updatedFeedback.comments || ''
       });
 
-      // Submit to feedbacks table with correct structure
-      const { data, error } = await supabase
-        .from('feedbacks')
-        .insert({
-          user_id: user.id,
-          content: feedbackContent,
-          rating: parseInt(updatedFeedback.rating),
-          query_id: responseId
-        })
-        .select();
-      
-      if (error) {
-        console.error('Error submitting feedback to database:', error);
+      // Try to verify if the query exists in either interactions or queries table
+      let queryExists = false;
+      try {
+        // First try interactions table
+        const { data: interactionData, error: interactionError } = await supabase
+          .from('interactions')
+          .select('id')
+          .eq('id', responseId)
+          .single();
+
+        if (!interactionError && interactionData) {
+          queryExists = true;
+        } else {
+          // If not found in interactions, try queries table
+          const { data: queryData, error: queryError } = await supabase
+            .from('queries')
+            .select('id')
+            .eq('id', responseId)
+            .single();
+
+          if (!queryError && queryData) {
+            queryExists = true;
+          }
+        }
+      } catch (verifyError) {
+        console.error('Error verifying query existence:', verifyError);
+        // Continue with feedback submission even if verification fails
+      }
+
+      // Submit to feedbacks table if query exists
+      if (queryExists) {
+        const { data, error: insertError } = await supabase
+          .from('feedbacks')
+          .insert({
+            user_id: user.id,
+            content: feedbackContent,
+            rating: parseInt(updatedFeedback.rating),
+            query_id: responseId
+          })
+          .select();
         
-        // Log helpful information about available tables and columns
-        console.log('Attempting to get table structure for debugging...');
-        try {
-          const { data: tableInfo } = await supabase
-            .from('feedbacks')
-            .select('*')
-            .limit(1);
-          console.log('Feedbacks table exists with columns:', tableInfo ? Object.keys(tableInfo[0]) : 'No data available');
-        } catch (e) {
-          console.log('Could not get feedbacks table info:', e);
+        if (insertError) {
+          console.error('Error submitting feedback to database:', insertError);
+          // Continue with localStorage backup only
+        } else {
+          console.log('Feedback successfully stored in database:', data);
         }
       } else {
-        console.log('Feedback successfully stored in database:', data);
+        console.warn('Query not found in either interactions or queries table, continuing with localStorage backup only');
       }
       
-      // Consider feedback as submitted successfully
+      // Consider feedback as submitted successfully regardless of database success
       setSubmitted(true);
       if (onFeedbackSubmitted) {
         onFeedbackSubmitted(responseId);
@@ -240,7 +270,8 @@ const fetchSimilarAnalogyQueries = async (analogyCategory) => {
         await fetchSimilarAnalogyQueries(feedback.analogyPreference);
       }
     } catch (err) {
-      setError('Failed to save feedback. Please try again. Error: ' + (err.message || 'Unknown error'));
+      const errorMessage = err.message || 'Unknown error occurred';
+      setError('Failed to save feedback. Please try again. Error: ' + errorMessage);
       console.error('Error saving feedback:', err);
       toast.error('Failed to submit feedback. Please try again.');
     } finally {
