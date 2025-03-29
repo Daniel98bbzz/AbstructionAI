@@ -9,6 +9,82 @@ import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
 import setupQuizRoutes from './api/quizRoutes.js';
 
+/**
+ * Parse sections from the OpenAI response
+ * @param {string} responseText - Raw response text from OpenAI
+ * @returns {Object} - Parsed sections
+ */
+function parseResponse(responseText) {
+  const sections = {
+    suggested_title: '',
+    introduction: '',
+    explanation: '',
+    analogy: '',
+    additional_sources: [],
+    recap: '',
+    quiz: null
+  };
+
+  // Extract suggested title
+  const titleMatch = responseText.match(/SUGGESTED_TITLE:([^\n]*)/);
+  if (titleMatch && titleMatch[1]) {
+    sections.suggested_title = titleMatch[1].trim();
+  }
+
+  // Extract introduction
+  const introMatch = responseText.match(/Introduction:([\s\S]*?)(?=Explanation:|$)/);
+  if (introMatch && introMatch[1]) {
+    sections.introduction = introMatch[1].trim();
+  }
+
+  // Extract explanation
+  const explanationMatch = responseText.match(/Explanation:([\s\S]*?)(?=Analogy:|$)/);
+  if (explanationMatch && explanationMatch[1]) {
+    sections.explanation = explanationMatch[1].trim();
+  }
+
+  // Extract analogy
+  const analogyMatch = responseText.match(/Analogy:([\s\S]*?)(?=Additional Sources:|$)/);
+  if (analogyMatch && analogyMatch[1]) {
+    sections.analogy = analogyMatch[1].trim();
+  }
+
+  // Extract additional sources
+  const sourcesMatch = responseText.match(/Additional Sources:([\s\S]*?)(?=Brief Recap:|$)/);
+  if (sourcesMatch && sourcesMatch[1]) {
+    const sourcesText = sourcesMatch[1].trim();
+    // Parse sources into an array of objects
+    const sources = sourcesText
+      .split('\n')
+      .filter(line => line.trim().length > 0)
+      .map(line => {
+        // Try to extract URL from markdown link format [title](url)
+        const urlMatch = line.match(/\[([^\]]+)\]\(([^)]+)\)/);
+        if (urlMatch) {
+          return {
+            title: urlMatch[1],
+            url: urlMatch[2],
+            description: line.replace(urlMatch[0], '').trim()
+          };
+        }
+        // If no URL format found, just return the text
+        return {
+          title: line.trim(),
+          url: '',
+          description: ''
+        };
+      });
+    sections.additional_sources = sources;
+  }
+
+  // Extract recap
+  const recapMatch = responseText.match(/Brief Recap:([\s\S]*?)(?=Quiz:|$)/);
+  if (recapMatch && recapMatch[1]) {
+    sections.recap = recapMatch[1].trim();
+  }
+
+  return sections;
+}
 
 // Get current directory for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -311,11 +387,11 @@ ${conversationSummary.lastAnalogy
 
 ${userProfile ? `
 User Profile:
-- Education Level: ${userProfile.education_level}
-- Learning Style: ${userProfile.learning_style}
-- Technical Background: ${userProfile.technical_background}
-- Main Learning Goal: ${userProfile.learning_goal}
-- Preferred Analogy Domains: ${userProfile.analogy_preferences.join(', ')}
+- Education Level: ${userProfile.education_level || 'Not specified'}
+- Learning Style: ${userProfile.learning_style || 'Not specified'}
+- Technical Depth: ${userProfile.technical_depth ? `${userProfile.technical_depth}/100` : 'Not specified'}
+- Main Learning Goal: ${userProfile.main_learning_goal || 'Not specified'}
+- Preferred Analogy Domains: ${userProfile.preferred_analogy_domains && Array.isArray(userProfile.preferred_analogy_domains) ? userProfile.preferred_analogy_domains.join(', ') : 'Not specified'}
 ` : ''}
 
 Your responses must ALWAYS follow this format:
@@ -390,6 +466,7 @@ Quiz:
     // Extract quiz data and clean up response text before parsing sections
     const quizMatch = responseText.match(/Quiz:\s*(\{[\s\S]*\}\s*\}\s*\})/);
     let cleanedResponseText = responseText;
+    let sections = null;
 
     // Store quiz data separately and remove from main response
     if (quizMatch && quizMatch[1]) {
@@ -399,18 +476,18 @@ Quiz:
         cleanedResponseText = responseText.replace(/Quiz:\s*\{[\s\S]*\}\s*\}\s*\}/, '').trim();
         
         // Parse sections from cleaned response text
-        const sections = parseResponse(cleanedResponseText);
+        sections = parseResponse(cleanedResponseText);
         
         // Add quiz data as separate property
         sections.quiz = quizData;
       } catch (e) {
         console.error('Error parsing quiz data:', e);
         // Parse sections from original response if quiz parsing fails
-        const sections = parseResponse(responseText);
+        sections = parseResponse(responseText);
       }
     } else {
       // No quiz found, parse sections normally
-      const sections = parseResponse(responseText);
+      sections = parseResponse(responseText);
     }
     
     // Prepare final response with quiz included
