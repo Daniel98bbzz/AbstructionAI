@@ -753,7 +753,7 @@ function QueryPage() {
         {/* Chat container */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((message, index) => (
-            <div key={index}>
+            <div key={message.id || index} className={`message ${message.type}`}>
               <div
                 className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
               >
@@ -845,13 +845,15 @@ function QueryPage() {
                   )}
                 </div>
               </div>
-                    {/* Quiz Generation Option */}
+
+              {/* Add quiz component for assistant messages */}
               {message.type === 'assistant' && (
                 <div className="mt-4 relative" style={{ zIndex: activeQuizMessage === message.id ? 10 : 1 }}>
                   <QueryToQuiz 
                     key={`quiz-${message.id}`}
                     query={messages.find(m => m.type === 'user' && m.timestamp < message.timestamp)?.content || ''}
                     responseContent={message.content}
+                    preGeneratedQuiz={message.quiz}
                     onQuizStart={() => {
                       console.log('Quiz started for message:', message.id);
                       setActiveQuizMessage(message.id);
@@ -864,13 +866,16 @@ function QueryPage() {
                       setActiveQuizMessage(null);
                     }}
                     isActive={activeQuizMessage === message.id}
-                    alwaysVisible={true} // Add this prop to always show the quiz button
+                    alwaysVisible={true}
                   />
                 </div>
               )}
 
-              {/* Feedback form below AI responses */}
-              {message.type === 'assistant' && showFeedbackFor === message.id && activeFeedbackMessage === message.id && !activeQuizMessage && (
+              {/* Feedback form section - update to check for active quiz */}
+              {message.type === 'assistant' && 
+               showFeedbackFor === message.id && 
+               activeFeedbackMessage === message.id && 
+               !activeQuizMessage && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                   <FeedbackForm
                     key={`feedback-${message.id}`}

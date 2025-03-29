@@ -12,6 +12,8 @@ function Quiz({ query, onClose, initialDifficulty = 'medium' }) {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [generationError, setGenerationError] = useState(null);
   const [difficulty, setDifficulty] = useState(initialDifficulty);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [quizScore, setQuizScore] = useState(0);
 
   // Generate quiz on component mount if query is provided
   useEffect(() => {
@@ -47,11 +49,19 @@ function Quiz({ query, onClose, initialDifficulty = 'medium' }) {
     const newAnswers = [...selectedAnswers];
     newAnswers[questionIndex] = answerIndex;
     setSelectedAnswers(newAnswers);
+    setShowExplanation(true);
+    
+    const isCorrect = answerIndex === currentQuiz.questions[questionIndex].correctAnswer;
+    if (isCorrect) {
+      setQuizScore(prevScore => prevScore + 1);
+    }
   };
 
   const handleNextQuestion = () => {
     if (currentQuestion < (currentQuiz?.questions?.length || 0) - 1) {
       setCurrentQuestion(currentQuestion + 1);
+      setSelectedAnswers(Array(currentQuiz.questions.length).fill(null));
+      setShowExplanation(false);
     } else {
       handleSubmitQuiz();
     }
@@ -83,6 +93,7 @@ function Quiz({ query, onClose, initialDifficulty = 'medium' }) {
     setCurrentStep('intro');
     setSelectedAnswers([]);
     setCurrentQuestion(0);
+    setQuizScore(0);
   };
 
   // Render the intro screen
@@ -208,6 +219,17 @@ function Quiz({ query, onClose, initialDifficulty = 'medium' }) {
             ))}
           </div>
         </div>
+        
+        {showExplanation && (
+          <div className={`p-4 rounded-md mb-4 ${
+            selectedAnswers[currentQuestion] === currentQuiz.questions[currentQuestion].correctAnswer
+              ? 'bg-green-50 border border-green-200' 
+              : 'bg-yellow-50 border border-yellow-200'
+          }`}>
+            <h4 className="font-medium text-gray-900 mb-1">Explanation:</h4>
+            <p className="text-sm text-gray-700">{currentQuiz.questions[currentQuestion].explanation}</p>
+          </div>
+        )}
         
         <div className="flex justify-between">
           <button

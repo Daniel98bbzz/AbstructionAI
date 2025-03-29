@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { generateQuizQuestions } from '../api/quizApi';
 
 // This component shows a button to generate a quiz from a query response
 // and displays the quiz interface when active
-function QueryToQuiz({ query, responseContent, onQuizStart, onQuizEnd, isActive, alwaysVisible = false }) {
+function QueryToQuiz({ 
+  query, 
+  responseContent, 
+  onQuizStart, 
+  onQuizEnd, 
+  isActive, 
+  alwaysVisible = false, 
+  preGeneratedQuiz = null 
+}) {
   const [quizMode, setQuizMode] = useState(false);
   const [quizQuestions, setQuizQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -10,6 +19,7 @@ function QueryToQuiz({ query, responseContent, onQuizStart, onQuizEnd, isActive,
   const [quizScore, setQuizScore] = useState(0);
   const [loading, setLoading] = useState(false);
   const [difficultyLevel, setDifficultyLevel] = useState('medium'); // 'easy', 'medium', 'hard'
+  const [showExplanation, setShowExplanation] = useState(false);
 
   // If external isActive prop changes, update quizMode
   useEffect(() => {
@@ -22,12 +32,19 @@ function QueryToQuiz({ query, responseContent, onQuizStart, onQuizEnd, isActive,
     }
   }, [isActive]);
 
+  useEffect(() => {
+    if (preGeneratedQuiz?.questions?.length > 0) {
+      setQuizQuestions(preGeneratedQuiz.questions);
+    }
+  }, [preGeneratedQuiz]);
+
   // Reset quiz state
   const resetQuiz = () => {
     setQuizQuestions([]);
     setCurrentQuestionIndex(0);
     setSelectedAnswer(null);
     setQuizScore(0);
+    setShowExplanation(false);
     if (onQuizEnd) onQuizEnd();
   };
 
@@ -35,54 +52,24 @@ function QueryToQuiz({ query, responseContent, onQuizStart, onQuizEnd, isActive,
   const generateQuiz = async () => {
     setLoading(true);
     try {
-      // In a real implementation, you would call your AI service or API
-      // For now, we'll use a simple mock implementation
+      if (preGeneratedQuiz?.questions?.length > 0) {
+        setQuizQuestions(preGeneratedQuiz.questions);
+      } else {
+        const response = await generateQuizQuestions(query, {
+          content: responseContent,
+          difficultyLevel
+        });
+        setQuizQuestions(response.questions);
+      }
       
-      // Mock delay to simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Generate mock questions based on the content
-      const mockQuestions = [
-        {
-          question: `Based on the explanation about ${query}, what is one key concept?`,
-          options: [
-            'A mock answer that is correct',
-            'A plausible but incorrect answer',
-            'Another incorrect option',
-            'One more incorrect option'
-          ],
-          correctIndex: 0
-        },
-        {
-          question: `Which of the following best describes ${query}?`,
-          options: [
-            'An incorrect description',
-            'A correct description based on the content',
-            'A partially correct but misleading description',
-            'A completely unrelated description'
-          ],
-          correctIndex: 1
-        },
-        {
-          question: `What is an application of ${query}?`,
-          options: [
-            'An unrelated application',
-            'A somewhat related but incorrect application',
-            'The correct application based on content',
-            'A made-up application'
-          ],
-          correctIndex: 2
-        }
-      ];
-      
-      setQuizQuestions(mockQuestions);
       setCurrentQuestionIndex(0);
       setSelectedAnswer(null);
       setQuizScore(0);
       setQuizMode(true);
+      setShowExplanation(false);
+      if (onQuizStart) onQuizStart();
     } catch (error) {
       console.error('Error generating quiz questions:', error);
-      // Handle error appropriately
     } finally {
       setLoading(false);
     }
@@ -91,9 +78,11 @@ function QueryToQuiz({ query, responseContent, onQuizStart, onQuizEnd, isActive,
   // Handle answer selection
   const handleAnswerSelect = (answerIndex) => {
     setSelectedAnswer(answerIndex);
+    setShowExplanation(true);
     
     // Check if answer is correct
-    if (answerIndex === quizQuestions[currentQuestionIndex].correctIndex) {
+    const currentQuestion = quizQuestions[currentQuestionIndex];
+    if (answerIndex === currentQuestion.correctAnswer) {
       setQuizScore(prevScore => prevScore + 1);
     }
   };
@@ -103,9 +92,11 @@ function QueryToQuiz({ query, responseContent, onQuizStart, onQuizEnd, isActive,
     if (currentQuestionIndex < quizQuestions.length - 1) {
       setCurrentQuestionIndex(prevIndex => prevIndex + 1);
       setSelectedAnswer(null);
+      setShowExplanation(false);
     } else {
       // Quiz is complete
-      alert(`Quiz complete! Your score: ${quizScore}/${quizQuestions.length}`);
+      const finalScore = (quizScore / quizQuestions.length) * 100;
+      alert(`Quiz complete! Your score: ${finalScore.toFixed(1)}%`);
       setQuizMode(false);
       resetQuiz();
     }
@@ -121,37 +112,17 @@ function QueryToQuiz({ query, responseContent, onQuizStart, onQuizEnd, isActive,
 
   // If not in quiz mode or selection phase, show the quiz button
   if (!quizMode) {
+    if (!alwaysVisible && !isActive) return null;
+    
     return (
-      <div className="flex flex-col space-y-3">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={() => {
-              generateQuiz();
-              // Ensure parent component knows quiz is starting
-              if (onQuizStart) onQuizStart();
-            }}
-            disabled={loading}
-            className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-            Test Your Knowledge
-          </button>
-          
-          <div className="flex items-center">
-            <span className="text-sm text-gray-500 mr-2">Difficulty:</span>
-            <select
-              value={difficultyLevel}
-              onChange={(e) => setDifficultyLevel(e.target.value)}
-              className="text-sm border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </div>
-        </div>
+      <div className="mt-4">
+        <button
+          onClick={generateQuiz}
+          disabled={loading}
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+        >
+          {loading ? 'Generating Quiz...' : 'Take a Quiz'}
+        </button>
       </div>
     );
   }
@@ -169,66 +140,83 @@ function QueryToQuiz({ query, responseContent, onQuizStart, onQuizEnd, isActive,
   }
 
   // Quiz interface
+  const currentQuestion = quizQuestions[currentQuestionIndex];
+  if (!currentQuestion) return null;
+
   return (
-    <div className={`${alwaysVisible ? 'block' : isActive ? 'block' : 'hidden'}`}>
-      <div className="bg-white rounded-lg shadow-lg p-6 border border-indigo-100">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-lg font-medium text-gray-900">
-            Quiz Question {currentQuestionIndex + 1}/{quizQuestions.length}
-          </h3>
-          <button 
-            onClick={handleExitQuiz}
-            className="text-gray-400 hover:text-gray-500"
-          >
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        
-        <p className="text-gray-800 mb-4 font-medium">
-          {quizQuestions[currentQuestionIndex]?.question}
-        </p>
-        
-        <div className="space-y-3 mb-6">
-          {quizQuestions[currentQuestionIndex]?.options.map((option, index) => (
-            <button
-              key={index}
-              onClick={() => handleAnswerSelect(index)}
-              disabled={selectedAnswer !== null}
-              className={`w-full text-left p-3 rounded-md border ${
-                selectedAnswer === index 
-                  ? index === quizQuestions[currentQuestionIndex].correctIndex
-                    ? 'bg-green-50 border-green-500 text-green-700'
-                    : 'bg-red-50 border-red-500 text-red-700'
-                  : 'border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {option}
-              {selectedAnswer === index && (
-                <span className="float-right">
-                  {index === quizQuestions[currentQuestionIndex].correctIndex 
-                    ? '✓' 
-                    : '✗'}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-        
-        <div className="flex justify-between">
-          <div className="text-sm text-gray-500">
-            Score: {quizScore}/{quizQuestions.length}
-          </div>
-          <button
-            onClick={handleNextQuestion}
-            disabled={selectedAnswer === null}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-md disabled:opacity-50"
-          >
-            {currentQuestionIndex < quizQuestions.length - 1 ? 'Next Question' : 'Finish Quiz'}
-          </button>
-        </div>
+    <div className="mt-4 bg-white rounded-lg shadow-md p-6 max-w-2xl mx-auto">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-medium">
+          Question {currentQuestionIndex + 1} of {quizQuestions.length}
+        </h3>
+        <button
+          onClick={handleExitQuiz}
+          className="text-gray-500 hover:text-gray-700"
+        >
+          Exit Quiz
+        </button>
       </div>
+
+      <p className="mb-4 text-gray-700">{currentQuestion.question}</p>
+
+      <div className="space-y-3 mb-6">
+        {currentQuestion.options.map((option, index) => (
+          <button
+            key={index}
+            onClick={() => handleAnswerSelect(index)}
+            disabled={selectedAnswer !== null}
+            className={`w-full text-left p-3 rounded-md border ${
+              selectedAnswer === index 
+                ? index === currentQuestion.correctAnswer
+                  ? 'bg-green-50 border-green-500 text-green-700'
+                  : 'bg-red-50 border-red-500 text-red-700'
+                : selectedAnswer !== null && index === currentQuestion.correctAnswer
+                  ? 'bg-green-50 border-green-500 text-green-700'
+                  : 'border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {option}
+            {selectedAnswer !== null && (
+              <span className="float-right">
+                {index === currentQuestion.correctAnswer 
+                  ? '✓' 
+                  : selectedAnswer === index ? '✗' : ''}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {showExplanation && selectedAnswer !== null && (
+        <div className={`p-4 rounded-md mb-4 ${
+          selectedAnswer === currentQuestion.correctAnswer 
+            ? 'bg-green-50 border border-green-200' 
+            : 'bg-yellow-50 border border-yellow-200'
+        }`}>
+          <h4 className="font-medium text-gray-900 mb-2">
+            {selectedAnswer === currentQuestion.correctAnswer 
+              ? 'Correct!' 
+              : 'Incorrect!'}
+          </h4>
+          <p className="text-gray-700">{currentQuestion.explanation}</p>
+          {selectedAnswer !== currentQuestion.correctAnswer && (
+            <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+              <p className="text-sm font-medium text-gray-700">
+                The correct answer is: {currentQuestion.options[currentQuestion.correctAnswer]}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {selectedAnswer !== null && (
+        <button
+          onClick={handleNextQuestion}
+          className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
+          {currentQuestionIndex < quizQuestions.length - 1 ? 'Next Question' : 'Finish Quiz'}
+        </button>
+      )}
     </div>
   );
 }

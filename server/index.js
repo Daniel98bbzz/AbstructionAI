@@ -300,6 +300,7 @@ app.post('/api/query', async (req, res) => {
     const systemContext = {
       role: "system",
       content: `You are a knowledgeable AI tutor specialized in explaining complex concepts clearly and thoroughly.
+
 ${conversationSummary.lastExplanation 
   ? `Previous topic: ${conversationSummary.currentTopic}
 Last explanation: ${conversationSummary.lastExplanation}`
@@ -308,63 +309,13 @@ ${conversationSummary.lastAnalogy
   ? `\nLast analogy: ${conversationSummary.lastAnalogy}`
   : ""}
 
-${userProfile ? `USER PROFILE INFORMATION:
-- Occupation: ${userProfile.occupation}
+${userProfile ? `
+User Profile:
 - Education Level: ${userProfile.education_level}
-- Age: ${userProfile.age}
 - Learning Style: ${userProfile.learning_style}
-- Technical Depth Preference: ${userProfile.technical_depth}/100
-- Main Learning Goal: ${userProfile.main_learning_goal}
-- Interests: ${userProfile.interests ? userProfile.interests.join(', ') : 'Not specified'}
-- Preferred Analogy Domains: ${userProfile.preferred_analogy_domains ? userProfile.preferred_analogy_domains.join(', ') : 'Not specified'}
-
-PERSONALIZATION INSTRUCTIONS (MANDATORY - YOU MUST FOLLOW THESE):
-1. YOU MUST ALWAYS use the user's preferred analogy domains (${userProfile.preferred_analogy_domains ? userProfile.preferred_analogy_domains.join(', ') : 'general'}) when creating analogies. Do not use any other domains for analogies.
-2. YOU MUST incorporate the user's interests (${userProfile.interests ? userProfile.interests.join(', ') : 'general topics'}) in your explanations and examples.
-3. YOU MUST adjust technical depth based on education level and technical depth preference (${userProfile.technical_depth}/100).
-4. YOU MUST present information in a way that matches their learning style (${userProfile.learning_style}).
-5. YOU MUST align examples with their main learning goal (${userProfile.main_learning_goal}).
-
-For "GAMING" analogies, use terms like: games, levels, power-ups, achievements, characters, quests, boss battles, inventory systems, experience points, multiplayer, gaming platforms.
-
-For "COOKING" analogies, use terms like: recipes, ingredients, cooking methods, baking, temperature, kitchen tools, flavors, cuisine, restaurants, meal preparation.
-
-For "SPORTS" analogies, use terms like: training, teams, players, games, competition, strategy, equipment, leagues, scoring, physical fitness.
-
-These personalization instructions are NOT optional. The response MUST reflect all of these aspects.
-` : ''}
-
-${isRegeneration && feedback ? `This is a REGENERATION request based on user feedback. Please address these specific points:
-${feedback.specificInstructions ? feedback.specificInstructions.map(instr => `- ${instr}`).join('\n') : ''}
-
-${feedback.analogyTopic ? `\nCRITICAL INSTRUCTION: You MUST provide an analogy specifically related to ${feedback.analogyTopic}.
-${feedback.analogyTopic === 'gaming' ? `For the gaming analogy:
-- Use concepts from video games like levels, characters, power-ups, quests, or game mechanics
-- Reference popular games if relevant (Minecraft, Mario, League of Legends, etc.)
-- Ensure the gaming metaphor clearly explains the original concept
-- Make it accessible even to casual gamers` : ''}
-This is the user's explicit request.` : ''}
-
-${feedback.analogyHelpful === 'no' || feedback.analogyHelpful === 'partially' ? 
-`IMPORTANT: Provide a more relatable and clearer analogy.` : ''}
-
-${feedback.explanationClear === 'no' || feedback.explanationClear === 'partially' ? 
-`IMPORTANT: The previous explanation was not clear enough. Make it more straightforward and easier to understand.` : ''}
-
-${feedback.explanationDetail === 'more_detailed' ? 
-`IMPORTANT: Provide a more detailed and comprehensive explanation with deeper technical information.` : ''}
-
-${feedback.explanationDetail === 'simpler' ? 
-`IMPORTANT: Simplify the explanation significantly. Use easier language and less technical jargon.` : ''}
-
-${(feedback.explanationDetail === 'exactly_right' && feedback.explanationClear === 'yes' && feedback.analogyHelpful !== 'yes' && feedback.analogyTopic) ? 
-`IMPORTANT: Keep the original explanation section exactly the same - only change the analogy section.` : ''}
-
-${feedback.rating <= 3 ? 
-`The user rated the previous response as ${feedback.rating}/5, indicating it needs significant improvement.` : ''}
-
-${feedback.comments ? `\nUser comments: "${feedback.comments}"` : ''}
-\nMake improvements to the previous response based on this feedback.
+- Technical Background: ${userProfile.technical_background}
+- Main Learning Goal: ${userProfile.learning_goal}
+- Preferred Analogy Domains: ${userProfile.analogy_preferences.join(', ')}
 ` : ''}
 
 Your responses must ALWAYS follow this format:
@@ -379,7 +330,7 @@ Explanation:
 [A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
 
 Analogy:
-[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable${feedback && feedback.analogyTopic ? `. IMPORTANT: This MUST be a ${feedback.analogyTopic}-related analogy as explicitly requested by the user` : userProfile && userProfile.preferred_analogy_domains && userProfile.preferred_analogy_domains.length > 0 ? `. IMPORTANT: This MUST be an analogy related to one of these domains: ${userProfile.preferred_analogy_domains.join(', ')}. Do not use any other domains for the analogy.` : ''}]
+[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable]
 
 Additional Sources:
 [Provide 3-5 relevant learning resources with URLs when possible]
@@ -387,18 +338,18 @@ Additional Sources:
 Brief Recap:
 [Summarize the key points in 3-5 bullet points]
 
-Style and Guidelines:
-- Always use second-person language (e.g., "you," "your") to address the user directly.
-- Keep language clear, friendly, and respectful.
-${userProfile ? `- Adjust technical depth to match the user's preference (${userProfile.technical_depth}/100).` : '- Avoid overly technical jargon unless the user explicitly requests deeper technical detail.'}
-- Be thorough and detailed - aim for comprehensive explanations.
-- Use examples to illustrate your points.
-${userProfile && userProfile.preferred_analogy_domains && userProfile.preferred_analogy_domains.length > 0 ? 
-`- CRITICAL: EVERY analogy you create MUST be related to one of the user's preferred domains: ${userProfile.preferred_analogy_domains.join(', ')}.
-- CRITICAL: Connect your examples to the user's interests: ${userProfile.interests ? userProfile.interests.join(', ') : 'general topics'}.` : ''}
-
-If user asks for another analogy, ALWAYS reuse the previous explanation but provide a new and different analogy.
-Never skip any section of the format. Each section must be properly identified with its header.`
+Quiz:
+[Generate 5 multiple-choice questions based on the explanation above. Format as JSON:
+{
+  "questions": [
+    {
+      "question": "Question text here?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctAnswer": 0,
+      "explanation": "Brief explanation of why this is correct"
+    }
+  ]
+}]`
     };
     
     historyMessages.push(systemContext);
@@ -436,271 +387,33 @@ Never skip any section of the format. Each section must be properly identified w
     // Process the response
     const responseText = completion.choices[0].message.content;
     
-    // Parse sections with error handling
-    const sections = {
-      suggested_title: '',
-      introduction: '',
-      explanation: '',
-      analogy: '',
-      additional_sources: [],
-      recap: ''
-    };
-    
-    try {
-      console.log('Parsing AI response into sections...');
-      
-      // First check if response follows the expected structure
-      const hasExpectedFormat = 
-        responseText.includes('SUGGESTED_TITLE:') &&
-        responseText.includes('Introduction:') &&
-        responseText.includes('Explanation:') &&
-        responseText.includes('Analogy:');
-      
-      if (!hasExpectedFormat) {
-        console.warn('WARNING: Response does not follow expected format. Using fallback parsing.');
+    // Extract quiz data and clean up response text before parsing sections
+    const quizMatch = responseText.match(/Quiz:\s*(\{[\s\S]*\}\s*\}\s*\})/);
+    let cleanedResponseText = responseText;
+
+    // Store quiz data separately and remove from main response
+    if (quizMatch && quizMatch[1]) {
+      try {
+        const quizData = JSON.parse(quizMatch[1]);
+        // Remove the entire quiz section from the response text
+        cleanedResponseText = responseText.replace(/Quiz:\s*\{[\s\S]*\}\s*\}\s*\}/, '').trim();
         
-        // Fallback: Try to extract meaningful sections
-        const lines = responseText.split('\n');
-        let currentSection = '';
-        let titleFound = false;
+        // Parse sections from cleaned response text
+        const sections = parseResponse(cleanedResponseText);
         
-        // First line is often a title if not explicitly marked
-        if (lines.length > 0 && !lines[0].includes(':')) {
-          sections.suggested_title = lines[0].trim();
-          titleFound = true;
-        }
-        
-        // Identify sections by looking for common headers
-        lines.forEach(line => {
-          const lowerLine = line.toLowerCase();
-          
-          if (lowerLine.includes('introduction') || lowerLine.includes('overview')) {
-            currentSection = 'introduction';
-          } else if (lowerLine.includes('explanation') || lowerLine.includes('understanding')) {
-            currentSection = 'explanation';
-          } else if (lowerLine.includes('analogy') || lowerLine.includes('comparison') || lowerLine.includes('think of it like')) {
-            currentSection = 'analogy';
-          } else if (lowerLine.includes('sources') || lowerLine.includes('resources') || lowerLine.includes('references')) {
-            currentSection = 'sources';
-          } else if (lowerLine.includes('recap') || lowerLine.includes('summary') || lowerLine.includes('key points')) {
-            currentSection = 'recap';
-          } else if (currentSection && line.trim()) {
-            // Add content to the current section
-            switch (currentSection) {
-              case 'introduction':
-                sections.introduction += line + '\n';
-                break;
-              case 'explanation':
-                sections.explanation += line + '\n';
-                break;
-              case 'analogy':
-                sections.analogy += line + '\n';
-                break;
-              case 'sources':
-                if (line.trim() && !lowerLine.includes('sources') && !lowerLine.includes('resources')) {
-                  sections.additional_sources.push({ title: line.trim() });
-                }
-                break;
-              case 'recap':
-                sections.recap += line + '\n';
-                break;
-            }
-          } else if (!titleFound && line.trim() && !currentSection) {
-            // If we haven't found a title yet and this is a non-empty line before any section
-            sections.suggested_title = line.trim();
-            titleFound = true;
-          }
-        });
-        
-        // If still no title, generate one
-        if (!sections.suggested_title) {
-          sections.suggested_title = `About ${query.split(' ').slice(0, 3).join(' ')}...`;
-        }
-        
-        // If no explanation but we have content, put everything into explanation
-        if (!sections.explanation && responseText.length > 0) {
-          sections.explanation = responseText;
-        }
-      } else {
-        // Regular parsing for well-formatted responses
-        // Split by section headers with improved pattern matching
-      const titleMatch = responseText.match(/SUGGESTED_TITLE:[\s\S]*?(?=Introduction:|$)/i);
-      const introMatch = responseText.match(/Introduction:[\s\S]*?(?=Explanation:|$)/i);
-      const explanationMatch = responseText.match(/Explanation:[\s\S]*?(?=Analogy:|$)/i);
-      const analogyMatch = responseText.match(/Analogy:[\s\S]*?(?=Additional Sources:|$)/i);
-      const sourcesMatch = responseText.match(/Additional Sources:[\s\S]*?(?=Brief Recap:|$)/i);
-      const recapMatch = responseText.match(/Brief Recap:[\s\S]*?(?=Style and Guidelines:|$)/i);
-      
-      if (titleMatch) sections.suggested_title = titleMatch[0].replace(/SUGGESTED_TITLE:/i, '').trim();
-      if (introMatch) sections.introduction = introMatch[0].replace(/Introduction:/i, '').trim();
-      if (explanationMatch) sections.explanation = explanationMatch[0].replace(/Explanation:/i, '').trim();
-      if (analogyMatch) sections.analogy = analogyMatch[0].replace(/Analogy:/i, '').trim();
-      
-      // Process resources
-      if (sourcesMatch) {
-        const sourcesContent = sourcesMatch[0].replace(/Additional Sources:/i, '').trim();
-        const resourceLines = sourcesContent.split('\n').filter(line => line.trim());
-        
-        sections.additional_sources = resourceLines.map(line => {
-          const urlMatch = line.match(/\[(.*?)\]\((.*?)\)/);
-          if (urlMatch) {
-            return {
-              title: urlMatch[1],
-              url: urlMatch[2],
-              description: ''
-            };
-          } else {
-            return {
-              title: line,
-              url: '',
-              description: ''
-            };
-          }
-        });
+        // Add quiz data as separate property
+        sections.quiz = quizData;
+      } catch (e) {
+        console.error('Error parsing quiz data:', e);
+        // Parse sections from original response if quiz parsing fails
+        const sections = parseResponse(responseText);
       }
-      
-      if (recapMatch) sections.recap = recapMatch[0].replace(/Brief Recap:/i, '').trim();
-      }
-      
-      // Check if analogy uses preferred domains
-      if (userProfile && userProfile.preferred_analogy_domains && userProfile.preferred_analogy_domains.length > 0 && sections.analogy) {
-        const preferredDomains = userProfile.preferred_analogy_domains.map(domain => domain.toLowerCase());
-        const analogyText = sections.analogy.toLowerCase();
-        
-        // Create variations of the preferred domains to check for
-        const domainVariations = {
-          'gaming': ['game', 'gamer', 'video game', 'gaming', 'gameplay', 'rpg', 'mmo', 'fps', 'moba', 'console', 'playstation', 'xbox', 'nintendo', 'steam'],
-          'cooking': ['cook', 'chef', 'recipe', 'kitchen', 'baking', 'food', 'ingredient', 'culinary', 'dish', 'meal', 'cuisine'],
-          'sports': ['sport', 'athlete', 'team', 'player', 'game', 'match', 'competition', 'tournament', 'championship', 'coach'],
-          'music': ['musician', 'band', 'song', 'instrument', 'rhythm', 'melody', 'concert', 'performance', 'album', 'artist', 'note'],
-          'art': ['artist', 'painting', 'drawing', 'sculpture', 'canvas', 'gallery', 'exhibit', 'creative', 'craft', 'design'],
-          'travel': ['trip', 'journey', 'destination', 'vacation', 'tourist', 'explore', 'adventure', 'tour', 'country', 'city'],
-          'gardening': ['garden', 'plant', 'seed', 'flower', 'grow', 'soil', 'pot', 'greenhouse', 'landscaping', 'herb'],
-          'technology': ['tech', 'computer', 'software', 'hardware', 'device', 'app', 'digital', 'electronic', 'program', 'code']
-        };
-        
-        // Check if any preferred domain or its variations are mentioned in the analogy
-        const domainMentioned = preferredDomains.some(domain => {
-          // Direct match with the domain itself
-          if (analogyText.includes(domain)) return true;
-          
-          // Check variations if they exist for this domain
-          const variations = domainVariations[domain] || [];
-          return variations.some(variation => analogyText.includes(variation));
-        });
-        
-        console.log(`Analogy domain check - Using preferred domains?: ${domainMentioned}`);
-        console.log(`Preferred domains: ${preferredDomains.join(', ')}`);
-        console.log(`Analogy snippet: ${analogyText.substring(0, 100)}...`);
-        
-        // If preferred domains aren't used, we need to regenerate the analogy
-        if (!domainMentioned) {
-          console.log('WARNING: Generated analogy does not use any preferred domains. Requesting specific analogy...');
-          
-          // Prepare a message to regenerate just the analogy
-          const regenerateMessages = [
-            {
-              role: "system",
-              content: `You are tasked with creating a new analogy that MUST relate to one of these domains: ${preferredDomains.join(', ')}. 
-The analogy must clearly explain the concept and explicitly mention the domain.
-DO NOT use general analogies like libraries, highways, etc. ONLY use the user's preferred domains.
-
-For example, if the preferred domain is "gaming", the analogy MUST use specific gaming concepts like levels, power-ups, game mechanics, etc.
-If the preferred domain is "cooking", the analogy MUST use specific cooking concepts like recipes, ingredients, cooking techniques, etc.
-
-Your response must ONLY contain the analogy and nothing else. DO NOT include any other text, explanations, or sections.
-The first word of your response MUST be one of the preferred domains.`
-            },
-            {
-              role: "user",
-              content: `Create an analogy for this concept: ${query}
-
-The analogy MUST be related to one of these domains: ${preferredDomains.join(', ')}.
-Current explanation: ${sections.explanation}
-
-The current analogy doesn't use any of the preferred domains and needs to be replaced with one that does.
-Make sure your analogy explicitly mentions one of these words: ${preferredDomains.join(', ')}`
-            }
-          ];
-          
-          try {
-            // Call OpenAI to generate a new analogy
-            const analogyCompletion = await openai.chat.completions.create({
-              model: "gpt-4",
-              messages: regenerateMessages,
-              temperature: 0.7,
-              max_tokens: 1000
-            });
-            
-            // Replace the analogy with the regenerated one
-            const newAnalogy = analogyCompletion.choices[0].message.content.trim();
-            console.log('Generated new domain-specific analogy');
-            
-            // Only replace if we got something substantial and it actually contains a preferred domain
-            if (newAnalogy && newAnalogy.length > 50) {
-              // Double check that the new analogy actually contains a preferred domain
-              const newAnalogySatisfiesDomain = preferredDomains.some(domain => 
-                newAnalogy.toLowerCase().includes(domain.toLowerCase())
-              );
-              
-              if (newAnalogySatisfiesDomain) {
-                sections.analogy = newAnalogy;
-                console.log('Replaced analogy with domain-specific version');
-              } else {
-                console.log('WARNING: Regenerated analogy still does not use preferred domains');
-                // Try one more time with an even stronger prompt
-                const lastChanceMessages = [
-                  {
-                    role: "system",
-                    content: `CRITICAL INSTRUCTION: You MUST create an analogy that uses ONLY the domain: ${preferredDomains[0]}.
-Your response MUST start with the words "${preferredDomains[0]}: " and then continue with the analogy.
-No exceptions. No other domains. If you fail to follow this instruction exactly, there will be serious consequences.`
-                  },
-                  {
-                    role: "user", 
-                    content: `Create a ${preferredDomains[0]} analogy for: ${query}`
-                  }
-                ];
-                
-                try {
-                  const lastChanceCompletion = await openai.chat.completions.create({
-                    model: "gpt-4",
-                    messages: lastChanceMessages,
-                    temperature: 0.3,
-                    max_tokens: 1000
-                  });
-                  
-                  const forcedAnalogy = lastChanceCompletion.choices[0].message.content.trim();
-                  if (forcedAnalogy && forcedAnalogy.length > 40) {
-                    sections.analogy = forcedAnalogy;
-                    console.log('Used forced domain-specific analogy as last resort');
-                  }
-                } catch (lastError) {
-                  console.error('Error in last-chance analogy generation:', lastError);
-                }
-              }
-            }
-          } catch (analogyError) {
-            console.error('Error generating domain-specific analogy:', analogyError);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error parsing response sections:', error);
-      // In case of error, use the full text as the explanation
-      sections.explanation = responseText || 'No explanation provided';
-      sections.suggested_title = `About ${query.split(' ').slice(0, 3).join(' ')}...`;
+    } else {
+      // No quiz found, parse sections normally
+      const sections = parseResponse(responseText);
     }
     
-    // Ensure sections are not empty
-    sections.suggested_title = sections.suggested_title || `About ${query.split(' ').slice(0, 3).join(' ')}...`;
-    sections.introduction = sections.introduction || 'No introduction provided';
-    sections.explanation = sections.explanation || (responseText || 'No explanation provided');
-    sections.analogy = sections.analogy || 'No analogy provided';
-    sections.additional_sources = sections.additional_sources.length ? sections.additional_sources : [];
-    sections.recap = sections.recap || 'No recap provided';
-    
-    // Prepare final response
+    // Prepare final response with quiz included
     const response = {
       id: uuidv4(),
       sessionId: sessionData.id,
@@ -711,14 +424,31 @@ No exceptions. No other domains. If you fail to follow this instruction exactly,
       analogy: sections.analogy,
       resources: sections.additional_sources,
       recap: sections.recap,
+      quiz: sections.quiz,
       timestamp: new Date().toISOString()
     };
     
+    // Add AI response with unique ID for feedback
+    const responseId = response.id || Date.now().toString();
+    const aiMessage = {
+      id: responseId,
+      type: 'assistant',
+      content: response.explanation,
+      introduction: response.introduction,
+      analogy: response.analogy,
+      resources: response.resources,
+      recap: response.recap,
+      quiz: response.quiz, // Add the quiz to the message
+      timestamp: new Date().toISOString(),
+      messageId: responseId
+    };
+
     // Add interaction to session
     await sessionManager.addInteraction(sessionData.id, {
       type: 'query',
       query,
-      response
+      response,
+      aiMessage // Include the aiMessage in the interaction
     });
     
     res.json(response);
@@ -1391,126 +1121,6 @@ app.post('/api/admin/run-array-migration', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message
-    });
-  }
-});
-
-// Add this to server/index.js
-
-// Quiz generation endpoint
-app.post('/api/generate-quiz', async (req, res) => {
-  try {
-    const { query, sessionId, difficulty = 'medium' } = req.body;
-    
-    if (!query) {
-      return res.status(400).json({ error: 'Query is required' });
-    }
-    
-    console.log('Generating quiz for query:', query);
-    
-    // Identify the user
-    const userId = req.user?.id || req.body.userId;
-    
-    // Prepare quiz generation prompt
-    const quizGenerationMessage = {
-      role: "system",
-      content: `You are a quiz creator specialized in generating educational quizzes based on topics.
-      Create a multiple-choice quiz with 5 questions related to this topic: "${query}".
-      
-      For each question:
-      1. Create 4 answer choices (A, B, C, D)
-      2. Make sure only ONE answer is correct
-      3. Make the incorrect answers plausible but clearly wrong upon inspection
-      4. Vary the position of the correct answer (don't always make A or B the correct answer)
-      5. Create questions of ${difficulty} difficulty level
-      
-      Format your response as a JSON object with the following structure:
-      {
-        "title": "Quiz title here",
-        "description": "Brief description of the quiz",
-        "questions": [
-          {
-            "question": "Question text here?",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
-            "correctAnswer": 0,
-            "explanation": "Brief explanation of why this answer is correct"
-          },
-          ...
-        ]
-      }
-      
-      The correctAnswer field should be the INDEX (0-3) of the correct option in the options array.
-      Make sure the quiz questions cover different aspects of the topic.`
-    };
-    
-    // Call OpenAI API to generate quiz
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        quizGenerationMessage,
-        { role: "user", content: `Create a quiz about: ${query}` }
-      ],
-      temperature: 0.7,
-      max_tokens: 3000
-    });
-    
-    // Parse the response
-    const responseText = completion.choices[0].message.content;
-    
-    try {
-      // Try to parse the response as JSON
-      const quizData = JSON.parse(responseText);
-      
-      // Add a unique ID to the quiz
-      const quizId = uuidv4();
-      const timestampedQuiz = {
-        ...quizData,
-        id: quizId,
-        query: query,
-        createdAt: new Date().toISOString(),
-        userId: userId || 'anonymous'
-      };
-      
-      // Store the quiz in the database if needed
-      if (userId) {
-        try {
-          const { data, error } = await supabase
-            .from('quizzes')
-            .insert([{
-              id: quizId,
-              user_id: userId,
-              title: quizData.title,
-              description: quizData.description,
-              questions: quizData.questions,
-              query: query,
-              difficulty: difficulty
-            }])
-            .select();
-            
-          if (error) {
-            console.error('Error storing quiz in database:', error);
-          } else {
-            console.log('Quiz stored in database with ID:', quizId);
-          }
-        } catch (dbError) {
-          console.error('Database operation failed:', dbError);
-        }
-      }
-      
-      res.json(timestampedQuiz);
-    } catch (parseError) {
-      console.error('Error parsing quiz JSON:', parseError);
-      console.log('Raw response:', responseText);
-      res.status(500).json({ 
-        error: 'Failed to generate quiz format',
-        rawResponse: responseText
-      });
-    }
-  } catch (error) {
-    console.error('Error generating quiz:', error);
-    res.status(500).json({ 
-      error: 'Failed to generate quiz',
-      message: error.message 
     });
   }
 });
