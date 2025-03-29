@@ -387,14 +387,17 @@ ${conversationSummary.lastAnalogy
 
 ${userProfile ? `
 User Profile:
-- Education Level: ${userProfile.education_level || 'Not specified'}
-- Learning Style: ${userProfile.learning_style || 'Not specified'}
-- Technical Depth: ${userProfile.technical_depth ? `${userProfile.technical_depth}/100` : 'Not specified'}
-- Main Learning Goal: ${userProfile.main_learning_goal || 'Not specified'}
-- Preferred Analogy Domains: ${userProfile.preferred_analogy_domains && Array.isArray(userProfile.preferred_analogy_domains) ? userProfile.preferred_analogy_domains.join(', ') : 'Not specified'}
+- Education Level: ${userProfile.education_level}
+- Learning Style: ${userProfile.learning_style}
+- Technical Background: ${userProfile.technical_background}
+- Main Learning Goal: ${userProfile.learning_goal}
+- Preferred Analogy Domains: ${userProfile.analogy_preferences.join(', ')}
 ` : ''}
 
 Your responses must ALWAYS follow this format:
+
+CONVERSATION_TITLE:
+[A concise title for this conversation, exactly 3-5 words only]
 
 SUGGESTED_TITLE:
 [A brief, descriptive title for this conversation, maximum 5-7 words]
@@ -412,20 +415,7 @@ Additional Sources:
 [Provide 3-5 relevant learning resources with URLs when possible]
 
 Brief Recap:
-[Summarize the key points in 3-5 bullet points]
-
-Quiz:
-[Generate 5 multiple-choice questions based on the explanation above. Format as JSON:
-{
-  "questions": [
-    {
-      "question": "Question text here?",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "correctAnswer": 0,
-      "explanation": "Brief explanation of why this is correct"
-    }
-  ]
-}]`
+[Summarize the key points in 3-5 bullet points]`
     };
     
     historyMessages.push(systemContext);
@@ -463,10 +453,13 @@ Quiz:
     // Process the response
     const responseText = completion.choices[0].message.content;
     
+    // Extract conversation title first
+    const conversationTitleMatch = responseText.match(/CONVERSATION_TITLE:\s*([^\n]+)/);
+    const conversationTitle = conversationTitleMatch ? conversationTitleMatch[1].trim() : '';
+
     // Extract quiz data and clean up response text before parsing sections
     const quizMatch = responseText.match(/Quiz:\s*(\{[\s\S]*\}\s*\}\s*\})/);
     let cleanedResponseText = responseText;
-    let sections = null;
 
     // Store quiz data separately and remove from main response
     if (quizMatch && quizMatch[1]) {
@@ -476,25 +469,26 @@ Quiz:
         cleanedResponseText = responseText.replace(/Quiz:\s*\{[\s\S]*\}\s*\}\s*\}/, '').trim();
         
         // Parse sections from cleaned response text
-        sections = parseResponse(cleanedResponseText);
+        const sections = parseResponse(cleanedResponseText);
         
         // Add quiz data as separate property
         sections.quiz = quizData;
       } catch (e) {
         console.error('Error parsing quiz data:', e);
         // Parse sections from original response if quiz parsing fails
-        sections = parseResponse(responseText);
+        const sections = parseResponse(responseText);
       }
     } else {
       // No quiz found, parse sections normally
-      sections = parseResponse(responseText);
+      const sections = parseResponse(responseText);
     }
     
-    // Prepare final response with quiz included
+    // Prepare final response with quiz included and conversation title
     const response = {
       id: uuidv4(),
       sessionId: sessionData.id,
       query,
+      conversation_title: conversationTitle, // Add the conversation title here
       suggested_title: sections.suggested_title,
       introduction: sections.introduction,
       explanation: sections.explanation,

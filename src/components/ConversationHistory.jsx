@@ -24,7 +24,11 @@ function ConversationHistory({ conversations, activeConversation, onSelectConver
             }`}
           >
             <div className="text-sm font-medium text-gray-900 truncate">
-              {conversation.title || 'New Conversation'}
+              {conversation.title && conversation.title.length > 1 
+                ? conversation.title 
+                : conversation.id 
+                  ? `Conversation ${new Date(parseInt(conversation.id)).toLocaleDateString()}` 
+                  : 'New Conversation'}
             </div>
             <div className="text-xs text-gray-500">
               {new Date(conversation.lastMessageTime).toLocaleDateString()}

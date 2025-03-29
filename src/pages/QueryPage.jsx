@@ -194,30 +194,62 @@ function QueryPage() {
   };
 
   const generateTitle = (message) => {
-    // Remove common question words and get the first meaningful part
-    const words = message.toLowerCase().split(' ');
-    const skipWords = ['what', 'how', 'why', 'when', 'where', 'who', 'explain', 'tell', 'me', 'about', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'will', 'would', 'can', 'could', 'should', 'to'];
-    const meaningfulWords = words.filter(word => !skipWords.includes(word));
+    if (!message || typeof message !== 'string' || message.trim() === '') {
+      console.log('Empty or invalid message for title generation');
+      return 'New Conversation';
+    }
     
-    if (meaningfulWords.length === 0) return 'New Conversation';
+    // Get words from the message, removing punctuation
+    const words = message.replace(/[^\w\s]/gi, '').trim().split(/\s+/);
     
-    // Take up to 3 meaningful words and capitalize them
-    const title = meaningfulWords
+    // Common words to skip
+    const skipWords = new Set([
+      'what', 'how', 'why', 'when', 'where', 'who', 'which',
+      'explain', 'tell', 'me', 'about', 'can', 'you', 'please', 
+      'the', 'a', 'an', 'is', 'are', 'was', 'were', 'will', 'would', 
+      'can', 'could', 'should', 'to', 'and', 'or', 'but', 'if', 
+      'then', 'that', 'this', 'these', 'those', 'for', 'with'
+    ]);
+    
+    // Filter out short and common words
+    let filteredWords = words.filter(word => 
+      word.length > 2 && !skipWords.has(word.toLowerCase())
+    );
+    
+    // If we don't have enough words after filtering, take the first few words
+    if (filteredWords.length < 2) {
+      filteredWords = words.filter(w => w.length > 1).slice(0, 3);
+    }
+    
+    // If we still don't have words, just take the first 3 non-empty words
+    if (filteredWords.length === 0) {
+      filteredWords = words.filter(w => w.length > 0).slice(0, 3);
+    }
+    
+    // If we have nothing at all, use a default
+    if (filteredWords.length === 0) {
+      console.log('No words found for title generation');
+      return 'New Conversation';
+    }
+    
+    // Take up to 3 words and capitalize each one
+    const title = filteredWords
       .slice(0, 3)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
     
-    return title;
+    console.log(`Generated title "${title}" from message "${message.substring(0, 30)}..."`);
+    return title || 'New Conversation'; // Final fallback
   };
 
   const handleNewConversation = () => {
     // Create a unique ID for the new conversation
     const newConversationId = Date.now().toString();
     
-    // Create the new conversation object
+    // Create the new conversation object with a default title
     const newConversation = {
       id: newConversationId,
-      title: 'New Conversation',
+      title: 'New Conversation', // Default title that will be updated when first message is sent
       messages: [],
       lastMessageTime: new Date().toISOString(),
       // Preserve the sessionId for continuity
@@ -232,10 +264,6 @@ function QueryPage() {
     
     // Clear the messages for this new conversation
     setMessages([]);
-    
-    // Don't clear the sessionId if it exists - we'll keep using the same session
-    // but if we want a completely fresh session, uncomment the next line
-    // setSessionId(null);
     
     // Reset the UI state and clear feedback form
     setShowFeedbackFor(null);
@@ -279,9 +307,13 @@ function QueryPage() {
 
     // If this is the first message in a new conversation, create it
     if (!activeConversation && newQuery.trim()) {
+      // Generate title once
+      const title = generateTitle(newQuery);
+      console.log('Creating new conversation with title:', title);
+      
       const newConversation = {
         id: Date.now().toString(),
-        title: generateTitle(newQuery),
+        title: title,
         messages: [],
         lastMessageTime: new Date().toISOString(),
       };
@@ -292,15 +324,23 @@ function QueryPage() {
     else if (activeConversation && newQuery.trim()) {
       const currentConversation = conversations.find(c => c.id === activeConversation);
       if (currentConversation && currentConversation.title === 'New Conversation') {
-        setConversations(prev => prev.map(conv => {
-          if (conv.id === activeConversation) {
-            return {
-              ...conv,
-              title: generateTitle(newQuery)
-            };
-          }
-          return conv;
-        }));
+        // Generate title once
+        const title = generateTitle(newQuery);
+        console.log('Updating conversation title:', title);
+        
+        // Use a flag to prevent duplicate updates
+        if (!currentConversation._titleUpdated) {
+          setConversations(prev => prev.map(conv => {
+            if (conv.id === activeConversation) {
+              return {
+                ...conv,
+                title: title,
+                _titleUpdated: true // Flag to prevent duplicate updates
+              };
+            }
+            return conv;
+          }));
+        }
       }
     }
   };
@@ -311,9 +351,12 @@ function QueryPage() {
     
     // If no active conversation exists, create one
     if (!activeConversation) {
+      const title = generateTitle(query);
+      console.log('Creating new conversation with title:', title);
+      
       const newConversation = {
         id: Date.now().toString(),
-        title: generateTitle(query),
+        title: title,
         messages: [],
         lastMessageTime: new Date().toISOString(),
       };
@@ -376,80 +419,41 @@ function QueryPage() {
         resources: response.resources,
         recap: response.recap,
         timestamp: new Date().toISOString(),
-        messageId: responseId // Add messageId to the message object
+        messageId: responseId
       };
       
       const updatedMessages = [...messages, userMessage, aiMessage];
       setMessages(updatedMessages);
       
-      // First, store the user prompt
-      const { data: promptData, error: promptError } = await supabase
-        .from('user_prompts')
-        .insert({
-          user_id: user.id,
-          prompt_text: query,
-          category: response.category,
-          metadata: {
-            session_id: response.sessionId,
-            difficulty_level: response.difficulty_level,
-            conversation_id: activeConversation
-          }
-        })
-        .select()
-        .single();
-    
-      if (promptError) throw promptError;
-    
-      // Then, store the query with the prompt_id
-      const { data: queryData, error: queryError } = await supabase
-        .from('queries')
-        .insert({
-          user_id: user.id,
-          query: query,
-          response: response,
-          explanation: response.explanation,
-          category: response.category,
-          difficulty_level: response.difficulty_level,
-          prompt_id: promptData.id
-        })
-        .select()
-        .single();
-    
-      if (queryError) throw queryError;
-    
-      // Update the user_prompts with the query_id
-      const { error: updatePromptError } = await supabase
-        .from('user_prompts')
-        .update({ query_id: queryData.id })
-        .eq('id', promptData.id);
-    
-      if (updatePromptError) throw updatePromptError;
-      
       // Update conversations with a more descriptive title based on the AI response
-      setConversations(prev => prev.map(conv => {
-        if (conv.id === activeConversation) {
-          // Use the AI suggested title if available, otherwise create one from the introduction
-          let betterTitle = response.suggested_title || conv.title;
-          
-          // If no suggested title but we have an introduction, create one from that
-          if (!betterTitle && response.introduction) {
-            const introContent = response.introduction.trim();
-            // Extract the first sentence or up to 40 chars for the title
-            const firstSentence = introContent.split(/[.!?]/)[0].trim();
-            betterTitle = firstSentence.length > 40 
-              ? firstSentence.substring(0, 40) + '...' 
-              : firstSentence;
+      // Only process if not already processed
+      if (!response._processed) {
+        response._processed = true; // Flag to prevent duplicate processing
+        
+        setConversations(prev => prev.map(conv => {
+          if (conv.id === activeConversation) {
+            // Generate title once
+            const generatedTitle = generateTitle(query);
+            const bestTitle = response.suggested_title || generatedTitle || conv.title || 'New Conversation';
+            
+            console.log('Setting conversation title (final):', {
+              original: conv.title,
+              suggested: response.suggested_title,
+              generated: generatedTitle,
+              final: bestTitle
+            });
+            
+            return {
+              ...conv,
+              title: bestTitle,
+              messages: updatedMessages,
+              lastMessageTime: new Date().toISOString(),
+              sessionId: response.sessionId || conv.sessionId
+            };
           }
-          
-          return {
-            ...conv,
-            title: betterTitle || conv.title,
-            messages: updatedMessages,
-            lastMessageTime: new Date().toISOString(),
-          };
-        }
-        return conv;
-      }));
+          return conv;
+        }));
+      }
       
       setShowFeedbackFor(responseId);
       setActiveFeedbackMessage(responseId);
@@ -469,14 +473,16 @@ function QueryPage() {
   // Handle feedback submission complete
   const handleFeedbackSubmitted = (messageId) => {
     console.log('Feedback submitted successfully for message:', messageId);
-    setShowFeedbackFor(null);
-    setActiveFeedbackMessage(null);
     
-    // Don't affect active quiz state here
-    
-    // Also clear from localStorage if stored
-    if (user) {
-      localStorage.removeItem(`showFeedbackFor_${user.id}`);
+    // Don't clear active feedback if there's an active quiz for a different message
+    if (!activeQuizMessage || activeQuizMessage === messageId) {
+      setShowFeedbackFor(null);
+      setActiveFeedbackMessage(null);
+      
+      // Also clear from localStorage if stored
+      if (user) {
+        localStorage.removeItem(`showFeedbackFor_${user.id}`);
+      }
     }
   };
 
@@ -559,14 +565,32 @@ function QueryPage() {
       // Update the conversation
       setConversations(prev => prev.map(conv => {
         if (conv.id === activeConversation) {
-          // Update the title if we got a suggested title from the regenerated response
-          const updatedTitle = response.suggested_title 
-            ? response.suggested_title 
-            : conv.title;
+          // Only update title if not already processed
+          if (!response._processed) {
+            response._processed = true;
             
+            // Keep the existing title unless we have a new one from the API
+            const updatedTitle = response.suggested_title && response.suggested_title.length > 1
+              ? response.suggested_title 
+              : conv.title;
+              
+            console.log('Updating regenerated conversation title:', {
+              original: conv.title,
+              suggested: response.suggested_title,
+              final: updatedTitle
+            });
+            
+            return {
+              ...conv,
+              title: updatedTitle,
+              messages: [...messages, regeneratedMessage],
+              lastMessageTime: new Date().toISOString(),
+            };
+          }
+          
+          // If already processed, just update messages
           return {
             ...conv,
-            title: updatedTitle,
             messages: [...messages, regeneratedMessage],
             lastMessageTime: new Date().toISOString(),
           };
@@ -574,10 +598,11 @@ function QueryPage() {
         return conv;
       }));
 
-      // Show feedback for the new message after a delay
+      // Set a timer to show feedback for the regenerated message
       setTimeout(() => {
         setShowFeedbackFor(regeneratedResponseId);
-      }, 1000);
+        setActiveFeedbackMessage(regeneratedResponseId);
+      }, 500);
 
       // After regeneration completes, restore quiz state if it was active
       if (quizMessageId) {
@@ -856,14 +881,30 @@ function QueryPage() {
                     preGeneratedQuiz={message.quiz}
                     onQuizStart={() => {
                       console.log('Quiz started for message:', message.id);
+                      // Store the current feedback state before starting quiz
+                      if (showFeedbackFor === message.id) {
+                        // Save that this message had feedback showing
+                        message.hadFeedbackShowing = true;
+                      }
                       setActiveQuizMessage(message.id);
-                      // Hide any feedback forms when quiz starts
-                      setShowFeedbackFor(null);
-                      setActiveFeedbackMessage(null);
+                      // Temporarily hide feedback during quiz
+                      if (showFeedbackFor === message.id) {
+                        setShowFeedbackFor(null);
+                      }
                     }}
                     onQuizEnd={() => {
                       console.log('Quiz ended for message:', message.id);
                       setActiveQuizMessage(null);
+                      
+                      // Force restore feedback state with a delay
+                      if (message.hadFeedbackShowing) {
+                        setTimeout(() => {
+                          setShowFeedbackFor(message.id);
+                          setActiveFeedbackMessage(message.id);
+                          // Clear the flag
+                          message.hadFeedbackShowing = false;
+                        }, 300);
+                      }
                     }}
                     isActive={activeQuizMessage === message.id}
                     alwaysVisible={true}
@@ -873,20 +914,45 @@ function QueryPage() {
 
               {/* Feedback form section - update to check for active quiz */}
               {message.type === 'assistant' && 
-               showFeedbackFor === message.id && 
-               activeFeedbackMessage === message.id && 
-               !activeQuizMessage && (
+               (showFeedbackFor === message.id || message.hadFeedbackShowing) && 
+               activeQuizMessage !== message.id && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                   <FeedbackForm
                     key={`feedback-${message.id}`}
                     responseId={message.id}
-                    onFeedbackSubmitted={handleFeedbackSubmitted}
+                    onFeedbackSubmitted={(messageId) => {
+                      handleFeedbackSubmitted(messageId);
+                      // Force a refresh of the UI state
+                      setTimeout(() => {
+                        if (messages.find(m => m.id === messageId)) {
+                          messages.find(m => m.id === messageId).hadFeedbackSubmitted = true;
+                        }
+                      }, 100);
+                    }}
                     originalQuery={messages.find(m => m.type === 'user' && 
                       messages.indexOf(m) < messages.indexOf(message))?.content || ''}
                     preferences={preferences}
                     onRegenerateAnswer={handleRegenerateAnswer}
                     sessionId={sessionId}
                   />
+                </div>
+              )}
+
+              {/* Add feedback button for messages without feedback */}
+              {message.type === 'assistant' && 
+               !showFeedbackFor && 
+               !activeQuizMessage &&
+               !message.hadFeedbackSubmitted && (
+                <div className="mt-2 flex justify-end">
+                  <button
+                    onClick={() => {
+                      setShowFeedbackFor(message.id);
+                      setActiveFeedbackMessage(message.id);
+                    }}
+                    className="text-sm text-primary-600 hover:text-primary-800"
+                  >
+                    Provide Feedback
+                  </button>
                 </div>
               )}
             </div>

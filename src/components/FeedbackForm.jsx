@@ -180,22 +180,23 @@ const fetchSimilarAnalogyQueries = async (analogyCategory) => {
         throw new Error('You must be logged in to submit feedback');
       }
 
-      // Instead of trying to use the RPC function, submit directly to the feedbacks table
+      // Create structured content with metadata
+      const feedbackContent = JSON.stringify({
+        explanationClear: updatedFeedback.explanationClear,
+        explanationDetail: updatedFeedback.explanationDetail,
+        analogyHelpful: updatedFeedback.analogyHelpful,
+        analogyPreference: updatedFeedback.analogyPreference,
+        comments: updatedFeedback.comments || ''
+      });
+
+      // Submit to feedbacks table with correct structure
       const { data, error } = await supabase
         .from('feedbacks')
         .insert({
           user_id: user.id,
-          content: updatedFeedback.comments || '',
+          content: feedbackContent,
           rating: parseInt(updatedFeedback.rating),
-          query_id: feedbackStorageData.query_id,
-          message_id: responseId,
-          session_id: sessionId,
-          metadata: {
-            explanationClear: updatedFeedback.explanationClear,
-            explanationDetail: updatedFeedback.explanationDetail,
-            analogyHelpful: updatedFeedback.analogyHelpful,
-            analogyPreference: updatedFeedback.analogyPreference
-          }
+          query_id: responseId
         })
         .select();
       
