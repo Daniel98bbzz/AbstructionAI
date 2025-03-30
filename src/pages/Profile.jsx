@@ -155,18 +155,31 @@ function Profile() {
       setSuccessMessage('');
       setError(null);
       
+      // Make sure interests and preferred_analogy_domains are arrays
+      const validatedFormData = {
+        ...formData,
+        interests: Array.isArray(formData.interests) ? formData.interests : [],
+        preferred_analogy_domains: Array.isArray(formData.preferred_analogy_domains) ? formData.preferred_analogy_domains : []
+      };
+      
+      console.log('Saving profile with preferences:', {
+        interests: validatedFormData.interests,
+        preferred_analogy_domains: validatedFormData.preferred_analogy_domains
+      });
+      
+      // Update in Supabase
       const { data, error } = await supabase
         .from('user_profiles')
         .update({
-          username: formData.username,
-          occupation: formData.occupation,
-          age: formData.age,
-          education_level: formData.education_level,
-          interests: formData.interests,
-          learning_style: formData.learning_style,
-          technical_depth: formData.technical_depth,
-          preferred_analogy_domains: formData.preferred_analogy_domains,
-          main_learning_goal: formData.main_learning_goal,
+          username: validatedFormData.username,
+          occupation: validatedFormData.occupation,
+          age: validatedFormData.age,
+          education_level: validatedFormData.education_level,
+          interests: validatedFormData.interests,
+          learning_style: validatedFormData.learning_style,
+          technical_depth: validatedFormData.technical_depth,
+          preferred_analogy_domains: validatedFormData.preferred_analogy_domains,
+          main_learning_goal: validatedFormData.main_learning_goal,
           updated_at: new Date().toISOString()
         })
         .eq('id', user.id)
@@ -174,44 +187,106 @@ function Profile() {
       
       if (error) throw error;
       
-      // Call the webhook to update the memory cache
-      try {
-        const response = await fetch('/api/hooks/profile-updated', {
+      // Enhanced profile update process
+      // First call the webhook to update the memory cache
+      const response = await fetch('/api/hooks/profile-updated', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          table: 'user_profiles',
+          record: {
+            id: user.id,
+            username: validatedFormData.username,
+            occupation: validatedFormData.occupation,
+            age: validatedFormData.age,
+            education_level: validatedFormData.education_level,
+            interests: validatedFormData.interests,
+            learning_style: validatedFormData.learning_style,
+            technical_depth: validatedFormData.technical_depth,
+            preferred_analogy_domains: validatedFormData.preferred_analogy_domains,
+            main_learning_goal: validatedFormData.main_learning_goal
+          }
+        })
+      });
+      
+      // Also make a direct call to force update the memory cache
+      const forceResponse = await fetch('/api/force-user-profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.id
+        })
+      });
+      
+      // And check the memory cache to confirm it was updated
+      const memoryResponse = await fetch(`/api/view-memory-profile?userId=${user.id}`);
+      const memoryProfile = await memoryResponse.json();
+      
+      console.log('Memory profile after update:', memoryProfile);
+      console.log('Profile preferences in memory:', { 
+        interests: memoryProfile.profile?.interests,
+        preferred_analogy_domains: memoryProfile.profile?.preferred_analogy_domains
+      });
+      
+      // If the memory cache doesn't match what we saved, try to fix it
+      if (memoryProfile.success && 
+          (!arraysEqual(memoryProfile.profile?.interests, validatedFormData.interests) || 
+           !arraysEqual(memoryProfile.profile?.preferred_analogy_domains, validatedFormData.preferred_analogy_domains))) {
+        console.warn('Memory cache does not match saved preferences, forcing update');
+        
+        // Force an override to ensure memory cache has correct values
+        const overrideResponse = await fetch('/api/emergency-profile-override', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            table: 'user_profiles',
-            record: {
-              id: user.id,
-              username: formData.username,
-              occupation: formData.occupation,
-              age: formData.age,
-              education_level: formData.education_level,
-              interests: formData.interests,
-              learning_style: formData.learning_style,
-              technical_depth: formData.technical_depth,
-              preferred_analogy_domains: formData.preferred_analogy_domains,
-              main_learning_goal: formData.main_learning_goal
+            userId: user.id,
+            preferredDomains: validatedFormData.preferred_analogy_domains,
+            interests: validatedFormData.interests,
+            otherFields: {
+              username: validatedFormData.username,
+              occupation: validatedFormData.occupation,
+              age: validatedFormData.age,
+              education_level: validatedFormData.education_level,
+              learning_style: validatedFormData.learning_style,
+              technical_depth: validatedFormData.technical_depth,
+              main_learning_goal: validatedFormData.main_learning_goal
             }
           })
         });
         
-        const hookResult = await response.json();
-        console.log('Profile webhook result:', hookResult);
-      } catch (hookError) {
-        console.error('Warning: Failed to call profile webhook:', hookError);
-        // Don't throw error here, just log it
+        const overrideResult = await overrideResponse.json();
+        console.log('Emergency override result:', overrideResult);
       }
       
-      toast.success('Profile updated successfully');
-      setSuccessMessage('Profile updated successfully');
+      setSuccessMessage('Profile updated successfully!');
+      toast.success('Profile updated successfully!');
     } catch (error) {
       console.error('Error updating profile:', error);
       setError(error.message);
-      toast.error('Failed to update profile');
+      toast.error('Failed to update profile.');
     }
+  };
+
+  // Helper function to compare arrays
+  const arraysEqual = (a, b) => {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    
+    // Create sorted copies to compare
+    const sortedA = [...a].sort();
+    const sortedB = [...b].sort();
+    
+    for (let i = 0; i < sortedA.length; i++) {
+      if (sortedA[i] !== sortedB[i]) return false;
+    }
+    return true;
   };
 
   if (loading || isLoading) {

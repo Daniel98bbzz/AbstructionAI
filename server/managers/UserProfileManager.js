@@ -99,49 +99,59 @@ class UserProfileManager {
 
   async getProfile(userId) {
     try {
+      console.log('UserProfileManager: Getting profile for', userId);
+      
+      // First, check if profile exists in database
       const { data, error } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', userId)
         .single();
-
-      if (!error) {
-        // Parse string fields to arrays if needed
-        if (data) {
-          // Use imported function if it exists, otherwise define locally
-          const ensureArray = (value) => {
-            if (Array.isArray(value)) {
-              return value;
-            }
-            if (typeof value === 'string') {
-              try {
-                const parsed = JSON.parse(value);
-                return Array.isArray(parsed) ? parsed : [value];
-              } catch (e) {
-                return [value]; // If we can't parse it, wrap the string in an array
-              }
-            }
-            if (value === null || value === undefined) {
-              return [];
-            }
-            return [value]; // For any other type, wrap in array
-          };
-
-          // Ensure arrays are properly formatted
-          data.interests = ensureArray(data.interests);
-          data.preferred_analogy_domains = ensureArray(data.preferred_analogy_domains);
-          
-          console.log('Profile loaded from database with arrays:', {
-            interests: data.interests,
-            preferred_analogy_domains: data.preferred_analogy_domains
-          });
-        }
+      
+      // If profile exists, format and return it
+      if (!error && data) {
+        console.log('UserProfileManager: Raw profile data from database:', {
+          interestsType: typeof data.interests,
+          domainsType: typeof data.preferred_analogy_domains
+        });
         
-        return data;
+        // Helper function to ensure array format
+        const ensureArray = (value) => {
+          if (Array.isArray(value)) {
+            return value;
+          }
+          if (typeof value === 'string') {
+            try {
+              const parsed = JSON.parse(value);
+              return Array.isArray(parsed) ? parsed : [value];
+            } catch (e) {
+              console.error('Error parsing array string:', e);
+              return [value]; // If we can't parse it, wrap the string in an array
+            }
+          }
+          if (value === null || value === undefined) {
+            return [];
+          }
+          return [value]; // For any other type, wrap in array
+        };
+
+        // Make deep copies to avoid reference issues
+        const processedData = {
+          ...data,
+          interests: ensureArray(data.interests),
+          preferred_analogy_domains: ensureArray(data.preferred_analogy_domains)
+        };
+        
+        console.log('UserProfileManager: Processed profile data:', {
+          interests: processedData.interests,
+          preferred_analogy_domains: processedData.preferred_analogy_domains
+        });
+        
+        return processedData;
       }
       
-      // If profile doesn't exist, try to create a default one
-      if (error.code === 'PGRST116') {
+      // If profile doesn't exist, create it
+      if (error && error.code === 'PGRST116') {
         console.log(`Profile not found for user ${userId}, creating default profile`);
         
         try {
