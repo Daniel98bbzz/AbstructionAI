@@ -14,7 +14,6 @@ function Profile() {
     interests: [],
     learning_style: '',
     technical_depth: 50,
-    preferred_analogy_domains: [],
     main_learning_goal: '',
   });
   const [successMessage, setSuccessMessage] = useState('');
@@ -65,21 +64,6 @@ function Profile() {
     'Kinesthetic'
   ];
 
-  const ANALOGY_DOMAINS = [
-    'Gaming',
-    'Sports',
-    'Movies',
-    'Technology',
-    'Cooking',
-    'Everyday Life',
-    'Science',
-    'Historical Events',
-    'Nature',
-    'Music',
-    'Architecture',
-    'Business'
-  ];
-
   const LEARNING_GOALS = [
     'Professional Development',
     'Academic Study',
@@ -116,7 +100,6 @@ function Profile() {
           interests: data.interests || [],
           learning_style: data.learning_style || '',
           technical_depth: data.technical_depth || 50,
-          preferred_analogy_domains: data.preferred_analogy_domains || [],
           main_learning_goal: data.main_learning_goal || '',
         });
       }
@@ -155,16 +138,21 @@ function Profile() {
       setSuccessMessage('');
       setError(null);
       
-      // Make sure interests and preferred_analogy_domains are arrays
+      // Make sure interests is an array
       const validatedFormData = {
         ...formData,
-        interests: Array.isArray(formData.interests) ? formData.interests : [],
-        preferred_analogy_domains: Array.isArray(formData.preferred_analogy_domains) ? formData.preferred_analogy_domains : []
+        interests: Array.isArray(formData.interests) ? formData.interests : []
       };
       
-      console.log('Saving profile with preferences:', {
+      console.log('Saving profile with all parameters:', {
+        username: validatedFormData.username,
+        occupation: validatedFormData.occupation,
+        age: validatedFormData.age, 
+        education_level: validatedFormData.education_level,
         interests: validatedFormData.interests,
-        preferred_analogy_domains: validatedFormData.preferred_analogy_domains
+        learning_style: validatedFormData.learning_style,
+        technical_depth: validatedFormData.technical_depth,
+        main_learning_goal: validatedFormData.main_learning_goal
       });
       
       // Update in Supabase
@@ -178,7 +166,6 @@ function Profile() {
           interests: validatedFormData.interests,
           learning_style: validatedFormData.learning_style,
           technical_depth: validatedFormData.technical_depth,
-          preferred_analogy_domains: validatedFormData.preferred_analogy_domains,
           main_learning_goal: validatedFormData.main_learning_goal,
           updated_at: new Date().toISOString()
         })
@@ -205,7 +192,6 @@ function Profile() {
             interests: validatedFormData.interests,
             learning_style: validatedFormData.learning_style,
             technical_depth: validatedFormData.technical_depth,
-            preferred_analogy_domains: validatedFormData.preferred_analogy_domains,
             main_learning_goal: validatedFormData.main_learning_goal
           }
         })
@@ -227,15 +213,20 @@ function Profile() {
       const memoryProfile = await memoryResponse.json();
       
       console.log('Memory profile after update:', memoryProfile);
-      console.log('Profile preferences in memory:', { 
+      console.log('Profile parameters in memory:', { 
+        username: memoryProfile.profile?.username,
+        occupation: memoryProfile.profile?.occupation,
+        age: memoryProfile.profile?.age,
+        education_level: memoryProfile.profile?.education_level,
         interests: memoryProfile.profile?.interests,
-        preferred_analogy_domains: memoryProfile.profile?.preferred_analogy_domains
+        learning_style: memoryProfile.profile?.learning_style,
+        technical_depth: memoryProfile.profile?.technical_depth,
+        main_learning_goal: memoryProfile.profile?.main_learning_goal
       });
       
       // If the memory cache doesn't match what we saved, try to fix it
       if (memoryProfile.success && 
-          (!arraysEqual(memoryProfile.profile?.interests, validatedFormData.interests) || 
-           !arraysEqual(memoryProfile.profile?.preferred_analogy_domains, validatedFormData.preferred_analogy_domains))) {
+          !arraysEqual(memoryProfile.profile?.interests, validatedFormData.interests)) {
         console.warn('Memory cache does not match saved preferences, forcing update');
         
         // Force an override to ensure memory cache has correct values
@@ -246,7 +237,6 @@ function Profile() {
           },
           body: JSON.stringify({
             userId: user.id,
-            preferredDomains: validatedFormData.preferred_analogy_domains,
             interests: validatedFormData.interests,
             otherFields: {
               username: validatedFormData.username,
@@ -478,35 +468,9 @@ function Profile() {
                   </div>
                 ))}
               </div>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">Preferred Analogy Domains</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Topics you'd like to see used in analogies to explain concepts
+              <p className="mt-4 text-sm text-gray-500 italic">
+                We'll use your interests to create personalized analogies that explain complex concepts
               </p>
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {ANALOGY_DOMAINS.map(domain => (
-                  <div key={domain} className="flex items-start">
-                    <div className="flex items-center h-5">
-                      <input
-                        id={`domain-${domain}`}
-                        name="preferred_analogy_domains"
-                        type="checkbox"
-                        value={domain}
-                        checked={formData.preferred_analogy_domains.includes(domain)}
-                        onChange={handleCheckboxChange}
-                        className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300 rounded"
-                      />
-                    </div>
-                    <div className="ml-2 text-sm">
-                      <label htmlFor={`domain-${domain}`} className="font-medium text-gray-700">
-                        {domain}
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
 
             <div>

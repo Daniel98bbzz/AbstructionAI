@@ -48,21 +48,6 @@ const LEARNING_STYLES = [
   'Kinesthetic'
 ];
 
-const ANALOGY_DOMAINS = [
-  'Gaming',
-  'Sports',
-  'Movies',
-  'Technology',
-  'Cooking',
-  'Everyday Life',
-  'Science',
-  'Historical Events',
-  'Nature',
-  'Music',
-  'Architecture',
-  'Business'
-];
-
 const LEARNING_GOALS = [
   'Professional Development',
   'Academic Study',
@@ -92,7 +77,6 @@ function Register() {
     // Additional Information
     learning_style: '',
     technical_depth: 50,
-    preferred_analogy_domains: [],
     main_learning_goal: ''
   });
 
@@ -134,12 +118,12 @@ function Register() {
     const { name, value, type, checked } = e.target;
     
     if (type === 'checkbox') {
-      const arrayField = name === 'interests' ? 'interests' : 'preferred_analogy_domains';
+      // Now only handling interests
       setFormData(prev => ({
         ...prev,
-        [arrayField]: checked
-          ? [...prev[arrayField], value]
-          : prev[arrayField].filter(item => item !== value)
+        interests: checked
+          ? [...prev.interests, value]
+          : prev.interests.filter(item => item !== value)
       }));
     } else {
       setFormData(prev => ({
@@ -185,16 +169,18 @@ function Register() {
         interests: formData.interests && Array.isArray(formData.interests) ? formData.interests : [],
         learning_style: formData.learning_style.toLowerCase(),
         technical_depth: parseInt(formData.technical_depth),
-        // Ensure preferred_analogy_domains is an array of strings
-        preferred_analogy_domains: formData.preferred_analogy_domains && Array.isArray(formData.preferred_analogy_domains) 
-          ? formData.preferred_analogy_domains 
-          : [],
         main_learning_goal: formData.main_learning_goal.toLowerCase()
       };
       
-      console.log('Saving user profile with arrays:', {
+      console.log('Saving new user profile with all parameters:', {
+        username: userProfile.username,
+        occupation: userProfile.occupation,
+        age: userProfile.age,
+        education_level: userProfile.education_level,
         interests: userProfile.interests,
-        preferred_analogy_domains: userProfile.preferred_analogy_domains
+        learning_style: userProfile.learning_style,
+        technical_depth: userProfile.technical_depth,
+        main_learning_goal: userProfile.main_learning_goal
       });
       
       const { error: profileError } = await supabase
@@ -214,6 +200,26 @@ function Register() {
           })
         });
         console.log('Profile cache updated after registration');
+        
+        // Verify the profile was stored correctly in memory
+        try {
+          const verifyResponse = await fetch(`/api/view-memory-profile?userId=${authData.user.id}`);
+          const verifyData = await verifyResponse.json();
+          if (verifyData.success) {
+            console.log('Profile parameters in memory after registration:', {
+              username: verifyData.profile.username,
+              occupation: verifyData.profile.occupation,
+              age: verifyData.profile.age,
+              education_level: verifyData.profile.education_level,
+              interests: verifyData.profile.interests,
+              learning_style: verifyData.profile.learning_style,
+              technical_depth: verifyData.profile.technical_depth,
+              main_learning_goal: verifyData.profile.main_learning_goal
+            });
+          }
+        } catch (verifyError) {
+          console.error('Failed to verify memory profile:', verifyError);
+        }
       } catch (cacheError) {
         console.error('Failed to update profile cache:', cacheError);
         // Non-fatal error, continue

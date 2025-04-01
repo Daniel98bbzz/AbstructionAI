@@ -169,9 +169,14 @@ app.post('/api/query', async (req, res) => {
       userProfile.interests = ensureArray(userProfile.interests);
       userProfile.preferred_analogy_domains = ensureArray(userProfile.preferred_analogy_domains);
       
-      console.log('User profile from memory cache has arrays:', {
+      console.log('User profile from memory cache has values:', {
         interests: userProfile.interests,
-        preferred_analogy_domains: userProfile.preferred_analogy_domains
+        occupation: userProfile.occupation,
+        age: userProfile.age,
+        education_level: userProfile.education_level,
+        learning_style: userProfile.learning_style,
+        technical_depth: userProfile.technical_depth,
+        main_learning_goal: userProfile.main_learning_goal
       });
       
       // Reload in background to keep memory cache fresh
@@ -192,21 +197,13 @@ app.post('/api/query', async (req, res) => {
                 data.interests : 
                 (typeof data.interests === 'string' ? 
                   JSON.parse(data.interests) : 
-                  ['Video Games', 'Art']),
-              preferred_analogy_domains: Array.isArray(data.preferred_analogy_domains) ? 
-                data.preferred_analogy_domains : 
-                (typeof data.preferred_analogy_domains === 'string' ? 
-                  JSON.parse(data.preferred_analogy_domains) : 
-                  ['Gaming', 'Cooking'])
+                  ['Video Games', 'Art'])
             };
             
             // Update the memory cache
             global.userProfiles[userId] = freshProfile;
             console.log('Background refresh completed - updated memory cache with fresh data');
-            console.log('Updated preferences:', {
-              interests: freshProfile.interests,
-              preferred_analogy_domains: freshProfile.preferred_analogy_domains
-            });
+            console.log('Updated interests:', freshProfile.interests);
           }
         } catch (refreshError) {
           console.error('Error in background profile refresh:', refreshError);
@@ -225,7 +222,15 @@ app.post('/api/query', async (req, res) => {
           if (userProfile) {
             global.userProfiles = global.userProfiles || {};
             global.userProfiles[userId] = userProfile;
-            console.log('Stored profile in memory cache');
+            console.log('Stored profile in memory cache with values:', {
+              interests: userProfile.interests,
+              occupation: userProfile.occupation,
+              age: userProfile.age,
+              education_level: userProfile.education_level,
+              learning_style: userProfile.learning_style,
+              technical_depth: userProfile.technical_depth,
+              main_learning_goal: userProfile.main_learning_goal
+            });
           }
         } catch (managerError) {
           console.error('Error using UserProfileManager:', managerError);
@@ -296,22 +301,9 @@ app.post('/api/query', async (req, res) => {
             }
           }
           
-          if (userProfile.preferred_analogy_domains && typeof userProfile.preferred_analogy_domains === 'string') {
-            try {
-              userProfile.preferred_analogy_domains = JSON.parse(userProfile.preferred_analogy_domains);
-            } catch (e) {
-              console.error('Error parsing preferred_analogy_domains JSON:', e);
-              userProfile.preferred_analogy_domains = ['Gaming', 'Cooking']; // Default fallback
-            }
-          }
-          
           // Ensure these are always arrays
           if (!Array.isArray(userProfile.interests)) {
             userProfile.interests = ['Video Games', 'Art']; // Default fallback
-          }
-          
-          if (!Array.isArray(userProfile.preferred_analogy_domains)) {
-            userProfile.preferred_analogy_domains = ['Gaming', 'Cooking']; // Default fallback
           }
         } else {
           console.error('No user profile found for ID:', userId);
@@ -386,13 +378,18 @@ ${conversationSummary.lastAnalogy
   : ""}
 
 ${userProfile ? `
-User Profile:
-- Education Level: ${userProfile.education_level || 'Not specified'}
-- Learning Style: ${userProfile.learning_style || 'Not specified'}
-- Technical Background: ${userProfile.technical_background || userProfile.technical_depth || 'Not specified'}
-- Main Learning Goal: ${userProfile.learning_goal || userProfile.main_learning_goal || 'Not specified'}
-- Preferred Analogy Domains: ${userProfile.preferred_analogy_domains?.join(', ') || userProfile.analogy_preferences?.join(', ') || 'None specified'}
-` : ''}
+IMPORTANT - USER PROFILE INSTRUCTIONS:
+- Occupation: ${userProfile.occupation || 'Not specified'} - ADAPT your language and examples to this occupation
+- Age: ${userProfile.age || 'Not specified'} - USE age-appropriate examples and complexity
+- Education Level: ${userProfile.education_level || 'Not specified'} - MATCH this educational background
+- Learning Style: ${userProfile.learning_style || 'Not specified'} - FOLLOW this learning approach
+- Technical Background: ${userProfile.technical_background || userProfile.technical_depth || 'Not specified'} - ADJUST technical depth accordingly
+- Main Learning Goal: ${userProfile.learning_goal || userProfile.main_learning_goal || 'Not specified'} - FOCUS on this objective
+- Interests: ${userProfile.interests?.join(', ') || 'None specified'} - CREATE analogies using ONLY ONE of these interests
+
+YOU MUST PICK ONLY ONE OF THE USER'S INTERESTS TO CREATE YOUR ANALOGY. DO NOT USE MULTIPLE INTERESTS.
+DO NOT CREATE A GENERIC ANALOGY - DIRECTLY REFERENCE ONE SPECIFIC INTEREST FROM THE LIST ABOVE.
+` : 'No user profile provided. Use general explanations suitable for an average adult.'}
 
 ${isRegeneration && feedback ? `
 IMPORTANT: This is a request to improve a previous answer based on user feedback.
@@ -418,19 +415,23 @@ SUGGESTED_TITLE:
 [A brief, descriptive title for this conversation, maximum 5-7 words]
 
 Introduction:
-[A concise overview of the topic, 2-3 sentences]
+[A concise overview of the topic that directly references the user's occupation and background]
 
 Explanation:
-[A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
+[A detailed explanation tailored to the user's education level and technical background]
 
 Analogy:
-${isRegeneration && feedback?.analogyTopic ? `[Provide a metaphor or real-world scenario related to ${feedback.analogyTopic}]` : '[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable]'}
+${isRegeneration && feedback?.analogyTopic 
+? `[Provide a metaphor using ${feedback.analogyTopic}]` 
+: userProfile?.interests?.length > 0 
+  ? `[Provide a SINGLE analogy using ONLY ONE of the user's interests: ${userProfile.interests.join(', ')}. Choose the most relevant interest.]`
+  : '[Provide a metaphor or real-world scenario that helps explain the concept]'}
 
 Additional Sources:
 [Provide 3-5 relevant learning resources with URLs when possible]
 
 Brief Recap:
-[Summarize the key points in 3-5 bullet points]`
+[Summarize key points in 3-5 bullet points using the user's preferred learning style]`
     };
     
     historyMessages.push(systemContext);
@@ -455,21 +456,58 @@ Brief Recap:
     // Add current query
     historyMessages.push({ role: "user", content: query });
 
+    // Log the actual information being sent to the AI to verify profile parameters
+    console.log('Sending user profile to AI with these parameters:', userProfile ? {
+      occupation: userProfile.occupation,
+      age: userProfile.age,
+      education_level: userProfile.education_level,
+      learning_style: userProfile.learning_style,
+      technical_depth: userProfile.technical_depth || userProfile.technical_background,
+      main_learning_goal: userProfile.main_learning_goal || userProfile.learning_goal,
+      interests: userProfile.interests
+    } : 'No user profile available');
+
+    // Include specific instructions to ensure the AI uses the user profile data
+    const promptEnhancer = {
+      role: "system",
+      content: `FINAL INSTRUCTION - YOU MUST STRICTLY FOLLOW THESE REQUIREMENTS:
+
+1. EXPLICITLY MENTION the user's occupation (${userProfile?.occupation || 'Student'}) in the introduction
+2. ADAPT your language for someone with education level: ${userProfile?.education_level || 'Undergraduate'}
+3. CREATE exactly one analogy using this specific interest: ${userProfile?.interests && userProfile.interests.length > 0 ? userProfile.interests[0] : 'general topic'}
+4. MATCH your explanation to technical level ${userProfile?.technical_depth || '50'}/100
+5. FORMAT your response for a ${userProfile?.learning_style || 'Visual'} learner
+6. FOCUS on helping achieve: ${userProfile?.main_learning_goal || userProfile?.learning_goal || 'Personal Interest'}
+7. ADJUST for age appropriateness (${userProfile?.age || 'adult'})
+
+IMPORTANT: Your response MUST include explicit elements from ALL of these parameters.
+For example: "As a ${userProfile?.occupation || 'student'}, you'll find that..." or "Using your interest in ${userProfile?.interests && userProfile.interests.length > 0 ? userProfile.interests[0] : 'technology'}..."
+
+Failing to include ANY of these parameters will result in a poor personalization score.`
+    };
+    
+    // Add the enhancer as the most recent system message to ensure it's followed
+    historyMessages.push(promptEnhancer);
+
+    console.log('Final system prompt instructions added to tailor response to user profile parameters');
+
     // Call OpenAI API with enhanced context
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",  // Use GPT-4 for more comprehensive responses
+      model: "gpt-4o",  // Use most capable model available
       messages: historyMessages,
-      temperature: 0.7,
-      max_tokens: 4000,  // Increased token limit for longer responses
-      presence_penalty: 0.1,  // Slight penalty to avoid repetition
-      frequency_penalty: 0.1  // Slight penalty to encourage diversity
+      temperature: 0.6,  // Lower temperature for more deterministic responses
+      max_tokens: 4096,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1
     });
+    
+    console.log('OpenAI API call completed using model:', completion.model);
     
     // Process the response
     const responseText = completion.choices[0].message.content;
     
     // Extract conversation title first
-    const conversationTitleMatch = responseText.match(/CONVERSATION_TITLE:\s*([^\n]+)/);
+    const conversationTitleMatch = responseText.match(/CONVERSATION_TITLE:\s*([^\n]*)/);
     const conversationTitle = conversationTitleMatch ? conversationTitleMatch[1].trim() : '';
 
     // Extract quiz data and clean up response text before parsing sections
@@ -497,6 +535,56 @@ Brief Recap:
     } else {
       // No quiz found, parse sections normally
       sections = parseResponse(responseText);
+    }
+    
+    // Now check if the response contains evidence of personalization
+    const personalizedChecks = {
+      occupation: userProfile?.occupation ? responseText.toLowerCase().includes(userProfile.occupation.toLowerCase()) : false,
+      learning_style: userProfile?.learning_style ? responseText.toLowerCase().includes(userProfile.learning_style.toLowerCase()) : false,
+      technical_background: userProfile?.technical_background || userProfile?.technical_depth ? 
+        responseText.toLowerCase().includes((userProfile.technical_background || userProfile.technical_depth).toString().toLowerCase()) : false,
+      education_level: userProfile?.education_level ? responseText.toLowerCase().includes(userProfile.education_level.toLowerCase()) : false,
+      learning_goal: userProfile?.learning_goal || userProfile?.main_learning_goal ? 
+        responseText.toLowerCase().includes((userProfile.learning_goal || userProfile.main_learning_goal).toLowerCase()) : false,
+      interests: userProfile?.interests && Array.isArray(userProfile.interests) ? 
+        userProfile.interests.some(interest => responseText.toLowerCase().includes(interest.toLowerCase())) : false,
+      // We're now using interests for analogies
+      interests_in_analogy: userProfile?.interests && Array.isArray(userProfile.interests) && sections?.analogy ? 
+        userProfile.interests.some(interest => sections.analogy.toLowerCase().includes(interest.toLowerCase())) : false
+    };
+    
+    // Count how many personalization elements were detected
+    const personalizationCount = Object.values(personalizedChecks).filter(Boolean).length;
+    const possibleCount = Object.keys(personalizedChecks).filter(key => 
+      userProfile && (
+        userProfile[key] || 
+        (key === 'technical_background' && userProfile.technical_depth) ||
+        (key === 'learning_goal' && userProfile.main_learning_goal) ||
+        (key === 'interests_in_analogy' && userProfile.interests && userProfile.interests.length > 0) ||
+        (key === 'interests' && userProfile.interests && userProfile.interests.length > 0)
+      )
+    ).length;
+    
+    const personalizationPercentage = possibleCount > 0 ? Math.round((personalizationCount / possibleCount) * 100) : 0;
+    
+    console.log('Personalization check details:', personalizedChecks);
+    console.log(`Personalization score: ${personalizationCount}/${possibleCount} (${personalizationPercentage}%)`);
+    
+    if (personalizationCount === 0 && possibleCount > 0) {
+      console.warn('⚠️ WARNING: The AI response does not contain ANY evidence of personalization based on profile!');
+    } else if (personalizationPercentage < 50 && possibleCount > 1) {
+      console.warn(`⚠️ WARNING: Low personalization detected (${personalizationPercentage}%). The response may not fully utilize the user profile.`);
+    } else {
+      console.log(`✅ Response shows sufficient personalization (${personalizationPercentage}%)`);
+    }
+    
+    // Specific check for interest-based analogies
+    if (userProfile?.interests && 
+        userProfile.interests.length > 0 && 
+        !personalizedChecks.interests_in_analogy) {
+      console.warn('❌ CRITICAL: The response does not contain analogies using any of the user\'s interests!');
+    } else if (personalizedChecks.interests_in_analogy) {
+      console.log('✅ Analogy successfully uses one of the user\'s interests');
     }
     
     // Prepare final response with quiz included and conversation title
@@ -773,7 +861,6 @@ app.post('/api/test/create-profile', async (req, res) => {
           interests: ['Video Games', 'Art', 'Technology'],
           learning_style: 'Visual',
           technical_depth: 70,
-          preferred_analogy_domains: ['Gaming', 'Cooking'],
           main_learning_goal: 'Professional Development'
         }])
         .select();
@@ -793,7 +880,6 @@ app.post('/api/test/create-profile', async (req, res) => {
             interests: ['Video Games', 'Art', 'Technology'],
             learning_style: 'Visual',
             technical_depth: 70,
-            preferred_analogy_domains: ['Gaming', 'Cooking'],
             main_learning_goal: 'Professional Development'
           });
           
@@ -861,9 +947,15 @@ app.post('/api/force-user-profile', async (req, res) => {
       console.log('Using existing profile from memory cache for user:', userId);
       forcedProfile = global.userProfiles[userId];
       
-      console.log('Using existing memory cache profile with preferences:', {
+      console.log('Using existing memory cache profile with all parameters:', {
+        username: forcedProfile.username,
+        occupation: forcedProfile.occupation,
+        age: forcedProfile.age,
+        education_level: forcedProfile.education_level,
         interests: forcedProfile.interests,
-        preferred_analogy_domains: forcedProfile.preferred_analogy_domains
+        learning_style: forcedProfile.learning_style,
+        technical_depth: forcedProfile.technical_depth,
+        main_learning_goal: forcedProfile.main_learning_goal
       });
       
       // Don't overwrite - just return the existing memory cache entry
@@ -885,35 +977,21 @@ app.post('/api/force-user-profile', async (req, res) => {
     if (!error && data) {
       console.log('Found existing profile in database for user:', userId);
       
-      // Parse arrays if necessary
-      const ensureArray = (value) => {
-        if (Array.isArray(value)) {
-          return value;
-        }
-        if (typeof value === 'string') {
-          try {
-            const parsed = JSON.parse(value);
-            return Array.isArray(parsed) ? parsed : [value];
-          } catch (e) {
-            return [value]; // If we can't parse it, wrap the string in an array
-          }
-        }
-        if (value === null || value === undefined) {
-          return [];
-        }
-        return [value]; // For any other type, wrap in array
-      };
-      
       // Create a properly formatted profile using the database data
       forcedProfile = {
         ...data,
-        interests: ensureArray(data.interests),
-        preferred_analogy_domains: ensureArray(data.preferred_analogy_domains)
+        interests: ensureArray(data.interests)
       };
       
-      console.log('Loaded profile preferences from database:', {
+      console.log('Loaded complete profile from database:', {
+        username: forcedProfile.username,
+        occupation: forcedProfile.occupation,
+        age: forcedProfile.age,
+        education_level: forcedProfile.education_level,
         interests: forcedProfile.interests,
-        preferred_analogy_domains: forcedProfile.preferred_analogy_domains
+        learning_style: forcedProfile.learning_style,
+        technical_depth: forcedProfile.technical_depth,
+        main_learning_goal: forcedProfile.main_learning_goal
       });
     } else {
       console.log('No profile found in database, creating memory-only default for user:', userId);
@@ -928,7 +1006,6 @@ app.post('/api/force-user-profile', async (req, res) => {
         interests: ['Video Games', 'Art'],
         learning_style: 'Visual',
         technical_depth: 50,
-        preferred_analogy_domains: ['Gaming', 'Cooking'],
         main_learning_goal: 'Personal Interest'
       };
     }
@@ -937,9 +1014,15 @@ app.post('/api/force-user-profile', async (req, res) => {
     global.userProfiles[userId] = forcedProfile;
     
     console.log('Updated memory profile for:', userId);
-    console.log('Current memory profile contains preferences:', {
+    console.log('Current memory profile contains all parameters:', {
+      username: global.userProfiles[userId].username,
+      occupation: global.userProfiles[userId].occupation,
+      age: global.userProfiles[userId].age,
+      education_level: global.userProfiles[userId].education_level,
       interests: global.userProfiles[userId].interests,
-      preferred_analogy_domains: global.userProfiles[userId].preferred_analogy_domains
+      learning_style: global.userProfiles[userId].learning_style,
+      technical_depth: global.userProfiles[userId].technical_depth,
+      main_learning_goal: global.userProfiles[userId].main_learning_goal
     });
     
     res.json({
@@ -965,15 +1048,15 @@ app.get('/api/memory-profiles', (req, res) => {
     profiles: Object.keys(profiles).map(key => ({
       id: profiles[key].id,
       username: profiles[key].username,
-      preferred_analogy_domains: profiles[key].preferred_analogy_domains
+      interests: profiles[key].interests
     }))
   });
 });
 
-// Add route to view and update a memory profile
+// Add route to update a memory profile
 app.post('/api/update-memory-profile', async (req, res) => {
   try {
-    const { userId, interests, preferred_analogy_domains, occupation, age, education_level, learning_style, technical_depth, main_learning_goal } = req.body;
+    const { userId, interests, occupation, age, education_level, learning_style, technical_depth, main_learning_goal } = req.body;
     
     if (!userId) {
       return res.status(400).json({ error: 'User ID is required' });
@@ -990,7 +1073,6 @@ app.post('/api/update-memory-profile', async (req, res) => {
       interests: ['Video Games', 'Art'],
       learning_style: 'Visual',
       technical_depth: 50,
-      preferred_analogy_domains: ['Gaming', 'Cooking'],
       main_learning_goal: 'Personal Interest'
     };
     
@@ -1003,7 +1085,6 @@ app.post('/api/update-memory-profile', async (req, res) => {
       interests: interests || existingProfile.interests,
       learning_style: learning_style || existingProfile.learning_style,
       technical_depth: technical_depth || existingProfile.technical_depth,
-      preferred_analogy_domains: preferred_analogy_domains || existingProfile.preferred_analogy_domains,
       main_learning_goal: main_learning_goal || existingProfile.main_learning_goal
     };
     
@@ -1011,9 +1092,15 @@ app.post('/api/update-memory-profile', async (req, res) => {
     global.userProfiles[userId] = updatedProfile;
     
     console.log('Updated memory profile for user:', userId);
-    console.log('New preferences:', {
+    console.log('New profile parameters:', {
+      username: updatedProfile.username,
+      occupation: updatedProfile.occupation,
+      age: updatedProfile.age,
+      education_level: updatedProfile.education_level,
       interests: updatedProfile.interests,
-      preferred_analogy_domains: updatedProfile.preferred_analogy_domains
+      learning_style: updatedProfile.learning_style,
+      technical_depth: updatedProfile.technical_depth,
+      main_learning_goal: updatedProfile.main_learning_goal
     });
     
     res.json({
@@ -1047,6 +1134,18 @@ app.get('/api/view-memory-profile', (req, res) => {
         message: 'No memory profile found for this user ID'
       });
     }
+    
+    console.log('Viewing memory profile for user:', userId);
+    console.log('Current profile parameters in memory:', {
+      username: profile.username,
+      occupation: profile.occupation,
+      age: profile.age,
+      education_level: profile.education_level,
+      interests: profile.interests,
+      learning_style: profile.learning_style,
+      technical_depth: profile.technical_depth,
+      main_learning_goal: profile.main_learning_goal
+    });
     
     res.json({
       success: true,
@@ -1082,51 +1181,33 @@ app.post('/api/hooks/profile-updated', async (req, res) => {
       // Update memory cache with the new profile data
       global.userProfiles = global.userProfiles || {};
       
-      // Helper function to ensure array format
-      const ensureArray = (value) => {
-        if (Array.isArray(value)) {
-          return value;
-        }
-        if (typeof value === 'string') {
-          try {
-            const parsed = JSON.parse(value);
-            return Array.isArray(parsed) ? parsed : [value];
-          } catch (e) {
-            return [value]; // If we can't parse it, wrap the string in an array
-          }
-        }
-        if (value === null || value === undefined) {
-          return [];
-        }
-        return [value]; // For any other type, wrap in array
-      };
-      
       // Ensure arrays are properly formatted
       const formattedProfile = {
         ...record,
-        interests: ensureArray(record.interests),
-        preferred_analogy_domains: ensureArray(record.preferred_analogy_domains)
+        interests: ensureArray(record.interests)
       };
       
       global.userProfiles[record.id] = formattedProfile;
       
       console.log('Memory cache updated from webhook for user:', record.id);
-      console.log('New preferences:', {
+      console.log('Complete user profile in memory:', {
+        username: formattedProfile.username,
+        occupation: formattedProfile.occupation,
+        age: formattedProfile.age,
+        education_level: formattedProfile.education_level,
         interests: formattedProfile.interests,
-        preferred_analogy_domains: formattedProfile.preferred_analogy_domains
+        learning_style: formattedProfile.learning_style,
+        technical_depth: formattedProfile.technical_depth,
+        main_learning_goal: formattedProfile.main_learning_goal
       });
       
       // Double-check arrays format and structure before responding
       console.log('Current memory cache arrays for verification:');
       if (global.userProfiles[record.id]) {
         const currentInterests = global.userProfiles[record.id].interests || [];
-        const currentDomains = global.userProfiles[record.id].preferred_analogy_domains || [];
         
         console.log('Interests:', Array.isArray(currentInterests) ? 
           currentInterests : 'NOT AN ARRAY: ' + typeof currentInterests);
-          
-        console.log('Analogy domains:', Array.isArray(currentDomains) ? 
-          currentDomains : 'NOT AN ARRAY: ' + typeof currentDomains);
       }
       
       res.json({ success: true, message: 'Profile updated in memory cache' });
@@ -1176,14 +1257,13 @@ app.delete('/api/clear-profile-cache', (req, res) => {
 // Add an emergency fix route to override a user profile with specific values
 app.post('/api/emergency-profile-override', async (req, res) => {
   try {
-    const { userId, preferredDomains, interests, otherFields } = req.body;
+    const { userId, interests, otherFields } = req.body;
     
-    if (!userId || !preferredDomains || !interests) {
-      return res.status(400).json({ error: 'userId, preferredDomains, and interests are required' });
+    if (!userId || !interests) {
+      return res.status(400).json({ error: 'userId and interests are required' });
     }
     
     console.log('EMERGENCY OVERRIDE for user:', userId);
-    console.log('Setting domains to:', preferredDomains);
     console.log('Setting interests to:', interests);
     
     // Force the in-memory profile to use exact values
@@ -1202,9 +1282,6 @@ app.post('/api/emergency-profile-override', async (req, res) => {
     };
     
     // Override with the specified arrays (ensure they're arrays)
-    const domainArray = Array.isArray(preferredDomains) ? 
-      preferredDomains : [preferredDomains];
-      
     const interestsArray = Array.isArray(interests) ? 
       interests : [interests];
     
@@ -1212,7 +1289,6 @@ app.post('/api/emergency-profile-override', async (req, res) => {
     const overrideProfile = {
       ...existingProfile,
       ...otherFields, // Add any other fields
-      preferred_analogy_domains: domainArray,
       interests: interestsArray
     };
     
@@ -1232,7 +1308,6 @@ app.post('/api/emergency-profile-override', async (req, res) => {
           interests: interestsArray,
           learning_style: overrideProfile.learning_style,
           technical_depth: overrideProfile.technical_depth,
-          preferred_analogy_domains: domainArray,
           main_learning_goal: overrideProfile.main_learning_goal,
           updated_at: new Date().toISOString()
         }])
@@ -1438,13 +1513,10 @@ app.get('/api/debug/actual-profile/:userId', async (req, res) => {
     // Debug raw values
     console.log('RAW DATABASE VALUES:');
     console.log('interests:', data.interests);
-    console.log('preferred_analogy_domains:', data.preferred_analogy_domains);
     console.log('typeof interests:', typeof data.interests);
-    console.log('typeof preferred_analogy_domains:', typeof data.preferred_analogy_domains);
     
     // Parse if needed
     let interests = data.interests;
-    let analogyDomains = data.preferred_analogy_domains;
     
     if (typeof interests === 'string') {
       try {
@@ -1455,23 +1527,13 @@ app.get('/api/debug/actual-profile/:userId', async (req, res) => {
       }
     }
     
-    if (typeof analogyDomains === 'string') {
-      try {
-        analogyDomains = JSON.parse(analogyDomains);
-        console.log('Parsed analogy domains from string:', analogyDomains);
-      } catch (e) {
-        console.error('Failed to parse analogy domains:', e);
-      }
-    }
-    
     // Return both raw and parsed data
     res.json({
       success: true,
       raw: data,
       parsed: {
         ...data,
-        interests: interests,
-        preferred_analogy_domains: analogyDomains
+        interests: interests
       }
     });
   } catch (error) {
@@ -1531,17 +1593,13 @@ app.listen(PORT, async () => {
           // Format the profile with proper arrays
           const formattedProfile = {
             ...profile,
-            interests: ensureArray(profile.interests),
-            preferred_analogy_domains: ensureArray(profile.preferred_analogy_domains)
+            interests: ensureArray(profile.interests)
           };
           
           // Add to cache
           global.userProfiles[profile.id] = formattedProfile;
           
-          console.log(`Cached profile for user ${profile.id} with preferences:`, {
-            interests: formattedProfile.interests,
-            preferred_analogy_domains: formattedProfile.preferred_analogy_domains
-          });
+          console.log(`Cached profile for user ${profile.id} with interests:`, formattedProfile.interests);
         } catch (e) {
           console.error(`Error processing profile for user ${profile.id}:`, e);
         }
