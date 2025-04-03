@@ -7,7 +7,7 @@ const OCCUPATIONS = [
   'Student',
   'Lecturer',
   'Professional',
-  'Hobbyist',
+  'Guest',
   'Other'
 ];
 
@@ -304,7 +304,7 @@ function Register() {
       <div className="grid grid-cols-1 gap-6">
         <div>
           <label htmlFor="occupation" className="block text-sm font-medium text-gray-700 mb-1">
-            Occupation
+            Level of Interest
           </label>
           <select
             id="occupation"
@@ -313,7 +313,7 @@ function Register() {
             onChange={handleInputChange}
             className="w-full rounded-md border border-gray-300 px-4 py-3 text-base shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           >
-            <option value="">Select your occupation</option>
+            <option value="">Select your level of interest</option>
             {OCCUPATIONS.map(occupation => (
               <option key={occupation} value={occupation}>
                 {occupation}
