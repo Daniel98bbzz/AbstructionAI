@@ -24,7 +24,7 @@ function Profile() {
     'Student',
     'Lecturer',
     'Professional',
-    'Hobbyist',
+    'Guest',
     'Other'
   ];
 
@@ -346,7 +346,7 @@ function Profile() {
 
                 <div>
                   <label htmlFor="occupation" className="block text-sm font-medium text-gray-700">
-                    Occupation
+                    Level of Interest
                   </label>
                   <div className="mt-1">
                     <select
@@ -356,7 +356,7 @@ function Profile() {
                       onChange={handleChange}
                       className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
                     >
-                      <option value="">Select occupation</option>
+                      <option value="">Select level of interest</option>
                       {OCCUPATIONS.map(occupation => (
                         <option key={occupation} value={occupation.toLowerCase()}>
                           {occupation}
