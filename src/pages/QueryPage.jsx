@@ -309,6 +309,11 @@ function QueryPage() {
   const handleProjectPreferences = (projectPreferences) => {
     if (!pendingProject) return;
 
+    console.log('Saving project preferences:', {
+      projectName: pendingProject.name,
+      preferences: projectPreferences
+    });
+
     const initialConversation = {
       id: Date.now().toString(),
       title: 'New Conversation',
@@ -316,13 +321,24 @@ function QueryPage() {
       lastMessageTime: Date.now()
     };
 
+    // Create the new project with properly structured preferences
     const newProject = {
       ...pendingProject,
-      preferences: projectPreferences, // Store project-specific preferences
+      preferences: {
+        interests: projectPreferences.interests || [],
+        learning_style: projectPreferences.learning_style || 'Visual',
+        technical_depth: projectPreferences.technical_depth || 50,
+        preferred_analogy_domains: projectPreferences.preferred_analogy_domains || []
+      },
       conversations: [initialConversation],
       createdAt: Date.now(),
       lastModified: Date.now()
     };
+    
+    console.log('Created new project with preferences:', {
+      projectId: newProject.id,
+      preferences: newProject.preferences
+    });
     
     // Add new project at the start of the list
     setProjects(prev => [newProject, ...prev]);
@@ -454,23 +470,39 @@ function QueryPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!query.trim() || !activeProject || !activeConversation) return;
-    
-    // Get the active project's preferences or fall back to user's default preferences
+    if (!query.trim()) return;
+
+    // Get the active project's preferences
     const activeProjectData = projects.find(p => p.id === activeProject);
-    const queryPreferences = activeProjectData?.preferences || preferences;
-    
+    console.log('Active Project Data:', {
+      projectId: activeProject,
+      projectName: activeProjectData?.name,
+      projectPreferences: activeProjectData?.preferences
+    });
+
+    const queryPreferences = activeProjectData?.preferences || {
+      interests: [],
+      learning_style: 'Visual',
+      technical_depth: 50,
+      preferred_analogy_domains: []
+    };
+
+    console.log('Using preferences for query:', {
+      projectId: activeProject,
+      preferences: queryPreferences,
+      isUsingProjectPreferences: !!activeProjectData?.preferences
+    });
+
     const userMessage = {
       id: Date.now().toString(),
       content: query,
       role: 'user',
       timestamp: Date.now()
     };
-    
+
     // Update local messages state
     setMessages(prev => [...prev, userMessage]);
-    
+
     // Update project conversation
     setProjects(prev => prev.map(project => {
       if (project.id === activeProject) {
@@ -492,16 +524,27 @@ function QueryPage() {
       }
       return project;
     }));
-    
+
     setQuery('');
-    
+
     try {
       // Get the current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
 
       // Call submitQuery with project-specific preferences
+      console.log('Submitting query with preferences:', {
+        query,
+        preferences: queryPreferences,
+        projectId: activeProject
+      });
+      
       const response = await submitQuery(query, queryPreferences, sessionId);
+      
+      console.log('Received response with preferences:', {
+        responseId: response.id,
+        usedPreferences: queryPreferences
+      });
       
       const aiMessage = {
         id: response.id || Date.now().toString(),
@@ -611,13 +654,21 @@ function QueryPage() {
       
       setMessages(prev => [...prev, regeneratingMsg]);
 
-      // Call the regenerateAnswer function
-      console.log('Calling regenerateAnswer with preferences:', preferences);
+      // Get the active project's preferences
+      const activeProjectData = projects.find(p => p.id === activeProject);
+      const queryPreferences = activeProjectData?.preferences || {
+        interests: [],
+        learning_style: 'Visual',
+        technical_depth: 50,
+        preferred_analogy_domains: []
+      };
+
+      // Call the regenerateAnswer function with project-specific preferences
       const response = await regenerateAnswer(
         userQuery,
         lastAssistantMessage.id,
         feedbackData,
-        preferences
+        queryPreferences
       );
       
       console.log('Received regenerated response:', response);
@@ -738,9 +789,14 @@ function QueryPage() {
     try {
       setLoading(true);
       
-      // Get the active project's preferences or fall back to user's default preferences
+      // Get the active project's preferences
       const activeProjectData = projects.find(p => p.id === activeProject);
-      const quizPreferences = activeProjectData?.preferences || preferences;
+      const quizPreferences = activeProjectData?.preferences || {
+        interests: [],
+        learning_style: 'Visual',
+        technical_depth: 50,
+        preferred_analogy_domains: []
+      };
       
       // Generate quiz using project-specific preferences
       const questions = await generateQuizAPI(topic, quizPreferences);
