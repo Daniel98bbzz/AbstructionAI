@@ -37,12 +37,12 @@ function QueryPage() {
     const savedMessages = localStorage.getItem(key);
     return savedMessages ? JSON.parse(savedMessages) : [];
   });
-  const [conversations, setConversations] = useState(() => {
-    // Try to load conversations from localStorage with user namespace
-    const key = user ? `conversations_${user.id}` : 'conversations';
-    const savedConversations = localStorage.getItem(key);
-    return savedConversations ? JSON.parse(savedConversations) : [];
+  const [projects, setProjects] = useState(() => {
+    const key = user ? `projects_${user.id}` : 'projects';
+    const savedProjects = localStorage.getItem(key);
+    return savedProjects ? JSON.parse(savedProjects) : [];
   });
+  const [activeProject, setActiveProject] = useState(null);
   const [activeConversation, setActiveConversation] = useState(() => {
     // Try to load active conversation from localStorage with user namespace
     const key = user ? `activeConversation_${user.id}` : 'activeConversation';
@@ -100,12 +100,12 @@ function QueryPage() {
     }
   }, [messages, user]);
   
-  // Persist conversations whenever they change
+  // Persist projects whenever they change
   useEffect(() => {
     if (user) {
-      localStorage.setItem(`conversations_${user.id}`, JSON.stringify(conversations));
+      localStorage.setItem(`projects_${user.id}`, JSON.stringify(projects));
     }
-  }, [conversations, user]);
+  }, [projects, user]);
   
   // Persist active conversation whenever it changes
   useEffect(() => {
@@ -138,25 +138,30 @@ function QueryPage() {
         setPreferences(JSON.parse(savedPreferences));
       }
       
-      // Load messages
-      const savedMessages = localStorage.getItem(`currentMessages_${user.id}`);
-      if (savedMessages) {
-        setMessages(JSON.parse(savedMessages));
+      // Load projects
+      const savedProjects = localStorage.getItem(`projects_${user.id}`);
+      if (savedProjects) {
+        const projects = JSON.parse(savedProjects);
+        setProjects(projects);
+        
+        // If we have an active project and conversation, load its messages
+        const savedActiveProject = localStorage.getItem(`activeProject_${user.id}`);
+        const savedActiveConversation = localStorage.getItem(`activeConversation_${user.id}`);
+        
+        if (savedActiveProject && savedActiveConversation) {
+          const project = projects.find(p => p.id === savedActiveProject);
+          const conversation = project?.conversations.find(c => c.id === savedActiveConversation);
+          
+          if (project && conversation) {
+            setActiveProject(savedActiveProject);
+            setActiveConversation(savedActiveConversation);
+            setMessages(conversation.messages || []);
+          }
+        }
       } else {
+        setProjects([]);
         setMessages([]);
       }
-      
-      // Load conversations
-      const savedConversations = localStorage.getItem(`conversations_${user.id}`);
-      if (savedConversations) {
-        setConversations(JSON.parse(savedConversations));
-      } else {
-        setConversations([]);
-      }
-      
-      // Load active conversation
-      const savedActiveConversation = localStorage.getItem(`activeConversation_${user.id}`);
-      setActiveConversation(savedActiveConversation || null);
       
       // Load feedback state
       const savedFeedbackFor = localStorage.getItem(`showFeedbackFor_${user.id}`);
@@ -171,6 +176,42 @@ function QueryPage() {
       }
     }
   }, [user?.id]);
+
+  // Migrate existing conversations to a default project if needed
+  useEffect(() => {
+    if (user && projects.length === 0) {
+      const savedConversations = localStorage.getItem(`conversations_${user.id}`);
+      if (savedConversations) {
+        const conversations = JSON.parse(savedConversations);
+        if (conversations.length > 0) {
+          const defaultProject = {
+            id: 'default',
+            name: 'My Conversations',
+            conversations: conversations,
+            createdAt: Date.now(),
+            lastModified: Date.now()
+          };
+          setProjects([defaultProject]);
+          setActiveProject(defaultProject.id);
+          if (conversations[0]) {
+            setActiveConversation(conversations[0].id);
+            setMessages(conversations[0].messages || []);
+          }
+        }
+      }
+    }
+  }, [user]);
+
+  // Add effect for persisting active project
+  useEffect(() => {
+    if (user) {
+      if (activeProject) {
+        localStorage.setItem(`activeProject_${user.id}`, activeProject);
+      } else {
+        localStorage.removeItem(`activeProject_${user.id}`);
+      }
+    }
+  }, [activeProject, user]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -242,62 +283,81 @@ function QueryPage() {
     return title || 'New Conversation'; // Final fallback
   };
 
-  const handleNewConversation = () => {
-    // Create a unique ID for the new conversation
-    const newConversationId = Date.now().toString();
-    
-    // Create the new conversation object with a default title
-    const newConversation = {
-      id: newConversationId,
-      title: 'New Conversation', // Default title that will be updated when first message is sent
+  const handleNewProject = (projectName) => {
+    const initialConversation = {
+      id: Date.now().toString(),
+      title: 'New Conversation',
       messages: [],
-      lastMessageTime: new Date().toISOString(),
-      // Preserve the sessionId for continuity
-      sessionId: sessionId
+      lastMessageTime: Date.now()
+    };
+
+    const newProject = {
+      id: Date.now().toString(),
+      name: projectName,
+      conversations: [initialConversation],
+      createdAt: Date.now(),
+      lastModified: Date.now()
     };
     
-    // Add the new conversation to the list
-    setConversations(prev => [newConversation, ...prev]);
+    // Add new project at the start of the list
+    setProjects(prev => [newProject, ...prev]);
     
-    // Set it as the active conversation
-    setActiveConversation(newConversationId);
+    // Set active states
+    setActiveProject(newProject.id);
+    setActiveConversation(initialConversation.id);
     
-    // Clear the messages for this new conversation
+    // Reset message-related states
     setMessages([]);
-    
-    // Reset the UI state and clear feedback form
-    setShowFeedbackFor(null);
     setQuery('');
-    
-    // Clear localStorage for the current messages and feedback state
-    if (user) {
-      localStorage.removeItem(`currentMessages_${user.id}`);
-      localStorage.removeItem(`showFeedbackFor_${user.id}`);
-      
-      // Store the current state
-      localStorage.setItem(`activeConversation_${user.id}`, newConversationId);
-      localStorage.setItem(`conversations_${user.id}`, JSON.stringify([newConversation, ...conversations]));
-      
-      // Keep the sessionId in localStorage
-      if (sessionId) {
-        localStorage.setItem(`sessionId_${user.id}`, sessionId);
-      }
-    }
+    setShowFeedbackFor(null);
+    setActiveFeedbackMessage(null);
   };
 
-  const handleSelectConversation = (conversationId) => {
-    const conversation = conversations.find(c => c.id === conversationId);
+  const handleNewConversation = (projectId) => {
+    const newConversation = {
+      id: Date.now().toString(),
+      title: 'New Conversation',
+      messages: [],
+      lastMessageTime: Date.now()
+    };
+    
+    setProjects(prev => prev.map(project => {
+      if (project.id === projectId) {
+        return {
+          ...project,
+          conversations: [newConversation, ...project.conversations],
+          lastModified: Date.now()
+        };
+      }
+      return project;
+    }));
+    
+    setActiveConversation(newConversation.id);
+    setActiveProject(projectId);
+    
+    // Reset message-related states
+    setMessages([]);
+    setQuery('');
+    setShowFeedbackFor(null);
+    setActiveFeedbackMessage(null);
+  };
+
+  const handleSelectConversation = (projectId, conversationId) => {
+    setActiveProject(projectId);
+    setActiveConversation(conversationId);
+    
+    // Find the conversation messages
+    const project = projects.find(p => p.id === projectId);
+    const conversation = project?.conversations.find(c => c.id === conversationId);
     if (conversation) {
-      setActiveConversation(conversationId);
-      setMessages(conversation.messages);
-      setSessionId(conversation.sessionId);
+      // Ensure we have a messages array
+      const conversationMessages = conversation.messages || [];
+      setMessages(conversationMessages);
       
-      // Reset feedback form when switching conversations
+      // Reset states
       setShowFeedbackFor(null);
       setActiveFeedbackMessage(null);
-      if (user) {
-        localStorage.removeItem(`showFeedbackFor_${user.id}`);
-      }
+      setQuery('');
     }
   };
 
@@ -317,12 +377,21 @@ function QueryPage() {
         messages: [],
         lastMessageTime: new Date().toISOString(),
       };
-      setConversations(prev => [newConversation, ...prev]);
+      setProjects(prev => prev.map(project => {
+        if (project.id === activeProject) {
+          return {
+            ...project,
+            conversations: [...project.conversations, newConversation],
+            lastModified: Date.now()
+          };
+        }
+        return project;
+      }));
       setActiveConversation(newConversation.id);
     }
     // If we have an active conversation and it's still titled "New Conversation", update its title
     else if (activeConversation && newQuery.trim()) {
-      const currentConversation = conversations.find(c => c.id === activeConversation);
+      const currentConversation = projects.find(p => p.id === activeProject)?.conversations.find(c => c.id === activeConversation);
       if (currentConversation && currentConversation.title === 'New Conversation') {
         // Generate title once
         const title = generateTitle(newQuery);
@@ -330,15 +399,24 @@ function QueryPage() {
         
         // Use a flag to prevent duplicate updates
         if (!currentConversation._titleUpdated) {
-          setConversations(prev => prev.map(conv => {
-            if (conv.id === activeConversation) {
+          setProjects(prev => prev.map(project => {
+            if (project.id === activeProject) {
               return {
-                ...conv,
-                title: title,
-                _titleUpdated: true // Flag to prevent duplicate updates
+                ...project,
+                conversations: project.conversations.map(conv => {
+                  if (conv.id === activeConversation) {
+                    return {
+                      ...conv,
+                      title: title,
+                      _titleUpdated: true // Flag to prevent duplicate updates
+                    };
+                  }
+                  return conv;
+                }),
+                lastModified: Date.now()
               };
             }
-            return conv;
+            return project;
           }));
         }
       }
@@ -347,124 +425,104 @@ function QueryPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!query.trim()) return;
     
-    // If no active conversation exists, create one
-    if (!activeConversation) {
-      const title = generateTitle(query);
-      console.log('Creating new conversation with title:', title);
-      
-      const newConversation = {
-        id: Date.now().toString(),
-        title: title,
-        messages: [],
-        lastMessageTime: new Date().toISOString(),
-      };
-      setConversations(prev => [newConversation, ...prev]);
-      setActiveConversation(newConversation.id);
-    }
+    if (!query.trim() || !activeProject || !activeConversation) return;
     
-    // Add user message immediately
     const userMessage = {
-      type: 'user',
+      id: Date.now().toString(),
       content: query,
-      timestamp: new Date().toISOString()
+      role: 'user',
+      timestamp: Date.now()
     };
     
-    // Update messages and conversation
+    // Update local messages state
     setMessages(prev => [...prev, userMessage]);
     
-    try {
-      // Clear input
-      setQuery('');
-      
-      // If we don't have a session ID yet, try to get it from the context
-      if (!sessionId && currentSession?.id) {
-        console.log('Using session ID from context:', currentSession.id);
-        setSessionId(currentSession.id);
+    // Update project conversation
+    setProjects(prev => prev.map(project => {
+      if (project.id === activeProject) {
+        return {
+          ...project,
+          conversations: project.conversations.map(conv => {
+            if (conv.id === activeConversation) {
+              const updatedMessages = conv.messages || [];
+              return {
+                ...conv,
+                messages: [...updatedMessages, userMessage],
+                lastMessageTime: Date.now()
+              };
+            }
+            return conv;
+          }),
+          lastModified: Date.now()
+        };
       }
-      
+      return project;
+    }));
+    
+    setQuery('');
+    
+    try {
       // Get the current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
-    
-      // Get AI response using the existing session ID if available
+
+      // Call submitQuery with all necessary parameters
       const response = await submitQuery(query, preferences, sessionId);
+      
+      const aiMessage = {
+        id: response.id || Date.now().toString(),
+        content: response.explanation || response,
+        role: 'assistant',
+        timestamp: Date.now(),
+        introduction: response.introduction,
+        analogy: response.analogy,
+        resources: response.resources,
+        recap: response.recap
+      };
+      
+      // Update local messages state
+      setMessages(prev => [...prev, aiMessage]);
       
       // Store the session ID if this is the first message
       if (response.sessionId) {
         console.log('Received sessionId in response:', response.sessionId);
         setSessionId(response.sessionId);
-        
-        // Also update the conversation with the session ID
-        setConversations(prev => prev.map(conv => {
-          if (conv.id === activeConversation) {
-            return {
-              ...conv,
-              sessionId: response.sessionId
-            };
-          }
-          return conv;
-        }));
       }
       
-      // Add AI response with unique ID for feedback
-      const responseId = response.id || Date.now().toString();
-      const aiMessage = {
-        id: responseId,
-        type: 'assistant',
-        content: response.explanation,
-        introduction: response.introduction,
-        analogy: response.analogy,
-        resources: response.resources,
-        recap: response.recap,
-        timestamp: new Date().toISOString(),
-        messageId: responseId
-      };
+      // Update project conversation
+      setProjects(prev => prev.map(project => {
+        if (project.id === activeProject) {
+          return {
+            ...project,
+            conversations: project.conversations.map(conv => {
+              if (conv.id === activeConversation) {
+                const updatedMessages = conv.messages || [];
+                return {
+                  ...conv,
+                  messages: [...updatedMessages, aiMessage],
+                  lastMessageTime: Date.now(),
+                  title: conv.title === 'New Conversation' ? generateTitle(query) : conv.title,
+                  sessionId: response.sessionId || conv.sessionId
+                };
+              }
+              return conv;
+            }),
+            lastModified: Date.now()
+          };
+        }
+        return project;
+      }));
       
-      const updatedMessages = [...messages, userMessage, aiMessage];
-      setMessages(updatedMessages);
-      
-      // Update conversations with a more descriptive title based on the AI response
-      // Only process if not already processed
-      if (!response._processed) {
-        response._processed = true; // Flag to prevent duplicate processing
-        
-        setConversations(prev => prev.map(conv => {
-          if (conv.id === activeConversation) {
-            // Generate title once
-            const generatedTitle = generateTitle(query);
-            const bestTitle = response.suggested_title || generatedTitle || conv.title || 'New Conversation';
-            
-            console.log('Setting conversation title (final):', {
-              original: conv.title,
-              suggested: response.suggested_title,
-              generated: generatedTitle,
-              final: bestTitle
-            });
-            
-            return {
-              ...conv,
-              title: bestTitle,
-              messages: updatedMessages,
-              lastMessageTime: new Date().toISOString(),
-              sessionId: response.sessionId || conv.sessionId
-            };
-          }
-          return conv;
-        }));
-      }
-      
-      setShowFeedbackFor(responseId);
-      setActiveFeedbackMessage(responseId);
-      console.log('Showing feedback form for message:', responseId, 'with session:', sessionId);
     } catch (error) {
       console.error('Error processing query:', error);
-      // Add error message
+      toast.error('Failed to get response');
+      
+      // Add error message to the conversation
       const errorMessage = {
         type: 'error',
         content: 'Sorry, there was an error processing your request. Please try again.',
-        timestamp: new Date().toISOString()
+        timestamp: Date.now()
       };
       setMessages(prev => [...prev, errorMessage]);
     }
@@ -495,7 +553,7 @@ function QueryPage() {
       setRegenerating(true);
       
       // Find the most recent assistant message
-      const lastAssistantMessage = messages.find(msg => msg.type === 'assistant');
+      const lastAssistantMessage = messages.find(msg => msg.role === 'assistant');
       if (!lastAssistantMessage) {
         throw new Error('Could not find the original message to regenerate');
       }
@@ -563,8 +621,8 @@ function QueryPage() {
       setMessages(prev => [...prev, regeneratedMessage]);
 
       // Update the conversation
-      setConversations(prev => prev.map(conv => {
-        if (conv.id === activeConversation) {
+      setProjects(prev => prev.map(project => {
+        if (project.id === activeProject) {
           // Only update title if not already processed
           if (!response._processed) {
             response._processed = true;
@@ -572,30 +630,48 @@ function QueryPage() {
             // Keep the existing title unless we have a new one from the API
             const updatedTitle = response.suggested_title && response.suggested_title.length > 1
               ? response.suggested_title 
-              : conv.title;
+              : project.conversations.find(c => c.id === activeConversation)?.title || 'New Conversation';
               
             console.log('Updating regenerated conversation title:', {
-              original: conv.title,
+              original: project.conversations.find(c => c.id === activeConversation)?.title || 'New Conversation',
               suggested: response.suggested_title,
               final: updatedTitle
             });
             
             return {
-              ...conv,
-              title: updatedTitle,
-              messages: [...messages, regeneratedMessage],
-              lastMessageTime: new Date().toISOString(),
+              ...project,
+              conversations: project.conversations.map(conv => {
+                if (conv.id === activeConversation) {
+                  return {
+                    ...conv,
+                    title: updatedTitle,
+                    messages: [...messages, regeneratedMessage],
+                    lastMessageTime: new Date().toISOString(),
+                  };
+                }
+                return conv;
+              }),
+              lastModified: Date.now()
             };
           }
           
           // If already processed, just update messages
           return {
-            ...conv,
-            messages: [...messages, regeneratedMessage],
-            lastMessageTime: new Date().toISOString(),
+            ...project,
+            conversations: project.conversations.map(conv => {
+              if (conv.id === activeConversation) {
+                return {
+                  ...conv,
+                  messages: [...messages, regeneratedMessage],
+                  lastMessageTime: new Date().toISOString(),
+                };
+              }
+              return conv;
+            }),
+            lastModified: Date.now()
           };
         }
-        return conv;
+        return project;
       }));
 
       // Set a timer to show feedback for the regenerated message
@@ -628,7 +704,7 @@ function QueryPage() {
   const generateQuizQuestions = async (topic) => {
     try {
       const lastAssistantMessage = messages
-        .filter(msg => msg.type === 'assistant')
+        .filter(msg => msg.role === 'assistant')
         .pop();
         
       if (!lastAssistantMessage) {
@@ -764,36 +840,37 @@ function QueryPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Conversation History Sidebar */}
+    <div className="flex h-screen">
       <ConversationHistory
-        conversations={conversations}
+        projects={projects}
+        activeProject={activeProject}
         activeConversation={activeConversation}
-        onSelectConversation={handleSelectConversation}
+        onNewProject={handleNewProject}
         onNewConversation={handleNewConversation}
+        onSelectConversation={handleSelectConversation}
       />
-
+      
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Chat container */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((message, index) => (
-            <div key={message.id || index} className={`message ${message.type}`}>
+            <div key={message.id || index} className={`message ${message.role}`}>
               <div
-                className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
                   className={`max-w-3xl rounded-lg p-4 ${
-                    message.type === 'user'
+                    message.role === 'user'
                       ? 'bg-primary-600 text-white'
-                      : message.type === 'error'
+                      : message.role === 'error'
                       ? 'bg-red-100 text-red-700'
-                      : message.type === 'system'
+                      : message.role === 'system'
                       ? 'bg-yellow-50 text-yellow-700'
                       : 'bg-white shadow'
                   }`}
                 >
-                  {message.type === 'assistant' ? (
+                  {message.role === 'assistant' ? (
                     <div className="space-y-4">
                       {message.isRegenerated && (
                         <div className="text-sm text-green-600 font-medium mb-2">
@@ -872,11 +949,11 @@ function QueryPage() {
               </div>
 
               {/* Add quiz component for assistant messages */}
-              {message.type === 'assistant' && (
+              {message.role === 'assistant' && (
                 <div className="mt-4 relative" style={{ zIndex: activeQuizMessage === message.id ? 10 : 1 }}>
                   <QueryToQuiz 
                     key={`quiz-${message.id}`}
-                    query={messages.find(m => m.type === 'user' && m.timestamp < message.timestamp)?.content || ''}
+                    query={messages.find(m => m.role === 'user' && m.timestamp < message.timestamp)?.content || ''}
                     responseContent={message.content}
                     preGeneratedQuiz={message.quiz}
                     onQuizStart={() => {
@@ -913,7 +990,7 @@ function QueryPage() {
               )}
 
               {/* Feedback form section - update to check for active quiz */}
-              {message.type === 'assistant' && 
+              {message.role === 'assistant' && 
                (showFeedbackFor === message.id || message.hadFeedbackShowing) && 
                activeQuizMessage !== message.id && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
@@ -929,7 +1006,7 @@ function QueryPage() {
                         }
                       }, 100);
                     }}
-                    originalQuery={messages.find(m => m.type === 'user' && 
+                    originalQuery={messages.find(m => m.role === 'user' && 
                       messages.indexOf(m) < messages.indexOf(message))?.content || ''}
                     preferences={preferences}
                     onRegenerateAnswer={handleRegenerateAnswer}
@@ -939,7 +1016,7 @@ function QueryPage() {
               )}
 
               {/* Add feedback button for messages without feedback */}
-              {message.type === 'assistant' && 
+              {message.role === 'assistant' && 
                !showFeedbackFor && 
                !activeQuizMessage &&
                !message.hadFeedbackSubmitted && (
@@ -1000,7 +1077,7 @@ function QueryPage() {
                 <button
                   type="button"
                   onClick={() => generateQuizQuestions(query.trim() || 'this topic')}
-                  disabled={loading || regenerating || !messages.some(m => m.type === 'assistant')}
+                  disabled={loading || regenerating || !messages.some(m => m.role === 'assistant')}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-secondary-600 hover:bg-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary-500 disabled:opacity-50"
                 >
                   <svg className="h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
