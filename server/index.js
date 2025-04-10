@@ -373,6 +373,33 @@ app.post('/api/query', async (req, res) => {
     const historyMessages = [];
     
     // Add system context about the current conversation with user profile data
+    console.log('=== PREFERENCES DEBUG START ===');
+    console.log('Raw request preferences:', preferences);
+    console.log('Raw user profile:', userProfile);
+    
+    // Ensure we're using project preferences when available
+    const effectivePreferences = preferences || userProfile;
+    
+    // Detailed debug logging for preferences
+    console.log('=== PREFERENCES ANALYSIS ===');
+    console.log('Preference Source:', preferences ? 'PROJECT' : 'GLOBAL PROFILE');
+    console.log('Effective Preferences:', {
+      interests: effectivePreferences?.interests || [],
+      preferred_analogy_domains: effectivePreferences?.preferred_analogy_domains || [],
+      learning_style: effectivePreferences?.learning_style || 'Not specified',
+      technical_depth: effectivePreferences?.technical_depth || 'Not specified',
+      education_level: effectivePreferences?.education_level || 'Not specified',
+      main_learning_goal: effectivePreferences?.main_learning_goal || 'Not specified'
+    });
+    
+    // Log the actual values being used in the prompt
+    console.log('=== PROMPT VALUES ===');
+    console.log('Interests being used:', effectivePreferences?.interests?.join(', ') || 'None');
+    console.log('Analogy domains being used:', effectivePreferences?.preferred_analogy_domains?.join(', ') || 'None');
+    console.log('Learning style being used:', effectivePreferences?.learning_style || 'Not specified');
+    console.log('Technical depth being used:', effectivePreferences?.technical_depth || 'Not specified');
+    console.log('=== PREFERENCES DEBUG END ===');
+    
     const systemContext = {
       role: "system",
       content: `You are a knowledgeable AI tutor specialized in explaining complex concepts clearly and thoroughly.
@@ -385,13 +412,14 @@ ${conversationSummary.lastAnalogy
   ? `\nLast analogy: ${conversationSummary.lastAnalogy}`
   : ""}
 
-${userProfile ? `
-User Profile:
-- Education Level: ${userProfile.education_level || 'Not specified'}
-- Learning Style: ${userProfile.learning_style || 'Not specified'}
-- Technical Background: ${userProfile.technical_background || userProfile.technical_depth || 'Not specified'}
-- Main Learning Goal: ${userProfile.learning_goal || userProfile.main_learning_goal || 'Not specified'}
-- Preferred Analogy Domains: ${userProfile.preferred_analogy_domains?.join(', ') || userProfile.analogy_preferences?.join(', ') || 'None specified'}
+${effectivePreferences ? `
+User Profile (${preferences ? 'Project-Specific' : 'Global'} Preferences):
+- Education Level: ${effectivePreferences.education_level || 'Not specified'}
+- Learning Style: ${effectivePreferences.learning_style || 'Not specified'}
+- Technical Background: ${effectivePreferences.technical_background || effectivePreferences.technical_depth || 'Not specified'}
+- Main Learning Goal: ${effectivePreferences.learning_goal || effectivePreferences.main_learning_goal || 'Not specified'}
+- Preferred Analogy Domains: ${effectivePreferences.preferred_analogy_domains?.join(', ') || 'None specified'}
+- Interests: ${effectivePreferences.interests?.join(', ') || 'None specified'}
 ` : ''}
 
 ${isRegeneration && feedback ? `
@@ -424,7 +452,7 @@ Explanation:
 [A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
 
 Analogy:
-${isRegeneration && feedback?.analogyTopic ? `[Provide a metaphor or real-world scenario related to ${feedback.analogyTopic}]` : '[Provide a metaphor or real-world scenario that helps explain the concept, make it relatable]'}
+${isRegeneration && feedback?.analogyTopic ? `[Provide a metaphor or real-world scenario related to ${feedback.analogyTopic}]` : `[Provide a metaphor or real-world scenario that helps explain the concept, using one of these domains: ${effectivePreferences?.preferred_analogy_domains?.join(', ') || 'general'}]`}
 
 Additional Sources:
 [Provide 3-5 relevant learning resources with URLs when possible]
