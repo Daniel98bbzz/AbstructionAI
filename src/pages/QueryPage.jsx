@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabaseClient';
 import QueryToQuiz from '../components/QueryToQuiz';
 import { generateQuizQuestions as generateQuizAPI } from '../api/quizApi';
 import { toast } from 'react-hot-toast';
+import ProjectPreferencesModal from '../components/ProjectPreferencesModal';
 
 function QueryPage() {
   const [quizMode, setQuizMode] = useState(false);
@@ -283,7 +284,31 @@ function QueryPage() {
     return title || 'New Conversation'; // Final fallback
   };
 
+  // Add state for project preferences modal
+  const [showPreferencesModal, setShowPreferencesModal] = useState(false);
+  const [pendingProject, setPendingProject] = useState(null);
+
   const handleNewProject = (projectName) => {
+    // Instead of creating the project immediately, store it as pending and show preferences modal
+    setPendingProject({
+      name: projectName,
+      id: Date.now().toString(),
+    });
+    
+    // Initialize default preferences with proper structure
+    const defaultProjectPreferences = {
+      interests: [],
+      learning_style: 'Visual',
+      technical_depth: 50,
+      preferred_analogy_domains: []
+    };
+    
+    setShowPreferencesModal(true);
+  };
+
+  const handleProjectPreferences = (projectPreferences) => {
+    if (!pendingProject) return;
+
     const initialConversation = {
       id: Date.now().toString(),
       title: 'New Conversation',
@@ -292,8 +317,8 @@ function QueryPage() {
     };
 
     const newProject = {
-      id: Date.now().toString(),
-      name: projectName,
+      ...pendingProject,
+      preferences: projectPreferences, // Store project-specific preferences
       conversations: [initialConversation],
       createdAt: Date.now(),
       lastModified: Date.now()
@@ -311,6 +336,10 @@ function QueryPage() {
     setQuery('');
     setShowFeedbackFor(null);
     setActiveFeedbackMessage(null);
+    
+    // Clear pending project
+    setPendingProject(null);
+    setShowPreferencesModal(false);
   };
 
   const handleNewConversation = (projectId) => {
@@ -428,6 +457,10 @@ function QueryPage() {
     
     if (!query.trim() || !activeProject || !activeConversation) return;
     
+    // Get the active project's preferences or fall back to user's default preferences
+    const activeProjectData = projects.find(p => p.id === activeProject);
+    const queryPreferences = activeProjectData?.preferences || preferences;
+    
     const userMessage = {
       id: Date.now().toString(),
       content: query,
@@ -467,8 +500,8 @@ function QueryPage() {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
 
-      // Call submitQuery with all necessary parameters
-      const response = await submitQuery(query, preferences, sessionId);
+      // Call submitQuery with project-specific preferences
+      const response = await submitQuery(query, queryPreferences, sessionId);
       
       const aiMessage = {
         id: response.id || Date.now().toString(),
@@ -703,57 +736,26 @@ function QueryPage() {
   // Update the generateQuizQuestions function
   const generateQuizQuestions = async (topic) => {
     try {
-      const lastAssistantMessage = messages
-        .filter(msg => msg.role === 'assistant')
-        .pop();
-        
-      if (!lastAssistantMessage) {
-        console.error('No assistant messages found to generate quiz from');
-        return;
-      }
+      setLoading(true);
       
-      try {
-        // Try the API first
-        const response = await generateQuizAPI(lastAssistantMessage.content, {
-          difficultyLevel: 'medium',
-          userId: user?.id,
-          content: lastAssistantMessage.content
-        });
-        
-        if (!response || !response.questions) {
-          throw new Error('Invalid quiz response format');
-        }
-        
-        const questions = response.questions.map(q => ({
-          question: q.question,
-          options: q.options,
-          correctIndex: q.correctAnswer,
-          explanation: q.explanation
-        }));
-        
-        setQuizQuestions(questions);
-        setCurrentQuestionIndex(0);
-        setSelectedAnswer(null);
-        setQuizScore(0);
-        setQuizMode(true);
-        
-      } catch (apiError) {
-        console.warn('API failed, falling back to local generation:', apiError);
-        setIsUsingFallback(true);
-        toast.warning('Using offline quiz mode due to API unavailability');
-        
-        // Fallback to local generation when API fails
-        const mockQuestions = generateLocalQuestions(lastAssistantMessage.content);
-        setQuizQuestions(mockQuestions);
-        setCurrentQuestionIndex(0);
-        setSelectedAnswer(null);
-        setQuizScore(0);
-        setQuizMode(true);
-      }
+      // Get the active project's preferences or fall back to user's default preferences
+      const activeProjectData = projects.find(p => p.id === activeProject);
+      const quizPreferences = activeProjectData?.preferences || preferences;
+      
+      // Generate quiz using project-specific preferences
+      const questions = await generateQuizAPI(topic, quizPreferences);
+      
+      setQuizQuestions(questions);
+      setCurrentQuestionIndex(0);
+      setQuizMode(true);
+      setSelectedAnswer(null);
+      setQuizScore(0);
       
     } catch (error) {
       console.error('Error generating quiz:', error);
-      toast.error('Failed to generate quiz. Please try again.');
+      toast.error('Failed to generate quiz questions');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1230,6 +1232,18 @@ function QueryPage() {
           </div>
         </div>
       )}
+
+      {/* Project Preferences Modal */}
+      <ProjectPreferencesModal
+        isOpen={showPreferencesModal}
+        onClose={() => {
+          setShowPreferencesModal(false);
+          setPendingProject(null);
+        }}
+        onSave={handleProjectPreferences}
+        defaultPreferences={preferences}
+        projectName={pendingProject?.name || ''}
+      />
     </div>
   );
 }
