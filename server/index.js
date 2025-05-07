@@ -7,7 +7,8 @@ import { supabase } from './lib/supabaseClient.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
-import setupQuizRoutes from './api/quizRoutes.js';
+import setupQuizRoutes from './quizRoutes.js';
+import setupClusterRoutes from './api/clusterRoutes.js';
 
 /**
  * Parse sections from the OpenAI response
@@ -482,6 +483,23 @@ Brief Recap:
 
     // Add current query
     historyMessages.push({ role: "user", content: query });
+
+    // NEW CODE: Refine the prompt using Supervisor
+    let refinedQuery = query;
+    try {
+      // Pass the original prompt to Supervisor for refinement
+      refinedQuery = await supervisor.refinePrompt(query, userId, sessionData.id);
+      console.log('=== PROMPT REFINEMENT ===');
+      console.log('Original prompt:', query);
+      console.log('Refined prompt:', refinedQuery);
+      console.log('=== END PROMPT REFINEMENT ===');
+      
+      // Update the last message with the refined query
+      historyMessages[historyMessages.length - 1].content = refinedQuery;
+    } catch (supervisorError) {
+      console.error('Error refining prompt with Supervisor:', supervisorError);
+      // Fall back to original prompt if refinement fails
+    }
 
     // Call OpenAI API with enhanced context
     const completion = await openai.chat.completions.create({
@@ -1405,7 +1423,9 @@ app.post('/api/submit-quiz', async (req, res) => {
   }
 });
 
+// Setup API routes
 setupQuizRoutes(app, supabase, openai);
+setupClusterRoutes(app, supabase);
 
 // Debug route to verify the quiz routes are registered
 app.get('/api/debug/routes', (req, res) => {
