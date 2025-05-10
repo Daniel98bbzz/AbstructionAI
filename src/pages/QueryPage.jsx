@@ -551,10 +551,11 @@ function QueryPage() {
         content: response.explanation || response,
         role: 'assistant',
         timestamp: Date.now(),
-        introduction: response.introduction,
-        analogy: response.analogy,
-        resources: response.resources,
-        recap: response.recap
+        // Handle both structured and free-form responses
+        introduction: response.introduction || null,
+        analogy: response.analogy || null,
+        resources: response.resources || null,
+        recap: response.recap || null
       };
       
       // Update local messages state
@@ -936,7 +937,7 @@ function QueryPage() {
                         </div>
                       )}
                       
-                      {/* Introduction Section */}
+                      {/* Only show Introduction if it exists */}
                       {message.introduction && (
                         <div>
                           <h4 className="font-medium text-gray-900 mb-2">Introduction:</h4>
@@ -946,15 +947,17 @@ function QueryPage() {
                         </div>
                       )}
                       
-                      {/* Main Explanation */}
+                      {/* Main Explanation (always show) */}
                       <div>
-                        <h4 className="font-medium text-gray-900 mt-4 mb-2">Explanation:</h4>
+                        {message.introduction ? (
+                          <h4 className="font-medium text-gray-900 mt-4 mb-2">Explanation:</h4>
+                        ) : null}
                         <div className="prose max-w-none">
                           {message.content}
                         </div>
                       </div>
                       
-                      {/* Analogy Section */}
+                      {/* Only show Analogy if it exists */}
                       {message.analogy && (
                         <div>
                           <h4 className="font-medium text-gray-900 mt-4 mb-2">Analogy:</h4>
@@ -964,7 +967,7 @@ function QueryPage() {
                         </div>
                       )}
                       
-                      {/* Resources Section */}
+                      {/* Only show Resources if they exist */}
                       {message.resources && message.resources.length > 0 && (
                         <div>
                           <h4 className="font-medium text-gray-900 mt-4 mb-2">Additional Resources:</h4>
@@ -988,7 +991,7 @@ function QueryPage() {
                         </div>
                       )}
                       
-                      {/* Recap Section */}
+                      {/* Only show Recap if it exists */}
                       {message.recap && (
                         <div>
                           <h4 className="font-medium text-gray-900 mt-4 mb-2">Brief Recap:</h4>

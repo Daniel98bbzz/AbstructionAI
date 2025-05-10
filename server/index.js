@@ -15,75 +15,66 @@ import setupQuizRoutes from './api/quizRoutes.js';
  * @returns {Object} - Parsed sections
  */
 function parseResponse(responseText) {
-  const sections = {
-    suggested_title: '',
-    introduction: '',
-    explanation: '',
-    analogy: '',
-    additional_sources: [],
-    recap: '',
-    quiz: null
-  };
-
-  // Extract suggested title
+  // First, try to extract sections using regex for backward compatibility
   const titleMatch = responseText.match(/SUGGESTED_TITLE:([^\n]*)/);
-  if (titleMatch && titleMatch[1]) {
-    sections.suggested_title = titleMatch[1].trim();
-  }
-
-  // Extract introduction
   const introMatch = responseText.match(/Introduction:([\s\S]*?)(?=Explanation:|$)/);
-  if (introMatch && introMatch[1]) {
-    sections.introduction = introMatch[1].trim();
-  }
-
-  // Extract explanation
   const explanationMatch = responseText.match(/Explanation:([\s\S]*?)(?=Analogy:|$)/);
-  if (explanationMatch && explanationMatch[1]) {
-    sections.explanation = explanationMatch[1].trim();
-  }
-
-  // Extract analogy
   const analogyMatch = responseText.match(/Analogy:([\s\S]*?)(?=Additional Sources:|$)/);
-  if (analogyMatch && analogyMatch[1]) {
-    sections.analogy = analogyMatch[1].trim();
-  }
-
-  // Extract additional sources
   const sourcesMatch = responseText.match(/Additional Sources:([\s\S]*?)(?=Brief Recap:|$)/);
-  if (sourcesMatch && sourcesMatch[1]) {
-    const sourcesText = sourcesMatch[1].trim();
-    // Parse sources into an array of objects
-    const sources = sourcesText
-      .split('\n')
-      .filter(line => line.trim().length > 0)
-      .map(line => {
-        // Try to extract URL from markdown link format [title](url)
-        const urlMatch = line.match(/\[([^\]]+)\]\(([^)]+)\)/);
-        if (urlMatch) {
-          return {
-            title: urlMatch[1],
-            url: urlMatch[2],
-            description: line.replace(urlMatch[0], '').trim()
-          };
-        }
-        // If no URL format found, just return the text
-        return {
-          title: line.trim(),
-          url: '',
-          description: ''
-        };
-      });
-    sections.additional_sources = sources;
-  }
-
-  // Extract recap
   const recapMatch = responseText.match(/Brief Recap:([\s\S]*?)(?=Quiz:|$)/);
-  if (recapMatch && recapMatch[1]) {
-    sections.recap = recapMatch[1].trim();
-  }
 
-  return sections;
+  // Check if we have a structured response (at least has explanation section)
+  const isStructured = explanationMatch && explanationMatch[1];
+
+  if (isStructured) {
+    // Process structured response with regex
+    const sections = {
+      suggested_title: titleMatch && titleMatch[1] ? titleMatch[1].trim() : '',
+      introduction: introMatch && introMatch[1] ? introMatch[1].trim() : '',
+      explanation: explanationMatch[1].trim(),
+      analogy: analogyMatch && analogyMatch[1] ? analogyMatch[1].trim() : '',
+      additional_sources: [],
+      recap: recapMatch && recapMatch[1] ? recapMatch[1].trim() : ''
+    };
+
+    // Extract additional sources if present
+    if (sourcesMatch && sourcesMatch[1]) {
+      const sourcesText = sourcesMatch[1].trim();
+      sections.additional_sources = sourcesText
+        .split('\n')
+        .filter(line => line.trim().length > 0)
+        .map(line => {
+          // Try to extract URL from markdown link format [title](url)
+          const urlMatch = line.match(/\[([^\]]+)\]\(([^)]+)\)/);
+          if (urlMatch) {
+            return {
+              title: urlMatch[1],
+              url: urlMatch[2],
+              description: line.replace(urlMatch[0], '').trim()
+            };
+          }
+          // If no URL format found, just return the text
+          return {
+            title: line.trim(),
+            url: '',
+            description: ''
+          };
+        });
+    }
+    
+    return sections;
+  } else {
+    // Handle free-form responses
+    // The entire response becomes the explanation, and other fields are empty or default
+    return {
+      suggested_title: '',
+      introduction: '',
+      explanation: responseText.trim(),
+      analogy: '',
+      additional_sources: [],
+      recap: ''
+    };
+  }
 }
 
 // Get current directory for ES modules
