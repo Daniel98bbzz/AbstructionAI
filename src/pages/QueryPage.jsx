@@ -328,7 +328,9 @@ function QueryPage() {
         interests: projectPreferences.interests || [],
         learning_style: projectPreferences.learning_style || 'Visual',
         technical_depth: projectPreferences.technical_depth || 50,
-        preferred_analogy_domains: projectPreferences.preferred_analogy_domains || []
+        // If preferred_analogy_domains is empty but we have interests, use interests as analogy domains
+        preferred_analogy_domains: projectPreferences.preferred_analogy_domains?.length ? 
+          projectPreferences.preferred_analogy_domains : projectPreferences.interests || []
       },
       conversations: [initialConversation],
       createdAt: Date.now(),
@@ -480,11 +482,19 @@ function QueryPage() {
       projectPreferences: activeProjectData?.preferences
     });
 
-    const queryPreferences = activeProjectData?.preferences || {
-      interests: [],
-      learning_style: 'Visual',
-      technical_depth: 50,
-      preferred_analogy_domains: []
+    // Merge project preferences with global preferences to ensure no values are empty
+    const queryPreferences = {
+      interests: activeProjectData?.preferences?.interests?.length ? 
+        activeProjectData.preferences.interests : preferences.interests || [],
+      learning_style: activeProjectData?.preferences?.learning_style || 
+        preferences.visualLearning > 70 ? 'Visual' : 'Verbal',
+      technical_depth: activeProjectData?.preferences?.technical_depth || 
+        preferences.technicalDepth || 50,
+      preferred_analogy_domains: activeProjectData?.preferences?.preferred_analogy_domains?.length ?
+        activeProjectData.preferences.preferred_analogy_domains : [
+          // Default to interests if no specific analogy domains are set
+          ...(activeProjectData?.preferences?.interests || preferences.interests || [])
+        ]
     };
 
     console.log('Using preferences for query:', {
@@ -657,12 +667,28 @@ function QueryPage() {
 
       // Get the active project's preferences
       const activeProjectData = projects.find(p => p.id === activeProject);
-      const queryPreferences = activeProjectData?.preferences || {
-        interests: [],
-        learning_style: 'Visual',
-        technical_depth: 50,
-        preferred_analogy_domains: []
+      
+      // Merge project preferences with global preferences to ensure no values are empty
+      const queryPreferences = {
+        interests: activeProjectData?.preferences?.interests?.length ? 
+          activeProjectData.preferences.interests : preferences.interests || [],
+        learning_style: activeProjectData?.preferences?.learning_style || 
+          preferences.visualLearning > 70 ? 'Visual' : 'Verbal',
+        technical_depth: activeProjectData?.preferences?.technical_depth || 
+          preferences.technicalDepth || 50,
+        preferred_analogy_domains: activeProjectData?.preferences?.preferred_analogy_domains?.length ?
+          activeProjectData.preferences.preferred_analogy_domains : [
+            // Default to interests if no specific analogy domains are set
+            ...(activeProjectData?.preferences?.interests || preferences.interests || [])
+          ]
       };
+
+      // If user requested a specific analogy topic in feedback, prioritize it
+      if (feedbackData.analogyTopic) {
+        queryPreferences.preferred_analogy_domains = [feedbackData.analogyTopic];
+      }
+
+      console.log('Regenerating with preferences:', queryPreferences);
 
       // Call the regenerateAnswer function with project-specific preferences
       const response = await regenerateAnswer(

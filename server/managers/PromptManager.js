@@ -67,11 +67,15 @@ User Profile:
 
 User Interests: ${interests.join(', ')}
 
-Preferred Analogy Domains: ${profile.preferred_analogy_domains.join(', ')}
+${profile.preferred_analogy_domains?.length > 0 ? 
+  `Preferred Analogy Domains: ${profile.preferred_analogy_domains.join(', ')}` : 
+  `IMPORTANT: User has no specified analogy domains, so use their interests for analogies: ${interests.join(', ')}`}
 
 Please tailor your response based on these preferences:
 1. Adjust technical depth based on education level and technical depth preference
-2. Use analogies from preferred domains
+2. ${profile.preferred_analogy_domains?.length > 0 ? 
+     `Use analogies from preferred domains (${profile.preferred_analogy_domains.join(', ')})` : 
+     `Use analogies specifically related to user interests (${interests.join(', ')})`}
 3. Format explanations according to learning style (${profile.learning_style})
 4. Include examples relevant to user's interests
 5. Focus on practical applications aligned with main learning goal
@@ -423,7 +427,9 @@ User Profile:
 
 User Interests: ${interests.join(', ')}
 
-Preferred Analogy Domains: ${profile.preferred_analogy_domains.join(', ')}
+${profile.preferred_analogy_domains?.length > 0 ? 
+  `Preferred Analogy Domains: ${profile.preferred_analogy_domains.join(', ')}` : 
+  `IMPORTANT: User has no specified analogy domains, so use their interests for analogies: ${interests.join(', ')}`}
 
 Feedback on Previous Response:
 ${feedback.specificInstructions ? feedback.specificInstructions.map(instr => `- ${instr}`).join('\n') : ''}
@@ -449,7 +455,9 @@ ${feedback.comments ? `\nUser comments: "${feedback.comments}"` : ''}
 
 Please tailor your response based on these preferences and feedback:
 1. Adjust technical depth based on education level and technical depth preference
-2. Use analogies from preferred domains
+2. ${profile.preferred_analogy_domains?.length > 0 || feedback.analogyTopic ? 
+     `Use analogies from ${feedback.analogyTopic ? `the requested domain (${feedback.analogyTopic})` : `preferred domains (${profile.preferred_analogy_domains.join(', ')})`}` : 
+     `Use analogies specifically related to user interests (${interests.join(', ')})`}
 3. Format explanations according to learning style (${profile.learning_style})
 4. Include examples relevant to user's interests
 5. Focus on practical applications aligned with main learning goal

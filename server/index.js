@@ -369,7 +369,17 @@ app.post('/api/query', async (req, res) => {
     console.log('Raw user profile:', userProfile);
     
     // Ensure we're using project preferences when available
-    const effectivePreferences = preferences || userProfile;
+    const effectivePreferences = preferences ? 
+      {
+        // Merge project preferences with user profile, using user profile as fallback
+        interests: preferences.interests?.length ? preferences.interests : userProfile?.interests || [],
+        preferred_analogy_domains: preferences.preferred_analogy_domains?.length ? 
+          preferences.preferred_analogy_domains : userProfile?.preferred_analogy_domains || [],
+        learning_style: preferences.learning_style || userProfile?.learning_style || 'Visual',
+        technical_depth: preferences.technical_depth || userProfile?.technical_depth || 50,
+        education_level: preferences.education_level || userProfile?.education_level || 'Not specified',
+        main_learning_goal: preferences.main_learning_goal || userProfile?.main_learning_goal || 'Not specified'
+      } : userProfile;
     
     // Detailed debug logging for preferences
     console.log('=== PREFERENCES ANALYSIS ===');
@@ -443,7 +453,13 @@ Explanation:
 [A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
 
 Analogy:
-${isRegeneration && feedback?.analogyTopic ? `[Provide a metaphor or real-world scenario related to ${feedback.analogyTopic}]` : `[Provide a metaphor or real-world scenario that helps explain the concept, using one of these domains: ${effectivePreferences?.preferred_analogy_domains?.join(', ') || 'general'}]`}
+${isRegeneration && feedback?.analogyTopic ? 
+  `[Provide a metaphor or real-world scenario related to ${feedback.analogyTopic}]` : 
+  effectivePreferences?.preferred_analogy_domains?.length ? 
+    `[Provide a metaphor or real-world scenario that helps explain the concept, using one of these domains: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}]` : 
+    effectivePreferences?.interests?.length ? 
+      `[IMPORTANT: Provide a metaphor or real-world scenario specifically related to the user's interests: ${effectivePreferences?.interests?.join(', ')}]` :
+      `[Provide a metaphor or real-world scenario that helps explain the concept]`}
 
 Additional Sources:
 [Provide 3-5 relevant learning resources with URLs when possible]
