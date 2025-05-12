@@ -497,6 +497,7 @@ function QueryPage() {
         ]
     };
 
+    // Log the preferences being used for this query
     console.log('Using preferences for query:', {
       projectId: activeProject,
       preferences: queryPreferences,
@@ -565,8 +566,14 @@ function QueryPage() {
         // Include structured fields if they exist
         introduction: response.introduction || null,
         analogy: response.analogy || null,
+        analogy_title: response.analogy_title || null,
+        example: response.example || null,
+        example_title: response.example_title || null,
         resources: response.resources || response.additional_sources || null,
-        recap: response.recap || null
+        recap: response.recap || null,
+        key_takeaways: response.key_takeaways || null,
+        // Store preferences used for this response to maintain consistency
+        preferences: queryPreferences
       };
       
       // Update local messages state
@@ -591,7 +598,9 @@ function QueryPage() {
                   messages: [...updatedMessages, aiMessage],
                   lastMessageTime: Date.now(),
                   title: conv.title === 'New Conversation' ? generateTitle(query) : conv.title,
-                  sessionId: response.sessionId || conv.sessionId
+                  sessionId: response.sessionId || conv.sessionId,
+                  // Store current preferences at the conversation level as well
+                  currentPreferences: queryPreferences
                 };
               }
               return conv;
@@ -669,8 +678,22 @@ function QueryPage() {
       // Get the active project's preferences
       const activeProjectData = projects.find(p => p.id === activeProject);
       
+      // Get conversation-level preferences if available
+      const activeConversationData = activeProjectData?.conversations?.find(c => c.id === activeConversation);
+      
+      // Use the original message preferences if available, or conversation preferences, or project preferences
+      const originalPreferences = lastAssistantMessage.preferences || 
+                                activeConversationData?.currentPreferences || 
+                                activeProjectData?.preferences;
+      
+      console.log('Using preferences for regeneration:', {
+        source: lastAssistantMessage.preferences ? 'original message' : 
+                (activeConversationData?.currentPreferences ? 'conversation' : 'project'),
+        preferences: originalPreferences
+      });
+      
       // Merge project preferences with global preferences to ensure no values are empty
-      const queryPreferences = {
+      const queryPreferences = originalPreferences || {
         interests: activeProjectData?.preferences?.interests?.length ? 
           activeProjectData.preferences.interests : preferences.interests || [],
         learning_style: activeProjectData?.preferences?.learning_style || 
@@ -715,7 +738,7 @@ function QueryPage() {
                                   feedbackData.analogyPreference) &&
                                  feedbackData.explanationClear === 'yes' &&
                                  feedbackData.explanationDetail === 'exactly_right';
-                                 
+                               
       const regeneratedMessage = {
         id: regeneratedResponseId,
         type: 'assistant',
@@ -723,8 +746,14 @@ function QueryPage() {
         content: isOnlyAnalogyFeedback ? originalMessage.content : response.explanation,
         introduction: response.introduction || null,
         analogy: response.analogy || null,
+        analogy_title: response.analogy_title || null,
+        example: response.example || null,
+        example_title: response.example_title || null,
         resources: response.resources || response.additional_sources || null,
         recap: response.recap || null,
+        key_takeaways: response.key_takeaways || null,
+        // Store the preferences used for this regenerated response
+        preferences: queryPreferences,
         isRegenerated: true,
         timestamp: new Date().toISOString()
       };
@@ -759,6 +788,8 @@ function QueryPage() {
                     title: updatedTitle,
                     messages: [...messages, regeneratedMessage],
                     lastMessageTime: new Date().toISOString(),
+                    // Ensure preferences are maintained at conversation level
+                    currentPreferences: queryPreferences
                   };
                 }
                 return conv;
@@ -776,6 +807,8 @@ function QueryPage() {
                   ...conv,
                   messages: [...messages, regeneratedMessage],
                   lastMessageTime: new Date().toISOString(),
+                  // Ensure preferences are maintained at conversation level
+                  currentPreferences: queryPreferences
                 };
               }
               return conv;
@@ -964,74 +997,105 @@ function QueryPage() {
                         </div>
                       )}
                       
-                      {/* Determine if this is a structured response with sections or just a conversational one */}
-                      {(message.introduction || message.analogy || (message.resources && message.resources.length > 0) || message.recap) && 
-                       message.introduction !== message.content && message.analogy !== message.content ? (
-                        // Structured response with sections - only show section headers if they have content
-                        <>
-                          {/* Introduction section - without header */}
-                          {message.introduction && (
-                            <div className="prose max-w-none">
-                              {message.introduction}
+                      {/* Structured response with enhanced visual presentation */}
+                      <div className="space-y-6">
+                        {/* Introduction - Large engaging font */}
+                        {message.introduction && (
+                          <div className="prose max-w-none">
+                            <h3 className="text-xl font-medium text-gray-900">{message.introduction}</h3>
+                          </div>
+                        )}
+                        
+                        {/* Main explanation - Well-formatted with proper spacing */}
+                        {message.content && message.content !== message.introduction && (
+                          <div className="prose max-w-none bg-white rounded-lg">
+                            {message.content.split('\n\n').map((paragraph, idx) => (
+                              paragraph.trim() ? (
+                                <p key={idx} className="mb-3 text-base">{paragraph.trim()}</p>
+                              ) : null
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Example - if present, show in a highlighted box */}
+                        {message.example && (
+                          <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
+                            <h4 className="font-medium text-green-800 mb-2">{message.example_title || "Example"}</h4>
+                            <div className="text-green-700">
+                              {message.example.split('\n').map((line, idx) => (
+                                <p key={idx} className="mb-2">{line}</p>
+                              ))}
                             </div>
-                          )}
-                          
-                          {/* Main Explanation section - without header */}
-                          {message.content && message.content !== message.introduction && (
-                            <div className="prose max-w-none mt-4">
-                              {message.content}
+                          </div>
+                        )}
+                        
+                        {/* Analogy - in a distinct styled box */}
+                        {message.analogy && (
+                          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
+                            <h4 className="font-medium text-blue-800 mb-2">{message.analogy_title || "Analogy"}</h4>
+                            <div className="text-blue-700">
+                              {message.analogy.split('\n').map((line, idx) => (
+                                <p key={idx} className="mb-2">{line}</p>
+                              ))}
                             </div>
-                          )}
-                          
-                          {/* Analogy section - without header */}
-                          {message.analogy && (
-                            <div className="prose max-w-none mt-4">
-                              {message.analogy}
+                          </div>
+                        )}
+                        
+                        {/* Key Takeaways - Formatted as bullet points */}
+                        {message.key_takeaways && message.key_takeaways.length > 0 && (
+                          <div className="bg-yellow-50 p-4 rounded-lg">
+                            <h4 className="font-medium text-yellow-800 mb-2">Key Takeaways</h4>
+                            <ul className="list-disc pl-5 space-y-1 text-yellow-700">
+                              {message.key_takeaways.map((point, idx) => (
+                                <li key={idx} className="mb-1">{point}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        {/* Recap (for backward compatibility) */}
+                        {message.recap && !message.key_takeaways && (
+                          <div className="bg-yellow-50 p-4 rounded-lg">
+                            <h4 className="font-medium text-yellow-800 mb-2">Key Points</h4>
+                            <div className="text-yellow-700">
+                              {message.recap.startsWith('-') ? 
+                                <ul className="list-disc pl-5 space-y-1">
+                                  {message.recap.split('\n-').map((point, idx) => (
+                                    point.trim() ? <li key={idx} className="mb-1">{point.trim()}</li> : null
+                                  ))}
+                                </ul>
+                                :
+                                <p>{message.recap}</p>
+                              }
                             </div>
-                          )}
-                          
-                          {/* Resources section - include "Resources:" header since it's a list */}
-                          {message.resources && message.resources.length > 0 && (
-                            <div className="mt-4">
-                              <h4 className="font-medium text-gray-900 mb-2">Resources:</h4>
-                              <ul className="list-disc pl-5 space-y-1">
-                                {message.resources.map((resource, idx) => (
-                                  <li key={idx}>
-                                    <a
-                                      href={resource.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary-600 hover:text-primary-500"
-                                    >
-                                      {resource.title}
-                                    </a>
-                                    {resource.description && (
-                                      <p className="text-sm text-gray-500">{resource.description}</p>
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          
-                          {/* Recap section - without header */}
-                          {message.recap && (
-                            <div className="prose max-w-none mt-4">
-                              {message.recap}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        // Conversational response or single-content response 
-                        // Use paragraph formatting for better readability
-                        <div className="prose max-w-none">
-                          {message.content.split('\n\n').map((paragraph, idx) => (
-                            paragraph.trim() ? (
-                              <p key={idx} className="mb-4">{paragraph.trim()}</p>
-                            ) : null
-                          ))}
-                        </div>
-                      )}
+                          </div>
+                        )}
+                        
+                        {/* Resources section */}
+                        {((message.resources && message.resources.length > 0) || 
+                          (message.additional_sources && message.additional_sources.length > 0)) && (
+                          <div className="mt-4">
+                            <h4 className="font-medium text-gray-900 mb-2">Resources:</h4>
+                            <ul className="list-disc pl-5 space-y-1">
+                              {(message.resources || message.additional_sources || []).map((resource, idx) => (
+                                <li key={idx}>
+                                  <a
+                                    href={resource.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary-600 hover:text-primary-500"
+                                  >
+                                    {resource.title}
+                                  </a>
+                                  {resource.description && (
+                                    <p className="text-sm text-gray-500">{resource.description}</p>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <div className="prose max-w-none">

@@ -15,113 +15,84 @@ import setupQuizRoutes from './api/quizRoutes.js';
  * @returns {Object} - Parsed sections
  */
 function parseResponse(responseText) {
-  // Clean up any explicit section headers from the response text
-  let cleanedResponse = responseText
-    .replace(/SUGGESTED[_ ]TITLE:?\s*([^\n]+)/gi, '')
-    .replace(/CONVERSATION[_ ]TITLE:?\s*([^\n]+)/gi, '')
-    .replace(/Introduction:?\s*/gi, '')
-    .replace(/Explanation:?\s*/gi, '')
-    .replace(/Analogy:?\s*/gi, '')
-    .replace(/Additional\s*Sources:?\s*/gi, '')
-    .replace(/Brief\s*Recap:?\s*/gi, '')
-    .trim();
+  try {
+    // Try to find a JSON object in the response text
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    let jsonText = jsonMatch ? jsonMatch[0] : responseText;
     
-  // Extract title if it exists (for backward compatibility)
-  const titleMatch = responseText.match(/SUGGESTED[_ ]TITLE:?\s*([^\n]+)/i);
-  const suggestedTitle = titleMatch ? titleMatch[1].trim() : '';
-  
-  // Look for potential sections in the text, but don't rely on explicit headers
-  const paragraphs = cleanedResponse.split(/\n\s*\n/).filter(p => p.trim().length > 0);
-  
-  // Extract URLs that might be resources
-  const urlRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-  let match;
-  const foundUrls = [];
-  while ((match = urlRegex.exec(responseText)) !== null) {
-    foundUrls.push({
-      title: match[1],
-      url: match[2],
-      description: ''
-    });
-  }
-  
-  // Intelligently determine parts of the response
-  let introduction = '';
-  let explanation = '';
-  let analogy = '';
-  let recap = '';
-  
-  if (paragraphs.length >= 1) {
-    // First paragraph is usually an introduction
-    introduction = paragraphs[0];
-  }
-  
-  if (paragraphs.length >= 2) {
-    // Middle paragraphs are usually explanation
-    // Look for analogy indicators in the text
-    const analogyIndex = paragraphs.findIndex(p => 
-      p.toLowerCase().includes('analogy') || 
-      p.toLowerCase().includes('similar to') || 
-      p.toLowerCase().includes('think of') || 
-      p.toLowerCase().includes('imagine') ||
-      p.toLowerCase().includes('like a') ||
-      p.toLowerCase().includes('comparable to')
-    );
-    
-    if (analogyIndex > 0) {
-      // Paragraphs before analogy are explanation
-      explanation = paragraphs.slice(1, analogyIndex).join('\n\n');
-      analogy = paragraphs[analogyIndex];
+    try {
+      // Try to parse the JSON response
+      const parsedJson = JSON.parse(jsonText.trim());
       
-      // Paragraphs after analogy might include recap
-      if (analogyIndex < paragraphs.length - 1) {
-        const recapIndex = paragraphs.findIndex(p => 
-          p.toLowerCase().includes('recap') || 
-          p.toLowerCase().includes('in summary') || 
-          p.toLowerCase().includes('to summarize') ||
-          p.toLowerCase().includes('in conclusion')
-        );
-        
-        if (recapIndex > analogyIndex) {
-          recap = paragraphs[recapIndex];
-        }
+      // Basic validation
+      if (!parsedJson || typeof parsedJson !== 'object') {
+        throw new Error('Parsed response is not a valid object');
       }
-    } else {
-      // If no analogy is found, assume all middle paragraphs are explanation
-      explanation = paragraphs.slice(1, paragraphs.length - 1).join('\n\n');
       
-      // Check if the last paragraph is a recap
-      const lastParagraph = paragraphs[paragraphs.length - 1];
-      if (lastParagraph && (
-          lastParagraph.toLowerCase().includes('recap') || 
-          lastParagraph.toLowerCase().includes('in summary') || 
-          lastParagraph.toLowerCase().includes('to summarize') ||
-          lastParagraph.toLowerCase().includes('in conclusion'))
-      ) {
-        recap = lastParagraph;
-      } else {
-        // If no recap indicators, include the last paragraph in explanation
-        explanation += '\n\n' + lastParagraph;
-      }
+      // Extract information from the JSON structure
+      const introduction = parsedJson.introduction || '';
+      const explanation = parsedJson.concept_explanation || '';
+      const analogy = parsedJson.analogy?.text || '';
+      const analogyTitle = parsedJson.analogy?.title || '';
+      const example = parsedJson.example?.text || '';
+      const exampleTitle = parsedJson.example?.title || '';
+      const keyTakeaways = Array.isArray(parsedJson.key_takeaways) ? parsedJson.key_takeaways : [];
+      const resources = Array.isArray(parsedJson.resources) ? parsedJson.resources : [];
+      
+      // Format key takeaways as a string if they exist
+      const recap = keyTakeaways.length > 0 ? 
+        keyTakeaways.join('\n- ') : '';
+      
+      // Return the structured response
+      return {
+        suggested_title: '',
+        introduction: introduction,
+        explanation: explanation,
+        analogy: analogy,
+        analogy_title: analogyTitle,
+        example: example,
+        example_title: exampleTitle,
+        additional_sources: resources,
+        recap: recap,
+        key_takeaways: keyTakeaways
+      };
+    } catch (jsonError) {
+      console.error('Error parsing response as JSON:', jsonError);
+      console.log('Attempting to format as simple response');
+      
+      // If this is a simple text response, create a simplified structure
+      // treating the entire response as the explanation
+      return {
+        suggested_title: '',
+        introduction: '',
+        explanation: responseText.trim(),
+        analogy: '',
+        analogy_title: '',
+        example: '',
+        example_title: '',
+        additional_sources: [],
+        recap: '',
+        key_takeaways: []
+      };
     }
-  } else {
-    // If only one paragraph, it's the entire explanation
-    explanation = cleanedResponse;
+  } catch (error) {
+    console.error('Error in overall response parsing:', error);
+    console.log('Raw response:', responseText);
+    
+    // Final fallback
+    return {
+      suggested_title: '',
+      introduction: '',
+      explanation: responseText || 'Sorry, there was an error processing this response.',
+      analogy: '',
+      analogy_title: '',
+      example: '',
+      example_title: '',
+      additional_sources: [],
+      recap: '',
+      key_takeaways: []
+    };
   }
-  
-  // If we couldn't parse sections well, use the full cleaned response as explanation
-  if (!explanation) {
-    explanation = cleanedResponse;
-  }
-  
-  return {
-    suggested_title: suggestedTitle,
-    introduction: introduction.trim(),
-    explanation: explanation.trim(),
-    analogy: analogy.trim(),
-    additional_sources: foundUrls,
-    recap: recap.trim()
-  };
 }
 
 // Get current directory for ES modules
@@ -485,29 +456,68 @@ Specific Instructions:
 ${feedback.specificInstructions?.map(instruction => `- ${instruction}`).join('\n') || 'None provided'}
 ` : ''}
 
-IMPORTANT: Respond naturally and conversationally to the user's query. You should adapt your response style based on the type of question:
+IMPORTANT: Respond in a structured, intuitive format to make complex concepts easier to understand.
 
-- For EDUCATIONAL CONTENT and complex explanations, your response should generally include:
-  1. A brief introduction to the topic
-  2. A detailed explanation with examples
-  3. A helpful real-world analogy or comparison
-  4. Relevant resources when appropriate
-  5. A brief recap of key points for complex topics
+CRITICAL: Format your entire response as a single, valid JSON object string, EVEN FOR SIMPLE RESPONSES and follow-up questions. Use the following keys:
+- "introduction": (String) A brief, engaging opening that introduces the topic in 1-2 sentences.
+- "concept_explanation": (String) The core explanation of the topic. Break this into smaller paragraphs for readability.
+- "analogy": (Object | null) An object with "title" (String) and "text" (String) for the analogy, or null if no analogy is suitable.
+- "example": (Object | null) An object with "title" (String) and "text" (String), or null.
+- "key_takeaways": (Array<String> | null) A list of 3-5 key points to remember, or null.
+- "resources": (Array<Object> | null) List of resource objects {title, url, description}, or null.
 
-DO NOT include section headers like "Introduction:", "Explanation:", "Analogy:", etc. in your response. Instead, organize your content into well-structured paragraphs with clear transitions between ideas.
+For SIMPLE FOLLOW-UP QUESTIONS or brief explanations, still use the JSON format but you may set most fields to null:
+{
+  "introduction": null,
+  "concept_explanation": "Your brief answer or response goes here in this field. Even for simple follow-ups, ALWAYS use this JSON structure.",
+  "analogy": null,
+  "example": null,
+  "key_takeaways": null,
+  "resources": null  
+}
 
-- For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural conversational style.
+Example JSON structure for complex explanations:
+{
+  "introduction": "Let's dive into the 'divide and conquer' strategy!",
+  "concept_explanation": "It's a powerful algorithmic technique where complex problems are broken down into simpler, manageable parts.\\n\\nEach part is solved independently, and then these solutions are combined to solve the original problem.",
+  "analogy": {
+    "title": "Soccer Team Training",
+    "text": "Think of it like coaching a large soccer team. Instead of trying to train all 22 players at once (which would be chaotic), you divide them into groups based on their roles: strikers, midfielders, defenders, and goalkeepers. Each group focuses on their specific skills separately (the 'conquer' step). Finally, you bring everyone together for a practice match, combining all their improved skills."
+  },
+  "example": {
+    "title": "Merge Sort Algorithm",
+    "text": "A classic example is the Merge Sort algorithm. It works by: 1) Dividing the array in half repeatedly until you have single elements, 2) Sorting and merging these smaller arrays back together, 3) Continuing until the entire array is sorted."
+  },
+  "key_takeaways": [
+    "Break complex problems into smaller, manageable parts",
+    "Solve each smaller part independently",
+    "Combine the solutions to solve the original problem",
+    "This approach often leads to more efficient solutions"
+  ],
+  "resources": [
+    {
+      "title": "Divide and Conquer Algorithms",
+      "url": "https://example.com/algorithms",
+      "description": "A comprehensive guide to common divide and conquer algorithms"
+    }
+  ]
+}
 
-Always adapt to the user's preferred communication style. If they ask for a brief answer, be concise. If they want detailed information, be thorough.
+Ensure your entire output is properly formatted as valid JSON. Focus on making each section clear and easy to understand.
 
-Use proper paragraph breaks to organize your response and make it aesthetically pleasing and easy to read. Use whitespace effectively to separate ideas.
+For complex topics, break down your explanation into smaller chunks with proper paragraph breaks. Use simple language where possible and gradually introduce technical terms as needed.
+
+CRITICAL - AVOID REPETITION: 
+1. Do NOT repeat the same concept across different sections
+2. Each section should add new information or perspective
+3. Check your response for redundancy before submitting
 
 ${isRegeneration && feedback?.analogyTopic ? 
   `When using analogies, make sure to incorporate the user's requested domain: ${feedback.analogyTopic}` : 
   effectivePreferences?.preferred_analogy_domains?.length ? 
-    `Consider using analogies from these domains when appropriate: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}` : 
+    `Always use analogies from these domains unless instructed otherwise: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}` : 
     effectivePreferences?.interests?.length ? 
-      `Consider using analogies related to the user's interests when appropriate: ${effectivePreferences?.interests?.join(', ')}` :
+      `Always use analogies related to the user's interests unless instructed otherwise: ${effectivePreferences?.interests?.join(', ')}` :
       ``}`
     };
     
@@ -587,8 +597,12 @@ ${isRegeneration && feedback?.analogyTopic ?
       introduction: sections.introduction,
       explanation: sections.explanation,
       analogy: sections.analogy,
+      analogy_title: sections.analogy_title,
+      example: sections.example,
+      example_title: sections.example_title,
       resources: sections.additional_sources,
       recap: sections.recap,
+      key_takeaways: sections.key_takeaways,
       quiz: sections.quiz,
       timestamp: new Date().toISOString()
     };
@@ -601,7 +615,11 @@ ${isRegeneration && feedback?.analogyTopic ?
       content: response.explanation,
       introduction: response.introduction,
       analogy: response.analogy,
+      analogy_title: response.analogy_title,
+      example: response.example,
+      example_title: response.example_title,
       resources: response.resources,
+      key_takeaways: response.key_takeaways,
       recap: response.recap,
       quiz: response.quiz, // Add the quiz to the message
       timestamp: new Date().toISOString(),

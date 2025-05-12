@@ -97,6 +97,16 @@ Always adapt to the user's preferred communication style. If they ask for a brie
 
 Use proper paragraph breaks to organize your response and make it aesthetically pleasing and easy to read. Use whitespace effectively to separate ideas.
 
+CRITICAL - AVOID REPETITION: 
+1. Do NOT repeat yourself in your responses
+2. Do NOT start sentences with the same phrases (like "I'm sorry" or "Let me explain")
+3. NEVER repeat the same sentence or very similar sentences twice
+4. Before submitting your response, check it for duplicate sentences and remove them
+5. Avoid starting responses with apologies or standard phrases
+6. If you catch yourself writing the same phrase twice, delete one instance
+
+IMPORTANT: Always maintain consistency in your analogies and examples throughout a conversation. When the user asks follow-up questions or says they don't understand, continue using the same analogy domains specified in the user's preferences. Only change your analogy domain if the user explicitly requests a different one.
+
 Style Guidelines:
 - Always use second-person language (e.g., "you," "your") to address the user directly
 - Keep language clear, friendly, and respectful
@@ -104,6 +114,7 @@ Style Guidelines:
 - Use examples to illustrate your points
 - Respond conversationally and naturally to follow-up questions
 - Adapt to the conversation flow - use a more structured approach for initial explanations and a more casual conversational style for follow-ups
+- Avoid repeating the same sentences in your response
 
 Above all, prioritize clarity and helpfulness in your responses, adapting to the user's needs in a natural conversational flow.`;
 
@@ -476,6 +487,18 @@ DO NOT include section headers like "Introduction:", "Explanation:", "Analogy:",
 Always adapt to the user's preferred communication style. If they ask for a brief answer, be concise. If they want detailed information, be thorough.
 
 Use proper paragraph breaks to organize your response and make it aesthetically pleasing and easy to read. Use whitespace effectively to separate ideas.
+
+CRITICAL - AVOID REPETITION: 
+1. Do NOT repeat yourself in your responses
+2. Do NOT start sentences with the same phrases (like "I'm sorry" or "Let me explain")
+3. NEVER repeat the same sentence or very similar sentences twice
+4. Before submitting your response, check it for duplicate sentences and remove them
+5. Avoid starting responses with apologies or standard phrases
+6. If you catch yourself writing the same phrase twice, delete one instance
+
+IMPORTANT: Always maintain consistency in your analogies and examples throughout a conversation. When the user asks follow-up questions or says they don't understand, continue using the same analogy domains. Only change your analogy domain if the user explicitly requests a different one.
+
+CRITICAL: Do not repeat sentences in your response. Check your answer for any duplicated sentences or paragraphs and remove them.
 
 Please tailor your response based on these preferences and feedback:
 1. Adjust technical depth based on education level and technical depth preference
