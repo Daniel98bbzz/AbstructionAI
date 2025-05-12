@@ -556,15 +556,16 @@ function QueryPage() {
         usedPreferences: queryPreferences
       });
       
+      // Create a message object, properly handling both structured and conversational responses
       const aiMessage = {
         id: response.id || Date.now().toString(),
         content: response.explanation || response,
         role: 'assistant',
         timestamp: Date.now(),
-        // Handle both structured and free-form responses
+        // Include structured fields if they exist
         introduction: response.introduction || null,
         analogy: response.analogy || null,
-        resources: response.resources || null,
+        resources: response.resources || response.additional_sources || null,
         recap: response.recap || null
       };
       
@@ -720,10 +721,10 @@ function QueryPage() {
         type: 'assistant',
         // Only preserve the original explanation if ONLY the analogy feedback was given
         content: isOnlyAnalogyFeedback ? originalMessage.content : response.explanation,
-        introduction: response.introduction,
-        analogy: response.analogy,
-        resources: response.resources,
-        recap: response.recap,
+        introduction: response.introduction || null,
+        analogy: response.analogy || null,
+        resources: response.resources || response.additional_sources || null,
+        recap: response.recap || null,
         isRegenerated: true,
         timestamp: new Date().toISOString()
       };
@@ -963,67 +964,72 @@ function QueryPage() {
                         </div>
                       )}
                       
-                      {/* Only show Introduction if it exists */}
-                      {message.introduction && (
-                        <div>
-                          <h4 className="font-medium text-gray-900 mb-2">Introduction:</h4>
-                          <div className="prose max-w-none">
-                            {message.introduction}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Main Explanation (always show) */}
-                      <div>
-                        {message.introduction ? (
-                          <h4 className="font-medium text-gray-900 mt-4 mb-2">Explanation:</h4>
-                        ) : null}
+                      {/* Determine if this is a structured response with sections or just a conversational one */}
+                      {(message.introduction || message.analogy || (message.resources && message.resources.length > 0) || message.recap) && 
+                       message.introduction !== message.content && message.analogy !== message.content ? (
+                        // Structured response with sections - only show section headers if they have content
+                        <>
+                          {/* Introduction section - without header */}
+                          {message.introduction && (
+                            <div className="prose max-w-none">
+                              {message.introduction}
+                            </div>
+                          )}
+                          
+                          {/* Main Explanation section - without header */}
+                          {message.content && message.content !== message.introduction && (
+                            <div className="prose max-w-none mt-4">
+                              {message.content}
+                            </div>
+                          )}
+                          
+                          {/* Analogy section - without header */}
+                          {message.analogy && (
+                            <div className="prose max-w-none mt-4">
+                              {message.analogy}
+                            </div>
+                          )}
+                          
+                          {/* Resources section - include "Resources:" header since it's a list */}
+                          {message.resources && message.resources.length > 0 && (
+                            <div className="mt-4">
+                              <h4 className="font-medium text-gray-900 mb-2">Resources:</h4>
+                              <ul className="list-disc pl-5 space-y-1">
+                                {message.resources.map((resource, idx) => (
+                                  <li key={idx}>
+                                    <a
+                                      href={resource.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary-600 hover:text-primary-500"
+                                    >
+                                      {resource.title}
+                                    </a>
+                                    {resource.description && (
+                                      <p className="text-sm text-gray-500">{resource.description}</p>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          {/* Recap section - without header */}
+                          {message.recap && (
+                            <div className="prose max-w-none mt-4">
+                              {message.recap}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        // Conversational response or single-content response 
+                        // Use paragraph formatting for better readability
                         <div className="prose max-w-none">
-                          {message.content}
-                        </div>
-                      </div>
-                      
-                      {/* Only show Analogy if it exists */}
-                      {message.analogy && (
-                        <div>
-                          <h4 className="font-medium text-gray-900 mt-4 mb-2">Analogy:</h4>
-                          <div className="prose max-w-none">
-                            {message.analogy}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Only show Resources if they exist */}
-                      {message.resources && message.resources.length > 0 && (
-                        <div>
-                          <h4 className="font-medium text-gray-900 mt-4 mb-2">Additional Resources:</h4>
-                          <ul className="list-disc pl-5 space-y-1">
-                            {message.resources.map((resource, idx) => (
-                              <li key={idx}>
-                                <a
-                                  href={resource.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary-600 hover:text-primary-500"
-                                >
-                                  {resource.title}
-                                </a>
-                                {resource.description && (
-                                  <p className="text-sm text-gray-500">{resource.description}</p>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      
-                      {/* Only show Recap if it exists */}
-                      {message.recap && (
-                        <div>
-                          <h4 className="font-medium text-gray-900 mt-4 mb-2">Brief Recap:</h4>
-                          <div className="prose max-w-none">
-                            {message.recap}
-                          </div>
+                          {message.content.split('\n\n').map((paragraph, idx) => (
+                            paragraph.trim() ? (
+                              <p key={idx} className="mb-4">{paragraph.trim()}</p>
+                            ) : null
+                          ))}
                         </div>
                       )}
                     </div>

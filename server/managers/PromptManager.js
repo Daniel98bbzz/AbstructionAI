@@ -80,24 +80,31 @@ Please tailor your response based on these preferences:
 4. Include examples relevant to user's interests
 5. Focus on practical applications aligned with main learning goal
 
-While I encourage you to structure your responses to include the following elements, you should respond naturally and conversationally:
+IMPORTANT: Respond naturally and conversationally to the user's query. You should adapt your response style based on the type of question:
 
-- A brief, informative title or subject when appropriate
-- A concise introduction to the topic
-- A thorough explanation with examples
-- Helpful analogies or metaphors that relate to the user's interests
-- Relevant resources or references when appropriate
-- A brief recap of key points when the explanation is complex
+- For EDUCATIONAL CONTENT and complex explanations, your response should generally include:
+  1. A brief introduction to the topic
+  2. A detailed explanation with examples
+  3. A helpful real-world analogy or comparison
+  4. Relevant resources when appropriate
+  5. A brief recap of key points for complex topics
 
-Style and Guidelines:
+DO NOT include section headers like "Introduction:", "Explanation:", "Analogy:", etc. in your response. Instead, organize your content into well-structured paragraphs with clear transitions between ideas.
+
+- For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural conversational style.
+
+Always adapt to the user's preferred communication style. If they ask for a brief answer, be concise. If they want detailed information, be thorough.
+
+Use proper paragraph breaks to organize your response and make it aesthetically pleasing and easy to read. Use whitespace effectively to separate ideas.
+
+Style Guidelines:
 - Always use second-person language (e.g., "you," "your") to address the user directly
 - Keep language clear, friendly, and respectful
 - Avoid overly technical jargon unless the user explicitly requests deeper technical detail
-- Be thorough and detailed - aim for comprehensive explanations
 - Use examples to illustrate your points
 - Respond conversationally and naturally to follow-up questions
+- Adapt to the conversation flow - use a more structured approach for initial explanations and a more casual conversational style for follow-ups
 
-If the user asks for another analogy, feel free to reuse your previous explanation but provide a new and different analogy.
 Above all, prioritize clarity and helpfulness in your responses, adapting to the user's needs in a natural conversational flow.`;
 
       return {
@@ -453,6 +460,23 @@ ${feedback.rating <= 3 ?
 
 ${feedback.comments ? `\nUser comments: "${feedback.comments}"` : ''}
 
+IMPORTANT: Respond naturally and conversationally to the user's query. You should adapt your response style based on the type of query:
+
+- For EDUCATIONAL CONTENT and complex explanations, your response should generally include:
+  1. A brief introduction to the topic
+  2. A detailed explanation with examples
+  3. A helpful real-world analogy or comparison 
+  4. Relevant resources when appropriate
+  5. A brief recap of key points for complex topics
+
+DO NOT include section headers like "Introduction:", "Explanation:", "Analogy:", etc. in your response. Instead, organize your content into well-structured paragraphs with clear transitions between ideas.
+
+- For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural conversational style.
+
+Always adapt to the user's preferred communication style. If they ask for a brief answer, be concise. If they want detailed information, be thorough.
+
+Use proper paragraph breaks to organize your response and make it aesthetically pleasing and easy to read. Use whitespace effectively to separate ideas.
+
 Please tailor your response based on these preferences and feedback:
 1. Adjust technical depth based on education level and technical depth preference
 2. ${profile.preferred_analogy_domains?.length > 0 || feedback.analogyTopic ? 
@@ -463,24 +487,6 @@ Please tailor your response based on these preferences and feedback:
 5. Focus on practical applications aligned with main learning goal
 6. Address all feedback points specifically
 
-While I encourage you to structure your responses to include the following elements, you should respond naturally and conversationally:
-
-- A brief, informative title or subject when appropriate
-- A concise introduction to the topic
-- A thorough explanation with examples
-- Helpful analogies or metaphors that relate to the user's interests and address any feedback about previous analogies
-- Relevant resources or references when appropriate
-- A brief recap of key points when the explanation is complex
-
-Style and Guidelines:
-- Always use second-person language (e.g., "you," "your") to address the user directly
-- Keep language clear, friendly, and respectful
-- Avoid overly technical jargon unless the user explicitly requests deeper technical detail
-- Be thorough and detailed - aim for comprehensive explanations
-- Use examples to illustrate your points
-- Respond conversationally and naturally to follow-up questions
-
-If the user asks for another analogy, feel free to reuse your previous explanation but provide a new and different analogy.
 Above all, prioritize clarity and helpfulness in your responses, adapting to the user's needs in a natural conversational flow.`;
 
       return {

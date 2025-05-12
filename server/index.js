@@ -15,66 +15,113 @@ import setupQuizRoutes from './api/quizRoutes.js';
  * @returns {Object} - Parsed sections
  */
 function parseResponse(responseText) {
-  // First, try to extract sections using regex for backward compatibility
-  const titleMatch = responseText.match(/SUGGESTED_TITLE:([^\n]*)/);
-  const introMatch = responseText.match(/Introduction:([\s\S]*?)(?=Explanation:|$)/);
-  const explanationMatch = responseText.match(/Explanation:([\s\S]*?)(?=Analogy:|$)/);
-  const analogyMatch = responseText.match(/Analogy:([\s\S]*?)(?=Additional Sources:|$)/);
-  const sourcesMatch = responseText.match(/Additional Sources:([\s\S]*?)(?=Brief Recap:|$)/);
-  const recapMatch = responseText.match(/Brief Recap:([\s\S]*?)(?=Quiz:|$)/);
-
-  // Check if we have a structured response (at least has explanation section)
-  const isStructured = explanationMatch && explanationMatch[1];
-
-  if (isStructured) {
-    // Process structured response with regex
-    const sections = {
-      suggested_title: titleMatch && titleMatch[1] ? titleMatch[1].trim() : '',
-      introduction: introMatch && introMatch[1] ? introMatch[1].trim() : '',
-      explanation: explanationMatch[1].trim(),
-      analogy: analogyMatch && analogyMatch[1] ? analogyMatch[1].trim() : '',
-      additional_sources: [],
-      recap: recapMatch && recapMatch[1] ? recapMatch[1].trim() : ''
-    };
-
-    // Extract additional sources if present
-    if (sourcesMatch && sourcesMatch[1]) {
-      const sourcesText = sourcesMatch[1].trim();
-      sections.additional_sources = sourcesText
-        .split('\n')
-        .filter(line => line.trim().length > 0)
-        .map(line => {
-          // Try to extract URL from markdown link format [title](url)
-          const urlMatch = line.match(/\[([^\]]+)\]\(([^)]+)\)/);
-          if (urlMatch) {
-            return {
-              title: urlMatch[1],
-              url: urlMatch[2],
-              description: line.replace(urlMatch[0], '').trim()
-            };
-          }
-          // If no URL format found, just return the text
-          return {
-            title: line.trim(),
-            url: '',
-            description: ''
-          };
-        });
-    }
+  // Clean up any explicit section headers from the response text
+  let cleanedResponse = responseText
+    .replace(/SUGGESTED[_ ]TITLE:?\s*([^\n]+)/gi, '')
+    .replace(/CONVERSATION[_ ]TITLE:?\s*([^\n]+)/gi, '')
+    .replace(/Introduction:?\s*/gi, '')
+    .replace(/Explanation:?\s*/gi, '')
+    .replace(/Analogy:?\s*/gi, '')
+    .replace(/Additional\s*Sources:?\s*/gi, '')
+    .replace(/Brief\s*Recap:?\s*/gi, '')
+    .trim();
     
-    return sections;
-  } else {
-    // Handle free-form responses
-    // The entire response becomes the explanation, and other fields are empty or default
-    return {
-      suggested_title: '',
-      introduction: '',
-      explanation: responseText.trim(),
-      analogy: '',
-      additional_sources: [],
-      recap: ''
-    };
+  // Extract title if it exists (for backward compatibility)
+  const titleMatch = responseText.match(/SUGGESTED[_ ]TITLE:?\s*([^\n]+)/i);
+  const suggestedTitle = titleMatch ? titleMatch[1].trim() : '';
+  
+  // Look for potential sections in the text, but don't rely on explicit headers
+  const paragraphs = cleanedResponse.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+  
+  // Extract URLs that might be resources
+  const urlRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let match;
+  const foundUrls = [];
+  while ((match = urlRegex.exec(responseText)) !== null) {
+    foundUrls.push({
+      title: match[1],
+      url: match[2],
+      description: ''
+    });
   }
+  
+  // Intelligently determine parts of the response
+  let introduction = '';
+  let explanation = '';
+  let analogy = '';
+  let recap = '';
+  
+  if (paragraphs.length >= 1) {
+    // First paragraph is usually an introduction
+    introduction = paragraphs[0];
+  }
+  
+  if (paragraphs.length >= 2) {
+    // Middle paragraphs are usually explanation
+    // Look for analogy indicators in the text
+    const analogyIndex = paragraphs.findIndex(p => 
+      p.toLowerCase().includes('analogy') || 
+      p.toLowerCase().includes('similar to') || 
+      p.toLowerCase().includes('think of') || 
+      p.toLowerCase().includes('imagine') ||
+      p.toLowerCase().includes('like a') ||
+      p.toLowerCase().includes('comparable to')
+    );
+    
+    if (analogyIndex > 0) {
+      // Paragraphs before analogy are explanation
+      explanation = paragraphs.slice(1, analogyIndex).join('\n\n');
+      analogy = paragraphs[analogyIndex];
+      
+      // Paragraphs after analogy might include recap
+      if (analogyIndex < paragraphs.length - 1) {
+        const recapIndex = paragraphs.findIndex(p => 
+          p.toLowerCase().includes('recap') || 
+          p.toLowerCase().includes('in summary') || 
+          p.toLowerCase().includes('to summarize') ||
+          p.toLowerCase().includes('in conclusion')
+        );
+        
+        if (recapIndex > analogyIndex) {
+          recap = paragraphs[recapIndex];
+        }
+      }
+    } else {
+      // If no analogy is found, assume all middle paragraphs are explanation
+      explanation = paragraphs.slice(1, paragraphs.length - 1).join('\n\n');
+      
+      // Check if the last paragraph is a recap
+      const lastParagraph = paragraphs[paragraphs.length - 1];
+      if (lastParagraph && (
+          lastParagraph.toLowerCase().includes('recap') || 
+          lastParagraph.toLowerCase().includes('in summary') || 
+          lastParagraph.toLowerCase().includes('to summarize') ||
+          lastParagraph.toLowerCase().includes('in conclusion'))
+      ) {
+        recap = lastParagraph;
+      } else {
+        // If no recap indicators, include the last paragraph in explanation
+        explanation += '\n\n' + lastParagraph;
+      }
+    }
+  } else {
+    // If only one paragraph, it's the entire explanation
+    explanation = cleanedResponse;
+  }
+  
+  // If we couldn't parse sections well, use the full cleaned response as explanation
+  if (!explanation) {
+    explanation = cleanedResponse;
+  }
+  
+  return {
+    suggested_title: suggestedTitle,
+    introduction: introduction.trim(),
+    explanation: explanation.trim(),
+    analogy: analogy.trim(),
+    additional_sources: foundUrls,
+    recap: recap.trim()
+  };
 }
 
 // Get current directory for ES modules
@@ -363,7 +410,7 @@ app.post('/api/query', async (req, res) => {
     // Prepare conversation history messages with better context handling
     const historyMessages = [];
     
-    // Add system context about the current conversation with user profile data
+    // Add conversation context about the current conversation with user profile data
     console.log('=== PREFERENCES DEBUG START ===');
     console.log('Raw request preferences:', preferences);
     console.log('Raw user profile:', userProfile);
@@ -438,34 +485,30 @@ Specific Instructions:
 ${feedback.specificInstructions?.map(instruction => `- ${instruction}`).join('\n') || 'None provided'}
 ` : ''}
 
-Your responses must ALWAYS follow this format:
+IMPORTANT: Respond naturally and conversationally to the user's query. You should adapt your response style based on the type of question:
 
-CONVERSATION_TITLE:
-[A concise title for this conversation, exactly 3-5 words only]
+- For EDUCATIONAL CONTENT and complex explanations, your response should generally include:
+  1. A brief introduction to the topic
+  2. A detailed explanation with examples
+  3. A helpful real-world analogy or comparison
+  4. Relevant resources when appropriate
+  5. A brief recap of key points for complex topics
 
-SUGGESTED_TITLE:
-[A brief, descriptive title for this conversation, maximum 5-7 words]
+DO NOT include section headers like "Introduction:", "Explanation:", "Analogy:", etc. in your response. Instead, organize your content into well-structured paragraphs with clear transitions between ideas.
 
-Introduction:
-[A concise overview of the topic, 2-3 sentences]
+- For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural conversational style.
 
-Explanation:
-[A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
+Always adapt to the user's preferred communication style. If they ask for a brief answer, be concise. If they want detailed information, be thorough.
 
-Analogy:
+Use proper paragraph breaks to organize your response and make it aesthetically pleasing and easy to read. Use whitespace effectively to separate ideas.
+
 ${isRegeneration && feedback?.analogyTopic ? 
-  `[Provide a metaphor or real-world scenario related to ${feedback.analogyTopic}]` : 
+  `When using analogies, make sure to incorporate the user's requested domain: ${feedback.analogyTopic}` : 
   effectivePreferences?.preferred_analogy_domains?.length ? 
-    `[Provide a metaphor or real-world scenario that helps explain the concept, using one of these domains: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}]` : 
+    `Consider using analogies from these domains when appropriate: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}` : 
     effectivePreferences?.interests?.length ? 
-      `[IMPORTANT: Provide a metaphor or real-world scenario specifically related to the user's interests: ${effectivePreferences?.interests?.join(', ')}]` :
-      `[Provide a metaphor or real-world scenario that helps explain the concept]`}
-
-Additional Sources:
-[Provide 3-5 relevant learning resources with URLs when possible]
-
-Brief Recap:
-[Summarize the key points in 3-5 bullet points]`
+      `Consider using analogies related to the user's interests when appropriate: ${effectivePreferences?.interests?.join(', ')}` :
+      ``}`
     };
     
     historyMessages.push(systemContext);
