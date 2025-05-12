@@ -1604,6 +1604,162 @@ app.get('/api/debug/actual-profile/:userId', async (req, res) => {
   }
 });
 
+// Add code example generation endpoint
+app.post('/api/generate-code-example', async (req, res) => {
+  try {
+    const { prompt, technical_depth = 50 } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+    
+    console.log('Generating code example with technical depth:', technical_depth);
+    
+    // Create a prompt that focuses on code generation
+    const codePrompt = `Generate a clear, well-commented code example for the following concept:\n${prompt}\n\n
+    Make sure the code is:
+    1. Concise but educational
+    2. Well-commented to explain how it relates to the concept
+    3. Runnable where possible
+    4. At a technical level of ${technical_depth}/100 (higher = more technical)
+    
+    IMPORTANT: Do NOT respond with JSON. Instead, just provide the code example with a language indicator.
+    Use the format:
+    
+    \`\`\`[language]
+    [your code here]
+    \`\`\``;
+    
+    // Call OpenAI API
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: "You are a helpful programming tutor who excels at creating educational, clear code examples." },
+        { role: "user", content: codePrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 1000
+    });
+    
+    const responseText = completion.choices[0].message.content;
+    
+    // Try to extract code using markdown code blocks
+    const codeBlockMatch = responseText.match(/```([a-zA-Z0-9]+)?\n([\s\S]*?)\n```/);
+    if (codeBlockMatch) {
+      return res.json({
+        language: codeBlockMatch[1] || 'javascript',
+        code: codeBlockMatch[2].trim()
+      });
+    }
+    
+    // If no code block found, return the entire response as text
+    return res.json({
+      language: 'text',
+      code: responseText.trim()
+    });
+    
+  } catch (error) {
+    console.error('Error generating code example:', error);
+    res.status(500).json({ error: 'Failed to generate code example' });
+  }
+});
+
+// Add flash cards generation endpoint
+app.post('/api/generate-flash-cards', async (req, res) => {
+  try {
+    const { prompt, preferences } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+    
+    console.log('Generating flash cards with preferences:', preferences);
+    
+    // Create a prompt for generating flash cards
+    const cardsPrompt = `Generate 3 educational flash cards for the following concept:\n${prompt}\n\n
+    Each flash card should have:
+    1. A clear, concise question on the front
+    2. A precise, informative answer on the back
+    3. Focus on key facts, definitions, and relationships
+
+    The user's learning preferences are: ${JSON.stringify(preferences || {})}
+    
+    Respond with a valid JSON array of objects containing:
+    [
+      { "question": "Front side question text", "answer": "Back side answer text" },
+      { "question": "Front side question text", "answer": "Back side answer text" },
+      { "question": "Front side question text", "answer": "Back side answer text" }
+    ]`;
+    
+    // Call OpenAI API
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: "You are a helpful educational assistant who creates effective flash cards for learning." },
+        { role: "user", content: cardsPrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 1000
+    });
+    
+    const responseText = completion.choices[0].message.content;
+    
+    // Try to parse the JSON response
+    try {
+      // Look for JSON array in the response
+      const jsonMatch = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (jsonMatch) {
+        const cards = JSON.parse(jsonMatch[0]);
+        
+        // Validate the response
+        if (!Array.isArray(cards) || cards.length === 0) {
+          throw new Error('Invalid flash cards format');
+        }
+        
+        return res.json({ cards });
+      } else {
+        // If not a JSON response, try to extract in Q&A format
+        const cards = [];
+        const qaMatches = responseText.matchAll(/(?:Question|Q)[:\.]?\s*(.+?)(?:\n|\r\n?)+(?:Answer|A)[:\.]?\s*(.+?)(?=\n\s*(?:Question|Q)[:\.]?|\n\s*\d+[:\.]|$)/gs);
+        
+        for (const match of qaMatches) {
+          cards.push({
+            question: match[1].trim(),
+            answer: match[2].trim()
+          });
+        }
+        
+        if (cards.length > 0) {
+          return res.json({ cards });
+        }
+        
+        // Last resort: create generic cards
+        return res.json({
+          cards: [
+            { question: "What is the main concept described?", answer: "The concept involves key principles and applications in this domain." },
+            { question: "What are the primary components of this concept?", answer: "The concept typically includes multiple elements working together." },
+            { question: "How is this concept applied in practice?", answer: "The concept is applied through specific processes and techniques." }
+          ]
+        });
+      }
+    } catch (jsonError) {
+      console.error('Error parsing flash cards response:', jsonError);
+      
+      // Fallback to generic cards
+      return res.json({
+        cards: [
+          { question: "What is the main concept described?", answer: "The concept involves key principles and applications in this domain." },
+          { question: "What are the primary components of this concept?", answer: "The concept typically includes multiple elements working together." },
+          { question: "How is this concept applied in practice?", answer: "The concept is applied through specific processes and techniques." }
+        ]
+      });
+    }
+  } catch (error) {
+    console.error('Error generating flash cards:', error);
+    res.status(500).json({ error: 'Failed to generate flash cards' });
+  }
+});
+
 // Start server
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);

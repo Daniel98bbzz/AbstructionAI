@@ -19,6 +19,15 @@ function QueryPage() {
   const [activeQuizMessage, setActiveQuizMessage] = useState(null);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
 
+  // Add state for code example and flash cards features
+  const [showCodeExample, setShowCodeExample] = useState(false);
+  const [codeExample, setCodeExample] = useState(null);
+  const [showFlashCards, setShowFlashCards] = useState(false);
+  const [flashCards, setFlashCards] = useState([]);
+  const [currentCardIndex, setCurrentCardIndex] = useState(0);
+  const [isCardFlipped, setIsCardFlipped] = useState(false);
+  const [isGeneratingContent, setIsGeneratingContent] = useState(false);
+
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [showPreferences, setShowPreferences] = useState(false);
@@ -851,6 +860,7 @@ function QueryPage() {
   const generateQuizQuestions = async (topic) => {
     try {
       setLoading(true);
+      setIsGeneratingContent(true);
       
       // Get the active project's preferences
       const activeProjectData = projects.find(p => p.id === activeProject);
@@ -870,12 +880,251 @@ function QueryPage() {
       setSelectedAnswer(null);
       setQuizScore(0);
       
+      // Close other features if they're open
+      setShowCodeExample(false);
+      setShowFlashCards(false);
+      
     } catch (error) {
       console.error('Error generating quiz:', error);
       toast.error('Failed to generate quiz questions');
     } finally {
       setLoading(false);
+      setIsGeneratingContent(false);
     }
+  };
+
+  // Handler for generating code examples
+  const handleGenerateCodeExample = async () => {
+    try {
+      setIsGeneratingContent(true);
+      
+      // Find the most recent assistant message to extract context
+      const lastAssistantMessage = messages.find(msg => msg.role === 'assistant');
+      if (!lastAssistantMessage) {
+        throw new Error('No assistant message found to generate a code example from');
+      }
+      
+      // Find the most recent user query before this response
+      const userMessageIndex = messages.findIndex(msg => msg.id === lastAssistantMessage.id) - 1;
+      const userQuery = userMessageIndex >= 0 ? messages[userMessageIndex].content : '';
+      
+      toast.promise(
+        generateCodeExample(userQuery, lastAssistantMessage.content),
+        {
+          loading: 'Generating code example...',
+          success: 'Code example generated!',
+          error: 'Failed to generate code example'
+        }
+      );
+      
+      // Generate the code example
+      const example = await generateCodeExample(userQuery, lastAssistantMessage.content);
+      setCodeExample(example);
+      setShowCodeExample(true);
+      
+      // Close other modals
+      setQuizMode(false);
+      setShowFlashCards(false);
+      
+    } catch (error) {
+      console.error('Error generating code example:', error);
+      toast.error('Failed to generate code example');
+    } finally {
+      setIsGeneratingContent(false);
+    }
+  };
+
+  // Function to generate code example
+  const generateCodeExample = async (query, explanation) => {
+    try {
+      // Create a prompt for the code example
+      const prompt = `Based on this concept: "${query}", and this explanation: "${explanation.substring(0, 200)}...", 
+      generate a simple code example that demonstrates this concept. Make it clear, concise, and well-commented.
+      Include the programming language name at the top.`;
+      
+      // Get the active project's preferences
+      const activeProjectData = projects.find(p => p.id === activeProject);
+      const codePreferences = activeProjectData?.preferences || {
+        technical_depth: 50
+      };
+      
+      // Call the backend to generate the code example
+      const response = await fetch('/api/generate-code-example', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          technical_depth: codePreferences.technical_depth
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate code example');
+      }
+      
+      const data = await response.json();
+      
+      // If we can't fetch from the API, use a fallback
+      if (!data.code) {
+        return {
+          language: 'javascript',
+          code: `// Fallback code example for: ${query}
+function demonstrateConcept() {
+  // This is a placeholder example
+  console.log("This would demonstrate the concept of: " + "${query}");
+  // For real implementation, please refer to documentation
+}
+
+demonstrateConcept();`
+        };
+      }
+      
+      return {
+        language: data.language || 'javascript',
+        code: data.code
+      };
+      
+    } catch (error) {
+      console.error('Error in code example generation:', error);
+      // Return a fallback example
+      return {
+        language: 'javascript',
+        code: `// Example could not be generated
+// Here's a placeholder for the concept: ${query}
+function examplePlaceholder() {
+  console.log("Concept demonstration would go here");
+}
+
+examplePlaceholder();`
+      };
+    }
+  };
+
+  // Handler for generating flash cards
+  const handleGenerateFlashCards = async () => {
+    try {
+      setIsGeneratingContent(true);
+      
+      // Find the most recent assistant message to extract context
+      const lastAssistantMessage = messages.find(msg => msg.role === 'assistant');
+      if (!lastAssistantMessage) {
+        throw new Error('No assistant message found to generate flash cards from');
+      }
+      
+      // Find the most recent user query before this response
+      const userMessageIndex = messages.findIndex(msg => msg.id === lastAssistantMessage.id) - 1;
+      const userQuery = userMessageIndex >= 0 ? messages[userMessageIndex].content : '';
+      
+      toast.promise(
+        generateFlashCards(userQuery, lastAssistantMessage.content),
+        {
+          loading: 'Generating flash cards...',
+          success: 'Flash cards generated!',
+          error: 'Failed to generate flash cards'
+        }
+      );
+      
+      // Generate the flash cards
+      const cards = await generateFlashCards(userQuery, lastAssistantMessage.content);
+      setFlashCards(cards);
+      setCurrentCardIndex(0);
+      setIsCardFlipped(false);
+      setShowFlashCards(true);
+      
+      // Close other modals
+      setQuizMode(false);
+      setShowCodeExample(false);
+      
+    } catch (error) {
+      console.error('Error generating flash cards:', error);
+      toast.error('Failed to generate flash cards');
+    } finally {
+      setIsGeneratingContent(false);
+    }
+  };
+
+  // Function to generate flash cards
+  const generateFlashCards = async (query, explanation) => {
+    try {
+      // Create a prompt for the flash cards
+      const prompt = `Based on this concept: "${query}", and this explanation: "${explanation.substring(0, 200)}...", 
+      generate 3 flash cards with questions on the front and answers on the back that reinforce key facts and definitions.
+      Make them clear, concise, and focused on the most important points for understanding this concept.`;
+      
+      // Get the active project's preferences
+      const activeProjectData = projects.find(p => p.id === activeProject);
+      
+      // Call the backend to generate the flash cards
+      const response = await fetch('/api/generate-flash-cards', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          preferences: activeProjectData?.preferences
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate flash cards');
+      }
+      
+      const data = await response.json();
+      
+      // If we can't fetch from the API, use fallback cards
+      if (!data.cards || !data.cards.length) {
+        return [
+          { question: `What is ${query}?`, answer: "A key concept that helps organize and solve problems in this domain." },
+          { question: "What are the main components of this concept?", answer: "The concept typically consists of several key elements that work together." },
+          { question: "Why is this concept important?", answer: "It provides a fundamental framework for understanding this topic area." }
+        ];
+      }
+      
+      return data.cards;
+      
+    } catch (error) {
+      console.error('Error in flash cards generation:', error);
+      // Return fallback cards
+      return [
+        { question: `What is ${query}?`, answer: "A key concept that helps organize and solve problems in this domain." },
+        { question: "What are the main components of this concept?", answer: "The concept typically consists of several key elements that work together." },
+        { question: "Why is this concept important?", answer: "It provides a fundamental framework for understanding this topic area." }
+      ];
+    }
+  };
+
+  // Function to handle flash card flipping
+  const flipCard = () => {
+    setIsCardFlipped(!isCardFlipped);
+  };
+
+  // Function to move to the next flash card
+  const nextCard = () => {
+    if (currentCardIndex < flashCards.length - 1) {
+      setCurrentCardIndex(currentCardIndex + 1);
+      setIsCardFlipped(false);
+    }
+  };
+
+  // Function to move to the previous flash card
+  const prevCard = () => {
+    if (currentCardIndex > 0) {
+      setCurrentCardIndex(currentCardIndex - 1);
+      setIsCardFlipped(false);
+    }
+  };
+
+  // Handler function to close code example modal
+  const handleCloseCodeExample = () => {
+    setShowCodeExample(false);
+  };
+
+  // Handler function to close flash cards modal
+  const handleCloseFlashCards = () => {
+    setShowFlashCards(false);
   };
 
   // Add this helper function for local question generation
@@ -1256,13 +1505,39 @@ function QueryPage() {
                 <button
                   type="button"
                   onClick={() => generateQuizQuestions(query.trim() || 'this topic')}
-                  disabled={loading || regenerating || !messages.some(m => m.role === 'assistant')}
+                  disabled={loading || regenerating || !messages.some(m => m.role === 'assistant') || isGeneratingContent}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-secondary-600 hover:bg-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary-500 disabled:opacity-50"
                 >
                   <svg className="h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   Quiz Me
+                </button>
+                
+                {/* Code Example Button */}
+                <button
+                  type="button"
+                  onClick={handleGenerateCodeExample}
+                  disabled={loading || regenerating || !messages.some(m => m.role === 'assistant') || isGeneratingContent}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  <svg className="h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                  </svg>
+                  Code Example
+                </button>
+                
+                {/* Flash Cards Button */}
+                <button
+                  type="button"
+                  onClick={handleGenerateFlashCards}
+                  disabled={loading || regenerating || !messages.some(m => m.role === 'assistant') || isGeneratingContent}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                >
+                  <svg className="h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                  </svg>
+                  Flash Cards
                 </button>
               </div>
             </form>
@@ -1421,6 +1696,109 @@ function QueryPage() {
         defaultPreferences={preferences}
         projectName={pendingProject?.name || ''}
       />
+
+      {/* Code Example Modal */}
+      {showCodeExample && codeExample && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full p-6 m-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                Code Example: {codeExample.language}
+              </h3>
+              <button 
+                onClick={handleCloseCodeExample}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="bg-gray-900 rounded-md p-4 overflow-auto max-h-[60vh]">
+              <pre className="text-white text-sm whitespace-pre-wrap">
+                <code>{typeof codeExample.code === 'string' ? codeExample.code : JSON.stringify(codeExample.code, null, 2)}</code>
+              </pre>
+            </div>
+            
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={handleCloseCodeExample}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Flash Cards Modal */}
+      {showFlashCards && flashCards.length > 0 && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 m-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                Flash Cards ({currentCardIndex + 1}/{flashCards.length})
+              </h3>
+              <button 
+                onClick={handleCloseFlashCards}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* Flash Card */}
+            <div 
+              className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow p-6 min-h-[200px] flex items-center justify-center cursor-pointer transform transition-transform duration-300 hover:scale-105"
+              onClick={flipCard}
+            >
+              <div className="text-center">
+                {!isCardFlipped ? (
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">Question:</h4>
+                    <p className="text-gray-700">{flashCards[currentCardIndex].question}</p>
+                    <p className="text-sm text-gray-500 mt-4">(Click to see answer)</p>
+                  </div>
+                ) : (
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">Answer:</h4>
+                    <p className="text-gray-700">{flashCards[currentCardIndex].answer}</p>
+                    <p className="text-sm text-gray-500 mt-4">(Click to see question)</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Navigation buttons */}
+            <div className="mt-6 flex justify-between">
+              <button
+                onClick={prevCard}
+                disabled={currentCardIndex === 0}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md disabled:opacity-50 hover:bg-indigo-700"
+              >
+                Previous
+              </button>
+              <button
+                onClick={handleCloseFlashCards}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+              >
+                Close
+              </button>
+              <button
+                onClick={nextCard}
+                disabled={currentCardIndex === flashCards.length - 1}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md disabled:opacity-50 hover:bg-indigo-700"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
