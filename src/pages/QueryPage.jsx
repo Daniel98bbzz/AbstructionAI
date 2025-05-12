@@ -523,6 +523,17 @@ function QueryPage() {
     // Update local messages state
     setMessages(prev => [...prev, userMessage]);
 
+    // Add a temporary "thinking" message
+    const thinkingMessage = {
+      id: 'thinking-' + Date.now().toString(),
+      content: 'Crafting an answer for you...',
+      role: 'thinking',
+      timestamp: Date.now()
+    };
+    
+    // Add the thinking message
+    setMessages(prev => [...prev, thinkingMessage]);
+
     // Update project conversation
     setProjects(prev => prev.map(project => {
       if (project.id === activeProject) {
@@ -586,8 +597,8 @@ function QueryPage() {
         preferences: queryPreferences
       };
       
-      // Update local messages state
-      setMessages(prev => [...prev, aiMessage]);
+      // Remove the thinking message and add the AI response
+      setMessages(prev => prev.filter(msg => msg.role !== 'thinking').concat(aiMessage));
       
       // Store the session ID if this is the first message
       if (response.sessionId) {
@@ -624,6 +635,9 @@ function QueryPage() {
     } catch (error) {
       console.error('Error processing query:', error);
       toast.error('Failed to get response');
+      
+      // Remove the thinking message
+      setMessages(prev => prev.filter(msg => msg.role !== 'thinking'));
       
       // Add error message to the conversation
       const errorMessage = {
@@ -678,8 +692,9 @@ function QueryPage() {
       
       // Temporarily show a message about regeneration
       const regeneratingMsg = {
-        type: 'system',
-        content: 'Regenerating answer based on your feedback...',
+        type: 'thinking',
+        role: 'thinking',
+        content: 'Crafting an improved answer based on your feedback...',
         timestamp: new Date().toISOString()
       };
       
@@ -735,7 +750,7 @@ function QueryPage() {
       console.log('Received regenerated response:', response);
 
       // Remove the regenerating message
-      setMessages(prev => prev.filter(m => m !== regeneratingMsg));
+      setMessages(prev => prev.filter(m => m.role !== 'thinking' && m !== regeneratingMsg));
 
       // Add the regenerated response
       const regeneratedResponseId = response.id || Date.now().toString();
@@ -1237,6 +1252,8 @@ examplePlaceholder();`
                       ? 'bg-red-100 text-red-700'
                       : message.role === 'system'
                       ? 'bg-yellow-50 text-yellow-700'
+                      : message.role === 'thinking'
+                      ? 'bg-gray-100 text-gray-700 animate-pulse'
                       : 'bg-white shadow'
                   }`}
                 >
@@ -1367,6 +1384,15 @@ examplePlaceholder();`
                           }
                         </div>
                       )}
+                    </div>
+                  ) : message.role === 'thinking' ? (
+                    <div className="flex items-center space-x-2">
+                      <div className="animate-pulse flex space-x-2">
+                        <div className="h-2 w-2 bg-gray-400 rounded-full animate-bounce"></div>
+                        <div className="h-2 w-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                        <div className="h-2 w-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                      </div>
+                      <p className="text-gray-500 font-medium">{message.content}</p>
                     </div>
                   ) : (
                     <div className="prose max-w-none">
