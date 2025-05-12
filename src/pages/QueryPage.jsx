@@ -564,6 +564,7 @@ function QueryPage() {
         role: 'assistant',
         timestamp: Date.now(),
         // Include structured fields if they exist
+        is_structured: response.is_structured || false,
         introduction: response.introduction || null,
         analogy: response.analogy || null,
         analogy_title: response.analogy_title || null,
@@ -744,6 +745,7 @@ function QueryPage() {
         type: 'assistant',
         // Only preserve the original explanation if ONLY the analogy feedback was given
         content: isOnlyAnalogyFeedback ? originalMessage.content : response.explanation,
+        is_structured: response.is_structured || false,
         introduction: response.introduction || null,
         analogy: response.analogy || null,
         analogy_title: response.analogy_title || null,
@@ -997,105 +999,125 @@ function QueryPage() {
                         </div>
                       )}
                       
-                      {/* Structured response with enhanced visual presentation */}
-                      <div className="space-y-6">
-                        {/* Introduction - Large engaging font */}
-                        {message.introduction && (
-                          <div className="prose max-w-none">
-                            <h3 className="text-xl font-medium text-gray-900">{message.introduction}</h3>
-                          </div>
-                        )}
-                        
-                        {/* Main explanation - Well-formatted with proper spacing */}
-                        {message.content && message.content !== message.introduction && (
-                          <div className="prose max-w-none bg-white rounded-lg">
-                            {message.content.split('\n\n').map((paragraph, idx) => (
+                      {/* Determine if this is a structured response or a conversational one */}
+                      {message.is_structured ? (
+                        /* Structured response with enhanced visual presentation */
+                        <div className="space-y-6">
+                          {/* Introduction - Large engaging font */}
+                          {message.introduction && (
+                            <div className="prose max-w-none">
+                              <h3 className="text-xl font-medium text-gray-900">{message.introduction}</h3>
+                            </div>
+                          )}
+                          
+                          {/* Main explanation - Well-formatted with proper spacing */}
+                          {message.content && message.content !== message.introduction && (
+                            <div className="prose max-w-none bg-white rounded-lg">
+                              {message.content.split('\n\n').map((paragraph, idx) => (
+                                paragraph.trim() ? (
+                                  <p key={idx} className="mb-3 text-base">{paragraph.trim()}</p>
+                                ) : null
+                              ))}
+                            </div>
+                          )}
+                          
+                          {/* Example - if present, show in a highlighted box */}
+                          {message.example && (
+                            <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
+                              <h4 className="font-medium text-green-800 mb-2">{message.example_title || "Example"}</h4>
+                              <div className="text-green-700">
+                                {message.example.split('\n').map((line, idx) => (
+                                  <p key={idx} className="mb-2">{line}</p>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Analogy - in a distinct styled box */}
+                          {message.analogy && (
+                            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
+                              <h4 className="font-medium text-blue-800 mb-2">{message.analogy_title || "Analogy"}</h4>
+                              <div className="text-blue-700">
+                                {message.analogy.split('\n').map((line, idx) => (
+                                  <p key={idx} className="mb-2">{line}</p>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Key Takeaways - Formatted as bullet points */}
+                          {message.key_takeaways && message.key_takeaways.length > 0 && (
+                            <div className="bg-yellow-50 p-4 rounded-lg">
+                              <h4 className="font-medium text-yellow-800 mb-2">Key Takeaways</h4>
+                              <ul className="list-disc pl-5 space-y-1 text-yellow-700">
+                                {message.key_takeaways.map((point, idx) => (
+                                  <li key={idx} className="mb-1">{point}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          {/* Recap (for backward compatibility) */}
+                          {message.recap && !message.key_takeaways && (
+                            <div className="bg-yellow-50 p-4 rounded-lg">
+                              <h4 className="font-medium text-yellow-800 mb-2">Key Points</h4>
+                              <div className="text-yellow-700">
+                                {message.recap.startsWith('-') ? 
+                                  <ul className="list-disc pl-5 space-y-1">
+                                    {message.recap.split('\n-').map((point, idx) => (
+                                      point.trim() ? <li key={idx} className="mb-1">{point.trim()}</li> : null
+                                    ))}
+                                  </ul>
+                                  :
+                                  <p>{message.recap}</p>
+                                }
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Resources section */}
+                          {((message.resources && message.resources.length > 0) || 
+                            (message.additional_sources && message.additional_sources.length > 0)) && (
+                            <div className="mt-4">
+                              <h4 className="font-medium text-gray-900 mb-2">Resources:</h4>
+                              <ul className="list-disc pl-5 space-y-1">
+                                {(message.resources || message.additional_sources || []).map((resource, idx) => (
+                                  <li key={idx}>
+                                    <a
+                                      href={resource.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary-600 hover:text-primary-500"
+                                    >
+                                      {resource.title}
+                                    </a>
+                                    {resource.description && (
+                                      <p className="text-sm text-gray-500">{resource.description}</p>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        /* Conversational response - clean, readable formatting but less structured */
+                        <div className="prose max-w-none">
+                          {/* If there's an introduction, display it with emphasis */}
+                          {message.introduction && (
+                            <p className="font-medium text-lg mb-3">{message.introduction}</p>
+                          )}
+                          
+                          {/* Show the main content with proper paragraph breaks */}
+                          {message.content && message.content !== message.introduction && 
+                            message.content.split('\n\n').map((paragraph, idx) => (
                               paragraph.trim() ? (
-                                <p key={idx} className="mb-3 text-base">{paragraph.trim()}</p>
+                                <p key={idx} className="mb-4 text-base">{paragraph.trim()}</p>
                               ) : null
-                            ))}
-                          </div>
-                        )}
-                        
-                        {/* Example - if present, show in a highlighted box */}
-                        {message.example && (
-                          <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
-                            <h4 className="font-medium text-green-800 mb-2">{message.example_title || "Example"}</h4>
-                            <div className="text-green-700">
-                              {message.example.split('\n').map((line, idx) => (
-                                <p key={idx} className="mb-2">{line}</p>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        
-                        {/* Analogy - in a distinct styled box */}
-                        {message.analogy && (
-                          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
-                            <h4 className="font-medium text-blue-800 mb-2">{message.analogy_title || "Analogy"}</h4>
-                            <div className="text-blue-700">
-                              {message.analogy.split('\n').map((line, idx) => (
-                                <p key={idx} className="mb-2">{line}</p>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        
-                        {/* Key Takeaways - Formatted as bullet points */}
-                        {message.key_takeaways && message.key_takeaways.length > 0 && (
-                          <div className="bg-yellow-50 p-4 rounded-lg">
-                            <h4 className="font-medium text-yellow-800 mb-2">Key Takeaways</h4>
-                            <ul className="list-disc pl-5 space-y-1 text-yellow-700">
-                              {message.key_takeaways.map((point, idx) => (
-                                <li key={idx} className="mb-1">{point}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        
-                        {/* Recap (for backward compatibility) */}
-                        {message.recap && !message.key_takeaways && (
-                          <div className="bg-yellow-50 p-4 rounded-lg">
-                            <h4 className="font-medium text-yellow-800 mb-2">Key Points</h4>
-                            <div className="text-yellow-700">
-                              {message.recap.startsWith('-') ? 
-                                <ul className="list-disc pl-5 space-y-1">
-                                  {message.recap.split('\n-').map((point, idx) => (
-                                    point.trim() ? <li key={idx} className="mb-1">{point.trim()}</li> : null
-                                  ))}
-                                </ul>
-                                :
-                                <p>{message.recap}</p>
-                              }
-                            </div>
-                          </div>
-                        )}
-                        
-                        {/* Resources section */}
-                        {((message.resources && message.resources.length > 0) || 
-                          (message.additional_sources && message.additional_sources.length > 0)) && (
-                          <div className="mt-4">
-                            <h4 className="font-medium text-gray-900 mb-2">Resources:</h4>
-                            <ul className="list-disc pl-5 space-y-1">
-                              {(message.resources || message.additional_sources || []).map((resource, idx) => (
-                                <li key={idx}>
-                                  <a
-                                    href={resource.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary-600 hover:text-primary-500"
-                                  >
-                                    {resource.title}
-                                  </a>
-                                  {resource.description && (
-                                    <p className="text-sm text-gray-500">{resource.description}</p>
-                                  )}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
+                            ))
+                          }
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="prose max-w-none">

@@ -16,56 +16,82 @@ import setupQuizRoutes from './api/quizRoutes.js';
  */
 function parseResponse(responseText) {
   try {
-    // Try to find a JSON object in the response text
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    let jsonText = jsonMatch ? jsonMatch[0] : responseText;
+    // First, check if the response looks like JSON (starts with '{' after trimming)
+    const trimmedResponse = responseText.trim();
+    const looksLikeJson = trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}');
     
-    try {
-      // Try to parse the JSON response
-      const parsedJson = JSON.parse(jsonText.trim());
-      
-      // Basic validation
-      if (!parsedJson || typeof parsedJson !== 'object') {
-        throw new Error('Parsed response is not a valid object');
+    // If it looks like JSON, try to parse it as structured content
+    if (looksLikeJson) {
+      try {
+        const parsedJson = JSON.parse(trimmedResponse);
+        
+        // Basic validation
+        if (!parsedJson || typeof parsedJson !== 'object') {
+          throw new Error('Parsed response is not a valid object');
+        }
+        
+        // Extract information from the JSON structure
+        const introduction = parsedJson.introduction || '';
+        const explanation = parsedJson.concept_explanation || '';
+        const analogy = parsedJson.analogy?.text || '';
+        const analogyTitle = parsedJson.analogy?.title || '';
+        const example = parsedJson.example?.text || '';
+        const exampleTitle = parsedJson.example?.title || '';
+        const keyTakeaways = Array.isArray(parsedJson.key_takeaways) ? parsedJson.key_takeaways : [];
+        const resources = Array.isArray(parsedJson.resources) ? parsedJson.resources : [];
+        
+        // Format key takeaways as a string if they exist
+        const recap = keyTakeaways.length > 0 ? 
+          keyTakeaways.join('\n- ') : '';
+        
+        // Return the structured response
+        return {
+          suggested_title: '',
+          is_structured: true,
+          introduction: introduction,
+          explanation: explanation,
+          analogy: analogy,
+          analogy_title: analogyTitle,
+          example: example,
+          example_title: exampleTitle,
+          additional_sources: resources,
+          recap: recap,
+          key_takeaways: keyTakeaways
+        };
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // Fall through to the conversational text handling
       }
-      
-      // Extract information from the JSON structure
-      const introduction = parsedJson.introduction || '';
-      const explanation = parsedJson.concept_explanation || '';
-      const analogy = parsedJson.analogy?.text || '';
-      const analogyTitle = parsedJson.analogy?.title || '';
-      const example = parsedJson.example?.text || '';
-      const exampleTitle = parsedJson.example?.title || '';
-      const keyTakeaways = Array.isArray(parsedJson.key_takeaways) ? parsedJson.key_takeaways : [];
-      const resources = Array.isArray(parsedJson.resources) ? parsedJson.resources : [];
-      
-      // Format key takeaways as a string if they exist
-      const recap = keyTakeaways.length > 0 ? 
-        keyTakeaways.join('\n- ') : '';
-      
-      // Return the structured response
+    }
+    
+    // Handle as conversational text if it's not valid JSON or doesn't look like JSON
+    console.log('Handling as conversational response');
+    
+    // Check if the response contains paragraphs
+    const paragraphs = trimmedResponse.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+    
+    if (paragraphs.length > 1) {
+      // If we have multiple paragraphs, use the first as introduction and the rest as explanation
       return {
         suggested_title: '',
-        introduction: introduction,
-        explanation: explanation,
-        analogy: analogy,
-        analogy_title: analogyTitle,
-        example: example,
-        example_title: exampleTitle,
-        additional_sources: resources,
-        recap: recap,
-        key_takeaways: keyTakeaways
+        is_structured: false,
+        introduction: paragraphs[0],
+        explanation: paragraphs.slice(1).join('\n\n'),
+        analogy: '',
+        analogy_title: '',
+        example: '',
+        example_title: '',
+        additional_sources: [],
+        recap: '',
+        key_takeaways: []
       };
-    } catch (jsonError) {
-      console.error('Error parsing response as JSON:', jsonError);
-      console.log('Attempting to format as simple response');
-      
-      // If this is a simple text response, create a simplified structure
-      // treating the entire response as the explanation
+    } else {
+      // For a simple response, just use the entire text as explanation
       return {
         suggested_title: '',
+        is_structured: false,
         introduction: '',
-        explanation: responseText.trim(),
+        explanation: trimmedResponse,
         analogy: '',
         analogy_title: '',
         example: '',
@@ -82,6 +108,7 @@ function parseResponse(responseText) {
     // Final fallback
     return {
       suggested_title: '',
+      is_structured: false,
       introduction: '',
       explanation: responseText || 'Sorry, there was an error processing this response.',
       analogy: '',
@@ -458,23 +485,13 @@ ${feedback.specificInstructions?.map(instruction => `- ${instruction}`).join('\n
 
 IMPORTANT: Respond in a structured, intuitive format to make complex concepts easier to understand.
 
-CRITICAL: Format your entire response as a single, valid JSON object string, EVEN FOR SIMPLE RESPONSES and follow-up questions. Use the following keys:
+For INITIAL COMPLEX EXPLANATIONS about topics, use a structured JSON format with these keys:
 - "introduction": (String) A brief, engaging opening that introduces the topic in 1-2 sentences.
 - "concept_explanation": (String) The core explanation of the topic. Break this into smaller paragraphs for readability.
 - "analogy": (Object | null) An object with "title" (String) and "text" (String) for the analogy, or null if no analogy is suitable.
 - "example": (Object | null) An object with "title" (String) and "text" (String), or null.
 - "key_takeaways": (Array<String> | null) A list of 3-5 key points to remember, or null.
 - "resources": (Array<Object> | null) List of resource objects {title, url, description}, or null.
-
-For SIMPLE FOLLOW-UP QUESTIONS or brief explanations, still use the JSON format but you may set most fields to null:
-{
-  "introduction": null,
-  "concept_explanation": "Your brief answer or response goes here in this field. Even for simple follow-ups, ALWAYS use this JSON structure.",
-  "analogy": null,
-  "example": null,
-  "key_takeaways": null,
-  "resources": null  
-}
 
 Example JSON structure for complex explanations:
 {
@@ -503,9 +520,15 @@ Example JSON structure for complex explanations:
   ]
 }
 
-Ensure your entire output is properly formatted as valid JSON. Focus on making each section clear and easy to understand.
+For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural, conversational style without the structured JSON format. Your response should be direct and helpful, just like you're having a normal conversation with the user. For example:
 
-For complex topics, break down your explanation into smaller chunks with proper paragraph breaks. Use simple language where possible and gradually introduce technical terms as needed.
+User: "I didn't understand that part about binary search."
+Your response: "Let me clarify the binary search concept. It works by repeatedly dividing the search area in half. Imagine looking for a word in a dictionary - you open to the middle, see if your word would come before or after that page, then only look in that half, repeating until you find the word. This is much faster than checking every page from the beginning."
+
+User: "Can you explain it more simply?"
+Your response: "Sure! Binary search is like a guessing game where you guess a number between 1-100, and after each guess, you're told if the answer is higher or lower. You always guess in the middle of the possible range, cutting the possibilities in half each time. This makes it very efficient."
+
+Ensure your entire output is properly formatted. For complex topics, break down your explanation into smaller chunks with proper paragraph breaks. Use simple language where possible and gradually introduce technical terms as needed.
 
 CRITICAL - AVOID REPETITION: 
 1. Do NOT repeat the same concept across different sections
@@ -594,6 +617,7 @@ ${isRegeneration && feedback?.analogyTopic ?
       query,
       conversation_title: conversationTitle, // Add the conversation title here
       suggested_title: sections.suggested_title,
+      is_structured: sections.is_structured || false,
       introduction: sections.introduction,
       explanation: sections.explanation,
       analogy: sections.analogy,
@@ -613,6 +637,7 @@ ${isRegeneration && feedback?.analogyTopic ?
       id: responseId,
       type: 'assistant',
       content: response.explanation,
+      is_structured: response.is_structured,
       introduction: response.introduction,
       analogy: response.analogy,
       analogy_title: response.analogy_title,
