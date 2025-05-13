@@ -188,6 +188,53 @@ app.post('/api/query', async (req, res) => {
       isRegeneration: !!isRegeneration,
       hasFeedback: !!feedback
     });
+
+    // Add debug logging for session tracking
+    if (sessionId) {
+      console.log(`[SESSION DEBUG] Processing query for session: ${sessionId}`);
+      
+      // Check if session exists in database
+      if (supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('sessions')
+            .select('id, status, created_at')
+            .eq('id', sessionId)
+            .single();
+          
+          if (error) {
+            console.error(`[SESSION DEBUG] Error checking session: ${error.message}`);
+          } else if (data) {
+            console.log(`[SESSION DEBUG] Found session in database: ${data.id}, created: ${data.created_at}, status: ${data.status}`);
+            
+            // Check for existing interactions
+            const { data: interactions, error: interactionsError } = await supabase
+              .from('interactions')
+              .select('id, query, type')
+              .eq('session_id', sessionId)
+              .order('created_at', { ascending: false })
+              .limit(5);
+            
+            if (interactionsError) {
+              console.error(`[SESSION DEBUG] Error checking interactions: ${interactionsError.message}`);
+            } else if (interactions && interactions.length > 0) {
+              console.log(`[SESSION DEBUG] Found ${interactions.length} previous interactions:`);
+              interactions.forEach((i, idx) => {
+                console.log(`[SESSION DEBUG] Interaction ${idx+1}: ${i.type} - ${i.query?.substring(0, 30)}...`);
+              });
+            } else {
+              console.log(`[SESSION DEBUG] No previous interactions found for session: ${sessionId}`);
+            }
+          } else {
+            console.log(`[SESSION DEBUG] Session not found in database: ${sessionId}. Will create new.`);
+          }
+        } catch (e) {
+          console.error(`[SESSION DEBUG] Exception checking session: ${e.message}`);
+        }
+      }
+    } else {
+      console.log('[SESSION DEBUG] No session ID provided with query request');
+    }
     
     // Identify the user
     const userId = req.user?.id || req.body.userId;  // Try to get the user ID from the request body as fallback

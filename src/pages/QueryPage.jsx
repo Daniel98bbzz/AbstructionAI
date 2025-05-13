@@ -513,6 +513,12 @@ function QueryPage() {
       isUsingProjectPreferences: !!activeProjectData?.preferences
     });
 
+    // Retrieve the current session ID for this conversation
+    const currentConversation = activeProjectData?.conversations.find(c => c.id === activeConversation);
+    const conversationSessionId = currentConversation?.sessionId || sessionId;
+    
+    console.log('[FRONTEND DEBUG] Using session ID for query:', conversationSessionId);
+
     const userMessage = {
       id: Date.now().toString(),
       content: query,
@@ -567,14 +573,16 @@ function QueryPage() {
       console.log('Submitting query with preferences:', {
         query,
         preferences: queryPreferences,
-        projectId: activeProject
+        projectId: activeProject,
+        sessionId: conversationSessionId  // Use the session ID from the conversation
       });
       
-      const response = await submitQuery(query, queryPreferences, sessionId);
+      const response = await submitQuery(query, queryPreferences, conversationSessionId);
       
       console.log('Received response with preferences:', {
         responseId: response.id,
-        usedPreferences: queryPreferences
+        usedPreferences: queryPreferences,
+        sessionId: response.sessionId || conversationSessionId
       });
       
       // Create a message object, properly handling both structured and conversational responses
@@ -600,12 +608,6 @@ function QueryPage() {
       // Remove the thinking message and add the AI response
       setMessages(prev => prev.filter(msg => msg.role !== 'thinking').concat(aiMessage));
       
-      // Store the session ID if this is the first message
-      if (response.sessionId) {
-        console.log('Received sessionId in response:', response.sessionId);
-        setSessionId(response.sessionId);
-      }
-      
       // Update project conversation
       setProjects(prev => prev.map(project => {
         if (project.id === activeProject) {
@@ -619,7 +621,7 @@ function QueryPage() {
                   messages: [...updatedMessages, aiMessage],
                   lastMessageTime: Date.now(),
                   title: conv.title === 'New Conversation' ? generateTitle(query) : conv.title,
-                  sessionId: response.sessionId || conv.sessionId,
+                  sessionId: response.sessionId || conv.sessionId || conversationSessionId,
                   // Store current preferences at the conversation level as well
                   currentPreferences: queryPreferences
                 };
@@ -631,6 +633,15 @@ function QueryPage() {
         }
         return project;
       }));
+      
+      // Also update the local sessionId state for future queries
+      if (response.sessionId) {
+        setSessionId(response.sessionId);
+        // Save in localStorage
+        if (user) {
+          localStorage.setItem(`sessionId_${user.id}`, response.sessionId);
+        }
+      }
       
     } catch (error) {
       console.error('Error processing query:', error);
