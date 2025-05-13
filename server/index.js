@@ -161,6 +161,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Make OpenAI available globally for other modules to use
+global.openai = openai;
+
 // Managers
 import UserManager from './managers/UserManager.js';
 import PromptManager from './managers/PromptManager.js';
@@ -168,6 +171,7 @@ import SessionManager from './managers/SessionManager.js';
 import FeedbackProcessor from './managers/FeedbackProcessor.js';
 import Supervisor from './managers/Supervisor.js';
 import UserProfileManager from './managers/UserProfileManager.js';
+import ConversationAnalyzer from './managers/ConversationAnalyzer.js';
 
 // Initialize managers
 const userManager = new UserManager();
@@ -175,6 +179,7 @@ const userManager = new UserManager();
 const sessionManager = new SessionManager();
 const feedbackProcessor = new FeedbackProcessor();
 const supervisor = new Supervisor();
+const conversationAnalyzer = new ConversationAnalyzer();
 
 // Routes
 app.post('/api/query', async (req, res) => {
@@ -196,197 +201,71 @@ app.post('/api/query', async (req, res) => {
     // IMPORTANT DEBUG LOG
     console.log('Attempting to fetch user profile for ID:', userId);
     
-    // Check memory cache first (fastest)
-    if (userId && global.userProfiles && global.userProfiles[userId]) {
-      userProfile = global.userProfiles[userId];
-      console.log('✅ Using user profile from memory cache');
-      
-      // Ensure arrays are properly formatted
-      userProfile.interests = ensureArray(userProfile.interests);
-      userProfile.preferred_analogy_domains = ensureArray(userProfile.preferred_analogy_domains);
-      
-      console.log('User profile from memory cache has arrays:', {
-        interests: userProfile.interests,
-        preferred_analogy_domains: userProfile.preferred_analogy_domains
-      });
-      
-      // Reload in background to keep memory cache fresh
-      setTimeout(async () => {
+    // Get user profile
+    if (userId) {
+      if (global.userProfiles && global.userProfiles[userId]) {
+        console.log('Found cached user profile');
+        userProfile = global.userProfiles[userId];
+      } else {
         try {
-          console.log('Background refresh of profile for user:', userId);
-          const { data, error } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', userId)
-            .single();
-            
-          if (!error && data) {
-            // Process the data to ensure arrays are properly formatted
-            const freshProfile = {
-              ...data,
-              interests: Array.isArray(data.interests) ? 
-                data.interests : 
-                (typeof data.interests === 'string' ? 
-                  JSON.parse(data.interests) : 
-                  ['Video Games', 'Art']),
-              preferred_analogy_domains: Array.isArray(data.preferred_analogy_domains) ? 
-                data.preferred_analogy_domains : 
-                (typeof data.preferred_analogy_domains === 'string' ? 
-                  JSON.parse(data.preferred_analogy_domains) : 
-                  ['Gaming', 'Cooking'])
-            };
-            
-            // Update the memory cache
-            global.userProfiles[userId] = freshProfile;
-            console.log('Background refresh completed - updated memory cache with fresh data');
-            console.log('Updated preferences:', {
-              interests: freshProfile.interests,
-              preferred_analogy_domains: freshProfile.preferred_analogy_domains
-            });
-          }
-        } catch (refreshError) {
-          console.error('Error in background profile refresh:', refreshError);
-        }
-      }, 0);
-    }
-    // Fetch user profile if authenticated and not in memory cache
-    else if (userId) {
-      try {
-        // First try with UserProfileManager
-        try {
+          console.log('Fetching user profile from database');
           userProfile = await UserProfileManager.getProfile(userId);
-          console.log('User profile loaded from manager:', !!userProfile);
           
-          // Store in memory cache for future requests
-          if (userProfile) {
-            global.userProfiles = global.userProfiles || {};
-            global.userProfiles[userId] = userProfile;
-            console.log('Stored profile in memory cache');
-          }
-        } catch (managerError) {
-          console.error('Error using UserProfileManager:', managerError);
+          // Cache it for future use
+          global.userProfiles = global.userProfiles || {};
+          global.userProfiles[userId] = userProfile;
+          
+          console.log('User profile loaded and cached');
+        } catch (profileError) {
+          console.error('Error loading user profile:', profileError);
         }
-        
-        // Fallback to direct query if UserProfileManager fails
-        if (!userProfile) {
-        const { data, error } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-          
-        if (!error && data) {
-          userProfile = data;
-            console.log('Using user profile from direct query');
-          } else if (error) {
-            console.error('Error in direct query for user profile:', error);
-            
-            // If the error is that no rows were found, create a default profile
-            if (error.code === 'PGRST116') {
-              console.log('No profile found - attempting to create default profile');
-              
-              try {
-                // Create a default profile with dummy data for testing
-                const { data: newProfile, error: createError } = await supabase
-                  .from('user_profiles')
-                  .insert([{
-                    id: userId,
-                    username: 'user_' + userId.substring(0, 8),
-                    occupation: 'Student',
-                    age: 25,
-                    education_level: 'Undergraduate',
-                    interests: ['Video Games', 'Art'],
-                    learning_style: 'Visual',
-                    technical_depth: 50,
-                    preferred_analogy_domains: ['Gaming', 'Cooking'],
-                    main_learning_goal: 'Personal Interest'
-                  }])
-                  .select();
-                  
-                if (createError) {
-                  console.error('Failed to create default profile:', createError);
-                } else {
-                  console.log('Created default profile successfully');
-                  userProfile = newProfile[0];
-                }
-              } catch (createProfileError) {
-                console.error('Error creating default profile:', createProfileError);
-              }
-            }
-          }
-        }
-        
-        if (userProfile) {
-          console.log('User profile loaded successfully. Preferences:', {
-            interests: userProfile.interests || [],
-            preferred_analogy_domains: userProfile.preferred_analogy_domains || []
-          });
-          
-          // Fix JSON string issue - parse strings to arrays if needed
-          if (userProfile.interests && typeof userProfile.interests === 'string') {
-            try {
-              userProfile.interests = JSON.parse(userProfile.interests);
-            } catch (e) {
-              console.error('Error parsing interests JSON:', e);
-              userProfile.interests = ['Video Games', 'Art']; // Default fallback
-            }
-          }
-          
-          if (userProfile.preferred_analogy_domains && typeof userProfile.preferred_analogy_domains === 'string') {
-            try {
-              userProfile.preferred_analogy_domains = JSON.parse(userProfile.preferred_analogy_domains);
-            } catch (e) {
-              console.error('Error parsing preferred_analogy_domains JSON:', e);
-              userProfile.preferred_analogy_domains = ['Gaming', 'Cooking']; // Default fallback
-            }
-          }
-          
-          // Ensure these are always arrays
-          if (!Array.isArray(userProfile.interests)) {
-            userProfile.interests = ['Video Games', 'Art']; // Default fallback
-          }
-          
-          if (!Array.isArray(userProfile.preferred_analogy_domains)) {
-            userProfile.preferred_analogy_domains = ['Gaming', 'Cooking']; // Default fallback
-          }
-        } else {
-          console.error('No user profile found for ID:', userId);
-        }
-      } catch (profileError) {
-        console.error('Error fetching user profile:', profileError);
       }
     } else {
-      console.log('No user ID available, skipping profile lookup');
+      console.log('No user ID provided, proceeding without user profile');
     }
     
-    if (isRegeneration) {
-      console.log('Processing regeneration request with feedback:', {
-        originalResponseId: originalResponseId || 'unknown',
-        feedbackRating: feedback?.rating,
-        specificInstructions: feedback?.specificInstructions || [],
-        analogyTopic: feedback?.analogyTopic || 'not specified',
-        forceAnalogy: feedback?.forceAnalogy || false
-      });
-      
-      // Log more detailed feedback info to help with debugging
-      if (feedback?.analogyTopic) {
-        console.log(`User explicitly requested a ${feedback.analogyTopic}-themed analogy. This will be enforced in the response.`);
+    // If this is not a regeneration request, analyze the message for feedback
+    if (!isRegeneration && userId && sessionId) {
+      try {
+        // Get previous interactions to provide context for the analysis
+        const sessionData = await sessionManager.getSession(sessionId);
+        let previousResponse = null;
+        
+        if (sessionData && sessionData.interactions && sessionData.interactions.length > 0) {
+          // Get the last AI response
+          const lastInteraction = sessionData.interactions
+            .filter(i => i.type === 'query')
+            .pop();
+            
+          if (lastInteraction && lastInteraction.response) {
+            previousResponse = lastInteraction.response;
+          }
+        }
+        
+        // Analyze the user's message for implicit feedback
+        const analysis = conversationAnalyzer.analyzeMessage(query, previousResponse);
+        
+        if (analysis.hasFeedback) {
+          console.log('Detected implicit feedback in user message:', analysis);
+          
+          // Generate prompt updates based on the analysis
+          const promptUpdates = conversationAnalyzer.generatePromptUpdates(analysis, userProfile);
+          
+          // Update the user's adaptive prompt
+          await UserProfileManager.enhanceAdaptivePrompt(userId, promptUpdates);
+          console.log('Updated adaptive prompt with new preferences');
+        }
+      } catch (analysisError) {
+        console.error('Error analyzing user message:', analysisError);
+        // Continue processing the query even if analysis fails
       }
-      
-      if (feedback?.specificInstructions && feedback.specificInstructions.length > 0) {
-        console.log('Specific instructions from feedback:', feedback.specificInstructions);
-      }
-    }
-    
-    if (!query) {
-      return res.status(400).json({ error: 'Query is required' });
     }
     
     // Get or create session
     let sessionData;
     if (sessionId) {
-      console.log(`Looking for existing session ${sessionId}`);
       sessionData = await sessionManager.getSession(sessionId);
+      
       if (!sessionData) {
         console.log(`Session ${sessionId} not found, will create new`);
         // Instead of failing, create a new session if the requested one doesn't exist
@@ -446,6 +325,24 @@ app.post('/api/query', async (req, res) => {
     console.log('Technical depth being used:', effectivePreferences?.technical_depth || 'Not specified');
     console.log('=== PREFERENCES DEBUG END ===');
     
+    // Get adaptive prompt data if available
+    let adaptivePromptData = null;
+    if (userId) {
+      try {
+        const adaptivePrompt = await UserProfileManager.getAdaptivePrompt(userId);
+        if (adaptivePrompt) {
+          try {
+            adaptivePromptData = JSON.parse(adaptivePrompt);
+            console.log('Using adaptive prompt data for user:', userId);
+          } catch (e) {
+            console.warn('Could not parse adaptive prompt:', e);
+          }
+        }
+      } catch (promptError) {
+        console.error('Error fetching adaptive prompt:', promptError);
+      }
+    }
+    
     const systemContext = {
       role: "system",
       content: `You are a knowledgeable AI tutor specialized in explaining complex concepts clearly and thoroughly.
@@ -466,6 +363,18 @@ User Profile (${preferences ? 'Project-Specific' : 'Global'} Preferences):
 - Main Learning Goal: ${effectivePreferences.learning_goal || effectivePreferences.main_learning_goal || 'Not specified'}
 - Preferred Analogy Domains: ${effectivePreferences.preferred_analogy_domains?.join(', ') || 'None specified'}
 - Interests: ${effectivePreferences.interests?.join(', ') || 'None specified'}
+` : ''}
+
+${adaptivePromptData ? `
+Adaptive Learning Insights (From previous interactions):
+${adaptivePromptData.preferences && Object.keys(adaptivePromptData.preferences).length > 0 ? 
+  `- Learned Preferences: ${Object.entries(adaptivePromptData.preferences).map(([key, value]) => `${key}: ${value}`).join(', ')}` : ''}
+${adaptivePromptData.learned_patterns?.preferred_domains?.length ? 
+  `- Preferred domains: ${adaptivePromptData.learned_patterns.preferred_domains.join(', ')}` : ''}
+${adaptivePromptData.learned_patterns?.avoided_domains?.length ? 
+  `- Domains to avoid: ${adaptivePromptData.learned_patterns.avoided_domains.join(', ')}` : ''}
+${adaptivePromptData.custom_instructions?.length ? 
+  `- Special Instructions:\n${adaptivePromptData.custom_instructions.map(instr => `  - ${instr}`).join('\n')}` : ''}
 ` : ''}
 
 ${isRegeneration && feedback ? `
@@ -537,11 +446,17 @@ CRITICAL - AVOID REPETITION:
 
 ${isRegeneration && feedback?.analogyTopic ? 
   `When using analogies, make sure to incorporate the user's requested domain: ${feedback.analogyTopic}` : 
-  effectivePreferences?.preferred_analogy_domains?.length ? 
-    `Always use analogies from these domains unless instructed otherwise: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}` : 
-    effectivePreferences?.interests?.length ? 
-      `Always use analogies related to the user's interests unless instructed otherwise: ${effectivePreferences?.interests?.join(', ')}` :
-      ``}`
+  (adaptivePromptData && adaptivePromptData.learned_patterns && 
+   Array.isArray(adaptivePromptData.learned_patterns.preferred_domains) && 
+   adaptivePromptData.learned_patterns.preferred_domains.length) ?
+    `When using analogies, prioritize these domains that the user responds well to: ${adaptivePromptData.learned_patterns.preferred_domains.join(', ')}` :
+    (effectivePreferences && Array.isArray(effectivePreferences.preferred_analogy_domains) && 
+     effectivePreferences.preferred_analogy_domains.length) ? 
+      `Always use analogies from these domains unless instructed otherwise: ${effectivePreferences.preferred_analogy_domains.join(', ')}` : 
+      (effectivePreferences && Array.isArray(effectivePreferences.interests) && 
+       effectivePreferences.interests.length) ? 
+        `Always use analogies related to the user's interests unless instructed otherwise: ${effectivePreferences.interests.join(', ')}` :
+        ``}`
     };
     
     historyMessages.push(systemContext);
@@ -730,6 +645,34 @@ app.get('/api/user/profile', async (req, res) => {
   } catch (error) {
     console.error('Error fetching user profile:', error);
     res.status(500).json({ error: 'Failed to fetch user profile' });
+  }
+});
+
+// New endpoint to create a profile with adaptive prompt
+app.post('/api/user/create-profile', async (req, res) => {
+  try {
+    const profileData = req.body;
+    
+    if (!profileData.id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log('Creating user profile with adaptive prompt for user:', profileData.id);
+    
+    // Use UserProfileManager to create profile with adaptive prompt
+    const createdProfile = await UserProfileManager.createProfile(profileData.id, profileData);
+    
+    // Return the created profile
+    res.status(201).json({
+      success: true,
+      profile: createdProfile
+    });
+  } catch (error) {
+    console.error('Error creating user profile:', error);
+    res.status(500).json({ 
+      error: 'Failed to create user profile', 
+      details: error.message 
+    });
   }
 });
 

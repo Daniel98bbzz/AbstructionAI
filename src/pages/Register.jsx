@@ -197,11 +197,31 @@ function Register() {
         preferred_analogy_domains: userProfile.preferred_analogy_domains
       });
       
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .insert([userProfile]);
-      
-      if (profileError) throw profileError;
+      // Call server API to create profile with the UserProfileManager (which handles adaptive_prompt)
+      // This replaces the direct Supabase insert to ensure the adaptive_prompt is properly initialized
+      try {
+        const response = await fetch('/api/user/create-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(userProfile)
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to create user profile');
+        }
+        
+        console.log('Profile created successfully with adaptive prompt');
+      } catch (apiError) {
+        console.error('Error calling profile API:', apiError);
+        
+        // Fallback to direct database insert if API fails
+        const { error: profileError } = await supabase
+          .from('user_profiles')
+          .insert([userProfile]);
+        
+        if (profileError) throw profileError;
+      }
       
       // Also store profile in memory cache for immediate use
       try {

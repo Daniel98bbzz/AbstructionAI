@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   field_of_study TEXT,
   education_level TEXT,
   learning_preferences JSONB DEFAULT '{}'::JSONB,
+  adaptive_prompt TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
