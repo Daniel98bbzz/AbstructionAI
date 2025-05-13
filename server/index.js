@@ -15,75 +15,111 @@ import setupQuizRoutes from './api/quizRoutes.js';
  * @returns {Object} - Parsed sections
  */
 function parseResponse(responseText) {
-  const sections = {
-    suggested_title: '',
-    introduction: '',
-    explanation: '',
-    analogy: '',
-    additional_sources: [],
-    recap: '',
-    quiz: null
-  };
-
-  // Extract suggested title
-  const titleMatch = responseText.match(/SUGGESTED_TITLE:([^\n]*)/);
-  if (titleMatch && titleMatch[1]) {
-    sections.suggested_title = titleMatch[1].trim();
-  }
-
-  // Extract introduction
-  const introMatch = responseText.match(/Introduction:([\s\S]*?)(?=Explanation:|$)/);
-  if (introMatch && introMatch[1]) {
-    sections.introduction = introMatch[1].trim();
-  }
-
-  // Extract explanation
-  const explanationMatch = responseText.match(/Explanation:([\s\S]*?)(?=Analogy:|$)/);
-  if (explanationMatch && explanationMatch[1]) {
-    sections.explanation = explanationMatch[1].trim();
-  }
-
-  // Extract analogy
-  const analogyMatch = responseText.match(/Analogy:([\s\S]*?)(?=Additional Sources:|$)/);
-  if (analogyMatch && analogyMatch[1]) {
-    sections.analogy = analogyMatch[1].trim();
-  }
-
-  // Extract additional sources
-  const sourcesMatch = responseText.match(/Additional Sources:([\s\S]*?)(?=Brief Recap:|$)/);
-  if (sourcesMatch && sourcesMatch[1]) {
-    const sourcesText = sourcesMatch[1].trim();
-    // Parse sources into an array of objects
-    const sources = sourcesText
-      .split('\n')
-      .filter(line => line.trim().length > 0)
-      .map(line => {
-        // Try to extract URL from markdown link format [title](url)
-        const urlMatch = line.match(/\[([^\]]+)\]\(([^)]+)\)/);
-        if (urlMatch) {
-          return {
-            title: urlMatch[1],
-            url: urlMatch[2],
-            description: line.replace(urlMatch[0], '').trim()
-          };
+  try {
+    // First, check if the response looks like JSON (starts with '{' after trimming)
+    const trimmedResponse = responseText.trim();
+    const looksLikeJson = trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}');
+    
+    // If it looks like JSON, try to parse it as structured content
+    if (looksLikeJson) {
+      try {
+        const parsedJson = JSON.parse(trimmedResponse);
+        
+        // Basic validation
+        if (!parsedJson || typeof parsedJson !== 'object') {
+          throw new Error('Parsed response is not a valid object');
         }
-        // If no URL format found, just return the text
+        
+        // Extract information from the JSON structure
+        const introduction = parsedJson.introduction || '';
+        const explanation = parsedJson.concept_explanation || '';
+        const analogy = parsedJson.analogy?.text || '';
+        const analogyTitle = parsedJson.analogy?.title || '';
+        const example = parsedJson.example?.text || '';
+        const exampleTitle = parsedJson.example?.title || '';
+        const keyTakeaways = Array.isArray(parsedJson.key_takeaways) ? parsedJson.key_takeaways : [];
+        const resources = Array.isArray(parsedJson.resources) ? parsedJson.resources : [];
+        
+        // Format key takeaways as a string if they exist
+        const recap = keyTakeaways.length > 0 ? 
+          keyTakeaways.join('\n- ') : '';
+        
+        // Return the structured response
         return {
-          title: line.trim(),
-          url: '',
-          description: ''
+          suggested_title: '',
+          is_structured: true,
+          introduction: introduction,
+          explanation: explanation,
+          analogy: analogy,
+          analogy_title: analogyTitle,
+          example: example,
+          example_title: exampleTitle,
+          additional_sources: resources,
+          recap: recap,
+          key_takeaways: keyTakeaways
         };
-      });
-    sections.additional_sources = sources;
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // Fall through to the conversational text handling
+      }
+    }
+    
+    // Handle as conversational text if it's not valid JSON or doesn't look like JSON
+    console.log('Handling as conversational response');
+    
+    // Check if the response contains paragraphs
+    const paragraphs = trimmedResponse.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+    
+    if (paragraphs.length > 1) {
+      // If we have multiple paragraphs, use the first as introduction and the rest as explanation
+      return {
+        suggested_title: '',
+        is_structured: false,
+        introduction: paragraphs[0],
+        explanation: paragraphs.slice(1).join('\n\n'),
+        analogy: '',
+        analogy_title: '',
+        example: '',
+        example_title: '',
+        additional_sources: [],
+        recap: '',
+        key_takeaways: []
+      };
+    } else {
+      // For a simple response, just use the entire text as explanation
+      return {
+        suggested_title: '',
+        is_structured: false,
+        introduction: '',
+        explanation: trimmedResponse,
+        analogy: '',
+        analogy_title: '',
+        example: '',
+        example_title: '',
+        additional_sources: [],
+        recap: '',
+        key_takeaways: []
+      };
+    }
+  } catch (error) {
+    console.error('Error in overall response parsing:', error);
+    console.log('Raw response:', responseText);
+    
+    // Final fallback
+    return {
+      suggested_title: '',
+      is_structured: false,
+      introduction: '',
+      explanation: responseText || 'Sorry, there was an error processing this response.',
+      analogy: '',
+      analogy_title: '',
+      example: '',
+      example_title: '',
+      additional_sources: [],
+      recap: '',
+      key_takeaways: []
+    };
   }
-
-  // Extract recap
-  const recapMatch = responseText.match(/Brief Recap:([\s\S]*?)(?=Quiz:|$)/);
-  if (recapMatch && recapMatch[1]) {
-    sections.recap = recapMatch[1].trim();
-  }
-
-  return sections;
 }
 
 // Get current directory for ES modules
@@ -152,6 +188,53 @@ app.post('/api/query', async (req, res) => {
       isRegeneration: !!isRegeneration,
       hasFeedback: !!feedback
     });
+
+    // Add debug logging for session tracking
+    if (sessionId) {
+      console.log(`[SESSION DEBUG] Processing query for session: ${sessionId}`);
+      
+      // Check if session exists in database
+      if (supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('sessions')
+            .select('id, status, created_at')
+            .eq('id', sessionId)
+            .single();
+          
+          if (error) {
+            console.error(`[SESSION DEBUG] Error checking session: ${error.message}`);
+          } else if (data) {
+            console.log(`[SESSION DEBUG] Found session in database: ${data.id}, created: ${data.created_at}, status: ${data.status}`);
+            
+            // Check for existing interactions
+            const { data: interactions, error: interactionsError } = await supabase
+              .from('interactions')
+              .select('id, query, type')
+              .eq('session_id', sessionId)
+              .order('created_at', { ascending: false })
+              .limit(5);
+            
+            if (interactionsError) {
+              console.error(`[SESSION DEBUG] Error checking interactions: ${interactionsError.message}`);
+            } else if (interactions && interactions.length > 0) {
+              console.log(`[SESSION DEBUG] Found ${interactions.length} previous interactions:`);
+              interactions.forEach((i, idx) => {
+                console.log(`[SESSION DEBUG] Interaction ${idx+1}: ${i.type} - ${i.query?.substring(0, 30)}...`);
+              });
+            } else {
+              console.log(`[SESSION DEBUG] No previous interactions found for session: ${sessionId}`);
+            }
+          } else {
+            console.log(`[SESSION DEBUG] Session not found in database: ${sessionId}. Will create new.`);
+          }
+        } catch (e) {
+          console.error(`[SESSION DEBUG] Exception checking session: ${e.message}`);
+        }
+      }
+    } else {
+      console.log('[SESSION DEBUG] No session ID provided with query request');
+    }
     
     // Identify the user
     const userId = req.user?.id || req.body.userId;  // Try to get the user ID from the request body as fallback
@@ -372,13 +455,23 @@ app.post('/api/query', async (req, res) => {
     // Prepare conversation history messages with better context handling
     const historyMessages = [];
     
-    // Add system context about the current conversation with user profile data
+    // Add conversation context about the current conversation with user profile data
     console.log('=== PREFERENCES DEBUG START ===');
     console.log('Raw request preferences:', preferences);
     console.log('Raw user profile:', userProfile);
     
     // Ensure we're using project preferences when available
-    const effectivePreferences = preferences || userProfile;
+    const effectivePreferences = preferences ? 
+      {
+        // Merge project preferences with user profile, using user profile as fallback
+        interests: preferences.interests?.length ? preferences.interests : userProfile?.interests || [],
+        preferred_analogy_domains: preferences.preferred_analogy_domains?.length ? 
+          preferences.preferred_analogy_domains : userProfile?.preferred_analogy_domains || [],
+        learning_style: preferences.learning_style || userProfile?.learning_style || 'Visual',
+        technical_depth: preferences.technical_depth || userProfile?.technical_depth || 50,
+        education_level: preferences.education_level || userProfile?.education_level || 'Not specified',
+        main_learning_goal: preferences.main_learning_goal || userProfile?.main_learning_goal || 'Not specified'
+      } : userProfile;
     
     // Detailed debug logging for preferences
     console.log('=== PREFERENCES ANALYSIS ===');
@@ -437,28 +530,65 @@ Specific Instructions:
 ${feedback.specificInstructions?.map(instruction => `- ${instruction}`).join('\n') || 'None provided'}
 ` : ''}
 
-Your responses must ALWAYS follow this format:
+IMPORTANT: Respond in a structured, intuitive format to make complex concepts easier to understand.
 
-CONVERSATION_TITLE:
-[A concise title for this conversation, exactly 3-5 words only]
+For INITIAL COMPLEX EXPLANATIONS about topics, use a structured JSON format with these keys:
+- "introduction": (String) A brief, engaging opening that introduces the topic in 1-2 sentences.
+- "concept_explanation": (String) The core explanation of the topic. Break this into smaller paragraphs for readability.
+- "analogy": (Object | null) An object with "title" (String) and "text" (String) for the analogy, or null if no analogy is suitable.
+- "example": (Object | null) An object with "title" (String) and "text" (String), or null.
+- "key_takeaways": (Array<String> | null) A list of 3-5 key points to remember, or null.
+- "resources": (Array<Object> | null) List of resource objects {title, url, description}, or null.
 
-SUGGESTED_TITLE:
-[A brief, descriptive title for this conversation, maximum 5-7 words]
+Example JSON structure for complex explanations:
+{
+  "introduction": "Let's dive into the 'divide and conquer' strategy!",
+  "concept_explanation": "It's a powerful algorithmic technique where complex problems are broken down into simpler, manageable parts.\\n\\nEach part is solved independently, and then these solutions are combined to solve the original problem.",
+  "analogy": {
+    "title": "Soccer Team Training",
+    "text": "Think of it like coaching a large soccer team. Instead of trying to train all 22 players at once (which would be chaotic), you divide them into groups based on their roles: strikers, midfielders, defenders, and goalkeepers. Each group focuses on their specific skills separately (the 'conquer' step). Finally, you bring everyone together for a practice match, combining all their improved skills."
+  },
+  "example": {
+    "title": "Merge Sort Algorithm",
+    "text": "A classic example is the Merge Sort algorithm. It works by: 1) Dividing the array in half repeatedly until you have single elements, 2) Sorting and merging these smaller arrays back together, 3) Continuing until the entire array is sorted."
+  },
+  "key_takeaways": [
+    "Break complex problems into smaller, manageable parts",
+    "Solve each smaller part independently",
+    "Combine the solutions to solve the original problem",
+    "This approach often leads to more efficient solutions"
+  ],
+  "resources": [
+    {
+      "title": "Divide and Conquer Algorithms",
+      "url": "https://example.com/algorithms",
+      "description": "A comprehensive guide to common divide and conquer algorithms"
+    }
+  ]
+}
 
-Introduction:
-[A concise overview of the topic, 2-3 sentences]
+For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural, conversational style without the structured JSON format. Your response should be direct and helpful, just like you're having a normal conversation with the user. For example:
 
-Explanation:
-[A detailed and comprehensive explanation of the concept, at least 3-4 paragraphs with examples]
+User: "I didn't understand that part about binary search."
+Your response: "Let me clarify the binary search concept. It works by repeatedly dividing the search area in half. Imagine looking for a word in a dictionary - you open to the middle, see if your word would come before or after that page, then only look in that half, repeating until you find the word. This is much faster than checking every page from the beginning."
 
-Analogy:
-${isRegeneration && feedback?.analogyTopic ? `[Provide a metaphor or real-world scenario related to ${feedback.analogyTopic}]` : `[Provide a metaphor or real-world scenario that helps explain the concept, using one of these domains: ${effectivePreferences?.preferred_analogy_domains?.join(', ') || 'general'}]`}
+User: "Can you explain it more simply?"
+Your response: "Sure! Binary search is like a guessing game where you guess a number between 1-100, and after each guess, you're told if the answer is higher or lower. You always guess in the middle of the possible range, cutting the possibilities in half each time. This makes it very efficient."
 
-Additional Sources:
-[Provide 3-5 relevant learning resources with URLs when possible]
+Ensure your entire output is properly formatted. For complex topics, break down your explanation into smaller chunks with proper paragraph breaks. Use simple language where possible and gradually introduce technical terms as needed.
 
-Brief Recap:
-[Summarize the key points in 3-5 bullet points]`
+CRITICAL - AVOID REPETITION: 
+1. Do NOT repeat the same concept across different sections
+2. Each section should add new information or perspective
+3. Check your response for redundancy before submitting
+
+${isRegeneration && feedback?.analogyTopic ? 
+  `When using analogies, make sure to incorporate the user's requested domain: ${feedback.analogyTopic}` : 
+  effectivePreferences?.preferred_analogy_domains?.length ? 
+    `Always use analogies from these domains unless instructed otherwise: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}` : 
+    effectivePreferences?.interests?.length ? 
+      `Always use analogies related to the user's interests unless instructed otherwise: ${effectivePreferences?.interests?.join(', ')}` :
+      ``}`
     };
     
     historyMessages.push(systemContext);
@@ -534,11 +664,16 @@ Brief Recap:
       query,
       conversation_title: conversationTitle, // Add the conversation title here
       suggested_title: sections.suggested_title,
+      is_structured: sections.is_structured || false,
       introduction: sections.introduction,
       explanation: sections.explanation,
       analogy: sections.analogy,
+      analogy_title: sections.analogy_title,
+      example: sections.example,
+      example_title: sections.example_title,
       resources: sections.additional_sources,
       recap: sections.recap,
+      key_takeaways: sections.key_takeaways,
       quiz: sections.quiz,
       timestamp: new Date().toISOString()
     };
@@ -549,9 +684,14 @@ Brief Recap:
       id: responseId,
       type: 'assistant',
       content: response.explanation,
+      is_structured: response.is_structured,
       introduction: response.introduction,
       analogy: response.analogy,
+      analogy_title: response.analogy_title,
+      example: response.example,
+      example_title: response.example_title,
       resources: response.resources,
+      key_takeaways: response.key_takeaways,
       recap: response.recap,
       quiz: response.quiz, // Add the quiz to the message
       timestamp: new Date().toISOString(),
@@ -1508,6 +1648,162 @@ app.get('/api/debug/actual-profile/:userId', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// Add code example generation endpoint
+app.post('/api/generate-code-example', async (req, res) => {
+  try {
+    const { prompt, technical_depth = 50 } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+    
+    console.log('Generating code example with technical depth:', technical_depth);
+    
+    // Create a prompt that focuses on code generation
+    const codePrompt = `Generate a clear, well-commented code example for the following concept:\n${prompt}\n\n
+    Make sure the code is:
+    1. Concise but educational
+    2. Well-commented to explain how it relates to the concept
+    3. Runnable where possible
+    4. At a technical level of ${technical_depth}/100 (higher = more technical)
+    
+    IMPORTANT: Do NOT respond with JSON. Instead, just provide the code example with a language indicator.
+    Use the format:
+    
+    \`\`\`[language]
+    [your code here]
+    \`\`\``;
+    
+    // Call OpenAI API
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: "You are a helpful programming tutor who excels at creating educational, clear code examples." },
+        { role: "user", content: codePrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 1000
+    });
+    
+    const responseText = completion.choices[0].message.content;
+    
+    // Try to extract code using markdown code blocks
+    const codeBlockMatch = responseText.match(/```([a-zA-Z0-9]+)?\n([\s\S]*?)\n```/);
+    if (codeBlockMatch) {
+      return res.json({
+        language: codeBlockMatch[1] || 'javascript',
+        code: codeBlockMatch[2].trim()
+      });
+    }
+    
+    // If no code block found, return the entire response as text
+    return res.json({
+      language: 'text',
+      code: responseText.trim()
+    });
+    
+  } catch (error) {
+    console.error('Error generating code example:', error);
+    res.status(500).json({ error: 'Failed to generate code example' });
+  }
+});
+
+// Add flash cards generation endpoint
+app.post('/api/generate-flash-cards', async (req, res) => {
+  try {
+    const { prompt, preferences } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+    
+    console.log('Generating flash cards with preferences:', preferences);
+    
+    // Create a prompt for generating flash cards
+    const cardsPrompt = `Generate 3 educational flash cards for the following concept:\n${prompt}\n\n
+    Each flash card should have:
+    1. A clear, concise question on the front
+    2. A precise, informative answer on the back
+    3. Focus on key facts, definitions, and relationships
+
+    The user's learning preferences are: ${JSON.stringify(preferences || {})}
+    
+    Respond with a valid JSON array of objects containing:
+    [
+      { "question": "Front side question text", "answer": "Back side answer text" },
+      { "question": "Front side question text", "answer": "Back side answer text" },
+      { "question": "Front side question text", "answer": "Back side answer text" }
+    ]`;
+    
+    // Call OpenAI API
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: "You are a helpful educational assistant who creates effective flash cards for learning." },
+        { role: "user", content: cardsPrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 1000
+    });
+    
+    const responseText = completion.choices[0].message.content;
+    
+    // Try to parse the JSON response
+    try {
+      // Look for JSON array in the response
+      const jsonMatch = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (jsonMatch) {
+        const cards = JSON.parse(jsonMatch[0]);
+        
+        // Validate the response
+        if (!Array.isArray(cards) || cards.length === 0) {
+          throw new Error('Invalid flash cards format');
+        }
+        
+        return res.json({ cards });
+      } else {
+        // If not a JSON response, try to extract in Q&A format
+        const cards = [];
+        const qaMatches = responseText.matchAll(/(?:Question|Q)[:\.]?\s*(.+?)(?:\n|\r\n?)+(?:Answer|A)[:\.]?\s*(.+?)(?=\n\s*(?:Question|Q)[:\.]?|\n\s*\d+[:\.]|$)/gs);
+        
+        for (const match of qaMatches) {
+          cards.push({
+            question: match[1].trim(),
+            answer: match[2].trim()
+          });
+        }
+        
+        if (cards.length > 0) {
+          return res.json({ cards });
+        }
+        
+        // Last resort: create generic cards
+        return res.json({
+          cards: [
+            { question: "What is the main concept described?", answer: "The concept involves key principles and applications in this domain." },
+            { question: "What are the primary components of this concept?", answer: "The concept typically includes multiple elements working together." },
+            { question: "How is this concept applied in practice?", answer: "The concept is applied through specific processes and techniques." }
+          ]
+        });
+      }
+    } catch (jsonError) {
+      console.error('Error parsing flash cards response:', jsonError);
+      
+      // Fallback to generic cards
+      return res.json({
+        cards: [
+          { question: "What is the main concept described?", answer: "The concept involves key principles and applications in this domain." },
+          { question: "What are the primary components of this concept?", answer: "The concept typically includes multiple elements working together." },
+          { question: "How is this concept applied in practice?", answer: "The concept is applied through specific processes and techniques." }
+        ]
+      });
+    }
+  } catch (error) {
+    console.error('Error generating flash cards:', error);
+    res.status(500).json({ error: 'Failed to generate flash cards' });
   }
 });
 

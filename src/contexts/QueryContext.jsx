@@ -130,71 +130,89 @@ export function QueryProvider({ children }) {
     }
   };
 
-  // Submit a new query to the AI
-  const submitQuery = async (query, preferences = {}) => {
+  // Submit a query to the AI
+  const submitQuery = async (query, preferences = {}, sessionId = null) => {
     try {
       setLoading(true);
       setError(null);
       
-      if (!user) {
-        throw new Error('You must be logged in to submit a query');
+      // Add user logging to debug session persistence
+      const savedSessionId = user ? localStorage.getItem(`sessionId_${user.id}`) : null;
+      const currentSessionId = sessionId || currentSession?.id || savedSessionId;
+      
+      console.log('[FRONTEND DEBUG] Submitting query with session info:', {
+        currentSessionId,
+        savedSessionId,
+        hasCurrentSession: !!currentSession,
+        userId: user?.id
+      });
+      
+      // Get or create a session if needed
+      if (!currentSession && !currentSessionId) {
+        try {
+          console.log('[FRONTEND DEBUG] No active session, creating a new one');
+          const newSession = await startNewSession(preferences);
+          console.log('[FRONTEND DEBUG] Created new session:', newSession?.id);
+        } catch (sessionError) {
+          console.error('Error creating session:', sessionError);
+          // Continue with query without a session as fallback
+        }
+      } else {
+        console.log(`[FRONTEND DEBUG] Using existing session: ${currentSessionId}`);
       }
       
-      // Ensure user exists in the database
-      await ensureUserExists();
-      
-      // Use existing session ID if available
-      const sessionId = currentSession?.id;
-      
-      // Process the query using the backend server
+      // Format query request for backend API
       let responseData;
       try {
-        // Add query to message history immediately for UI feedback
-        const newMessage = { role: 'user', content: query, timestamp: new Date().toISOString() };
-        setMessageHistory(prev => [...prev, newMessage]);
-
-        // Try to use the backend server if it's running
-        console.log('Sending query to backend:', {
-          query,
-          sessionId,
-          preferences,
-          userId: user.id
-        });
-        
-        // Log the user's full profile info for debugging
-        console.log('Current user:', {
+        // Log the user's basic info for debugging
+        console.log('Current user:', user ? {
           id: user.id,
-          email: user.email,
-          metadata: user.user_metadata
-        });
+          email: user.email || 'not available'
+        } : 'not logged in');
         
-        const response = await axios.post(`${API_URL}/api/query`, {
-          query,
-          sessionId,
-          preferences,
-          userId: user.id  // Explicitly include user ID
-        });
+        const effectiveSessionId = sessionId || currentSession?.id || (user ? localStorage.getItem(`sessionId_${user.id}`) : null);
+        console.log(`[FRONTEND DEBUG] Effective session ID for API call: ${effectiveSessionId}`);
         
-        console.log('Received response from backend:', response);
-        responseData = response.data;
-        
-        // Update message history with AI response
-        const aiMessage = {
-          role: 'assistant',
-          content: responseData.explanation,
-          analogy: responseData.analogy,
-          resources: responseData.resources,
-          timestamp: new Date().toISOString()
-        };
-        setMessageHistory(prev => [...prev, aiMessage]);
-        
-        // Set current session if not already set
-        if (responseData.sessionId && (!currentSession || currentSession.id !== responseData.sessionId)) {
-          setCurrentSession({ id: responseData.sessionId });
-          // Also save to localStorage for persistence
-          if (user) {
-            localStorage.setItem(`sessionId_${user.id}`, responseData.sessionId);
+        try {
+          const response = await axios.post(`${API_URL}/api/query`, {
+            query,
+            sessionId: effectiveSessionId, 
+            preferences,
+            userId: user?.id  // Explicitly include user ID
+          });
+          
+          console.log('Received response from backend:', response);
+          responseData = response.data;
+          
+          // Update message history with AI response
+          const aiMessage = {
+            role: 'assistant',
+            content: responseData.explanation,
+            analogy: responseData.analogy,
+            resources: responseData.resources,
+            timestamp: new Date().toISOString()
+          };
+          setMessageHistory(prev => [...prev, aiMessage]);
+          
+          // Set current session if not already set
+          if (responseData.sessionId && (!currentSession || currentSession.id !== responseData.sessionId)) {
+            setCurrentSession({ id: responseData.sessionId });
+            // Also save to localStorage for persistence
+            if (user) {
+              localStorage.setItem(`sessionId_${user.id}`, responseData.sessionId);
+              localStorage.setItem(`currentSession_${user.id}`, JSON.stringify({ id: responseData.sessionId }));
+            }
           }
+        } catch (axiosError) {
+          console.error('Axios error details:', {
+            message: axiosError.message,
+            status: axiosError.response?.status,
+            statusText: axiosError.response?.statusText,
+            data: axiosError.response?.data
+          });
+          
+          // Show more detailed error to help debugging
+          throw new Error(`API request failed: ${axiosError.message}${axiosError.response?.data?.error ? ` - ${axiosError.response.data.error}` : ''}`);
         }
       } catch (err) {
         console.error('Error calling backend API:', err);
