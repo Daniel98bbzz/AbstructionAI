@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergency Profile Override</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+        .result {
+            background-color: #e8f5e9;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Emergency Profile Override Tool</h1>
+    
+    <div>
+        <p>This tool will forcefully override your user profile in memory and in the database.</p>
+        
+        <div class="form-group">
+            <label for="userId">User ID:</label>
+            <input type="text" id="userId" placeholder="Your user ID" />
+        </div>
+        
+        <div class="form-group">
+            <label for="interests">Interests (comma-separated):</label>
+            <input type="text" id="interests" placeholder="e.g. Sports, Video Games, Art" />
+        </div>
+        
+        <div class="form-group">
+            <label for="domains">Preferred Analogy Domains (comma-separated):</label>
+            <input type="text" id="domains" placeholder="e.g. Gaming, Sports, Cooking" />
+        </div>
+        
+        <div class="form-group">
+            <label for="occupation">Occupation:</label>
+            <input type="text" id="occupation" placeholder="e.g. Student, Professional" />
+        </div>
+        
+        <div class="form-group">
+            <label for="age">Age:</label>
+            <input type="number" id="age" placeholder="Your age" min="13" max="100" />
+        </div>
+        
+        <div class="form-group">
+            <label for="education">Education Level:</label>
+            <select id="education">
+                <option value="">Select Education Level</option>
+                <option value="High School">High School</option>
+                <option value="Undergraduate">Undergraduate</option>
+                <option value="Graduate">Graduate</option>
+                <option value="Postgraduate">Postgraduate</option>
+                <option value="Self-taught">Self-taught</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="learning-style">Learning Style:</label>
+            <select id="learning-style">
+                <option value="">Select Learning Style</option>
+                <option value="Visual">Visual</option>
+                <option value="Auditory">Auditory</option>
+                <option value="Reading/Writing">Reading/Writing</option>
+                <option value="Kinesthetic">Kinesthetic</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="technical-depth">Technical Depth:</label>
+            <input type="range" id="technical-depth" min="0" max="100" value="50" />
+            <span id="depth-value">50</span>
+        </div>
+        
+        <div class="form-group">
+            <label for="learning-goal">Main Learning Goal:</label>
+            <select id="learning-goal">
+                <option value="">Select Learning Goal</option>
+                <option value="Professional Development">Professional Development</option>
+                <option value="Academic Study">Academic Study</option>
+                <option value="Personal Interest">Personal Interest</option>
+                <option value="Hobby">Hobby</option>
+                <option value="Exam Preparation">Exam Preparation</option>
+                <option value="Career Transition">Career Transition</option>
+            </select>
+        </div>
+        
+        <button onclick="getCurrentProfile()">Get Current Profile</button>
+        <button onclick="overrideProfile()">Override Profile</button>
+        <button onclick="clearCache()">Clear Cache</button>
+    </div>
+    
+    <div id="result" style="display: none;" class="result"></div>
+    
+    <pre id="profile-json"></pre>
+    
+    <script>
+        // Update technical depth display
+        document.getElementById('technical-depth').addEventListener('input', function() {
+            document.getElementById('depth-value').textContent = this.value;
+        });
+        
+        // Get current profile from memory cache
+        async function getCurrentProfile() {
+            const userId = document.getElementById('userId').value;
+            if (!userId) {
+                alert('Please enter a User ID');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/view-memory-profile?userId=${userId}`);
+                const data = await response.json();
+                
+                document.getElementById('profile-json').textContent = JSON.stringify(data, null, 2);
+                
+                if (data.success && data.profile) {
+                    // Fill the form with current values
+                    document.getElementById('interests').value = Array.isArray(data.profile.interests) 
+                        ? data.profile.interests.join(', ') 
+                        : data.profile.interests;
+                        
+                    document.getElementById('domains').value = Array.isArray(data.profile.preferred_analogy_domains) 
+                        ? data.profile.preferred_analogy_domains.join(', ') 
+                        : data.profile.preferred_analogy_domains;
+                        
+                    document.getElementById('occupation').value = data.profile.occupation || '';
+                    document.getElementById('age').value = data.profile.age || '';
+                    document.getElementById('education').value = data.profile.education_level || '';
+                    document.getElementById('learning-style').value = data.profile.learning_style || '';
+                    document.getElementById('technical-depth').value = data.profile.technical_depth || 50;
+                    document.getElementById('depth-value').textContent = data.profile.technical_depth || 50;
+                    document.getElementById('learning-goal').value = data.profile.main_learning_goal || '';
+                }
+            } catch (error) {
+                document.getElementById('profile-json').textContent = 'Error: ' + error.message;
+            }
+        }
+        
+        // Override profile using emergency endpoint
+        async function overrideProfile() {
+            const userId = document.getElementById('userId').value;
+            if (!userId) {
+                alert('Please enter a User ID');
+                return;
+            }
+            
+            // Parse comma-separated values into arrays
+            const interests = document.getElementById('interests').value
+                .split(',')
+                .map(item => item.trim())
+                .filter(item => item !== '');
+                
+            const domains = document.getElementById('domains').value
+                .split(',')
+                .map(item => item.trim())
+                .filter(item => item !== '');
+            
+            // Get other fields
+            const otherFields = {
+                occupation: document.getElementById('occupation').value,
+                age: parseInt(document.getElementById('age').value) || 25,
+                education_level: document.getElementById('education').value,
+                learning_style: document.getElementById('learning-style').value,
+                technical_depth: parseInt(document.getElementById('technical-depth').value) || 50,
+                main_learning_goal: document.getElementById('learning-goal').value
+            };
+            
+            try {
+                const response = await fetch('/api/emergency-profile-override', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        userId,
+                        preferredDomains: domains,
+                        interests,
+                        otherFields
+                    })
+                });
+                
+                const data = await response.json();
+                
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('result').textContent = data.success 
+                    ? 'Profile successfully updated! Try making a query now.' 
+                    : 'Error: ' + data.error;
+                
+                document.getElementById('profile-json').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('profile-json').textContent = 'Error: ' + error.message;
+            }
+        }
+        
+        // Clear the user's profile cache
+        async function clearCache() {
+            const userId = document.getElementById('userId').value;
+            if (!userId) {
+                alert('Please enter a User ID');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/clear-profile-cache?userId=${userId}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('result').textContent = data.success 
+                    ? 'Profile cache cleared! The next query will reload your profile from the database.' 
+                    : 'Error: ' + data.error;
+                
+                document.getElementById('profile-json').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('profile-json').textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html> 
