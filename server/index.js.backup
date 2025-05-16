@@ -3441,6 +3441,12 @@ app.post('/api/component-feedback', async (req, res) => {
 });
 
 // Helper function to calculate average
+function calculateAverage(items, field) {
+  const validItems = items.filter(item => item[field] !== null);
+  if (validItems.length === 0) return null;
+  return validItems.reduce((sum, item) => sum + item[field], 0) / validItems.length;
+}
+
 // Add context endpoint
 app.get('/api/context/:sessionId', async (req, res) => {
   try {
