@@ -4,6 +4,20 @@ class FeedbackProcessor {
     this.feedbackPatterns = new Map();
     this.userPreferences = new Map();
     this.responseEffectiveness = new Map();
+    
+    // Import Supervisor for Crowd Wisdom
+    try {
+      import('./Supervisor.js').then(module => {
+        this.supervisor = module.default;
+        console.log('Supervisor initialized in FeedbackProcessor');
+      }).catch(err => {
+        console.error('Failed to import Supervisor in FeedbackProcessor:', err);
+        this.supervisor = null;
+      });
+    } catch (err) {
+      console.error('Error initializing Supervisor in FeedbackProcessor:', err);
+      this.supervisor = null;
+    }
   }
 
   /**
@@ -12,9 +26,12 @@ class FeedbackProcessor {
    * @param {number} rating - User rating (1-5)
    * @param {string} comments - User comments
    * @param {string} userId - The user's ID
+   * @param {Object} responseData - Optional full response data for crowd wisdom
+   * @param {string} originalQuery - Original query that generated the response
+   * @param {Object} openai - OpenAI client (optional)
    * @returns {Promise<Object>} - Processed feedback data
    */
-  async processFeedback(responseId, rating, comments, userId) {
+  async processFeedback(responseId, rating, comments, userId, responseData = null, originalQuery = null, openai = null) {
     const feedback = {
       responseId,
       rating,
@@ -31,6 +48,22 @@ class FeedbackProcessor {
     
     // Update response effectiveness metrics
     await this.updateResponseEffectiveness(responseId, feedback);
+    
+    // Process feedback for Crowd Wisdom if available
+    if (this.supervisor && responseId && rating !== undefined) {
+      try {
+        console.log(`[Crowd Wisdom] Processing feedback for response ${responseId} with rating ${rating}`);
+        await this.supervisor.processFeedbackForCrowdWisdom(
+          responseId, 
+          rating, 
+          originalQuery || '', 
+          responseData || { id: responseId },
+          openai
+        );
+      } catch (error) {
+        console.error('[Crowd Wisdom] Error processing feedback:', error);
+      }
+    }
     
     return feedback;
   }

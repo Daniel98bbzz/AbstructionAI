@@ -186,31 +186,63 @@
             }
             
             try {
-                const response = await fetch(`/api/view-memory-profile?userId=${userId}`);
+                const response = await fetch(`/api/debug/actual-profile/${userId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to load profile: ${response.status} ${response.statusText}`);
+                }
+                
                 const data = await response.json();
                 
-                document.getElementById('profile-result').textContent = JSON.stringify(data, null, 2);
-                
-                // If profile exists, pre-fill the update form
-                if (data.success && data.profile) {
-                    document.getElementById('userId').value = data.profile.id;
-                    document.getElementById('occupation').value = data.profile.occupation || '';
-                    document.getElementById('age').value = data.profile.age || '';
-                    document.getElementById('education').value = data.profile.education_level || 'Undergraduate';
-                    document.getElementById('interests').value = Array.isArray(data.profile.interests) ? 
-                        data.profile.interests.join(', ') : data.profile.interests || '';
-                    document.getElementById('learning-style').value = data.profile.learning_style || 'Visual';
-                    document.getElementById('technical-depth').value = data.profile.technical_depth || 50;
-                    document.getElementById('depth-value').textContent = data.profile.technical_depth || 50;
-                    document.getElementById('analogy-domains').value = Array.isArray(data.profile.preferred_analogy_domains) ? 
-                        data.profile.preferred_analogy_domains.join(', ') : data.profile.preferred_analogy_domains || '';
-                    document.getElementById('learning-goal').value = data.profile.main_learning_goal || 'Personal Interest';
-                    
-                    // Switch to update tab
-                    document.querySelector('.tab[data-tab="update"]').click();
+                if (!data.success) {
+                    throw new Error(data.error || 'Unknown error loading profile');
                 }
+                
+                // Use the parsed profile if available
+                const profile = data.parsed || data.raw;
+                
+                if (!profile) {
+                    showMessage('No profile found for this user ID', 'error');
+                    return;
+                }
+                
+                // Fill form fields with profile data
+                document.getElementById('username').value = profile.username || '';
+                document.getElementById('occupation').value = profile.occupation || '';
+                document.getElementById('age').value = profile.age || '';
+                document.getElementById('education').value = profile.education_level || '';
+                
+                // Handle arrays properly
+                let interests = profile.interests || [];
+                if (typeof interests === 'string') {
+                    try {
+                        interests = JSON.parse(interests);
+                    } catch (e) {
+                        interests = [interests];
+                    }
+                }
+                document.getElementById('interests').value = Array.isArray(interests) ? interests.join(', ') : interests;
+                
+                let analogyDomains = profile.preferred_analogy_domains || [];
+                if (typeof analogyDomains === 'string') {
+                    try {
+                        analogyDomains = JSON.parse(analogyDomains);
+                    } catch (e) {
+                        analogyDomains = [analogyDomains];
+                    }
+                }
+                document.getElementById('analogy-domains').value = Array.isArray(analogyDomains) ? analogyDomains.join(', ') : analogyDomains;
+                
+                document.getElementById('learning-style').value = profile.learning_style || '';
+                document.getElementById('technical-depth').value = profile.technical_depth || 50;
+                document.getElementById('depth-value').textContent = profile.technical_depth || 50;
+                document.getElementById('learning-goal').value = profile.main_learning_goal || '';
+                
+                showProfileSection();
+                showMessage('Profile loaded successfully', 'success');
             } catch (error) {
-                document.getElementById('profile-result').textContent = `Error: ${error.message}`;
+                console.error('Error loading profile:', error);
+                showMessage(`Error loading profile: ${error.message}`, 'error');
             }
         }
         

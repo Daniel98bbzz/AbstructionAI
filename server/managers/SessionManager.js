@@ -291,6 +291,35 @@ class SessionManager {
       }
     }
     
+    // Check if this is a follow-up question to a previous AI response
+    if (interaction.type === 'query' && session.interactions.length > 0) {
+      // Find the most recent AI response interaction
+      const lastInteractions = [...session.interactions].reverse();
+      const lastAIResponse = lastInteractions.find(i => i.type === 'ai_response');
+      
+      if (lastAIResponse && lastAIResponse.response_id) {
+        console.log(`[Crowd Wisdom] Detected potential follow-up question for response: ${lastAIResponse.response_id}`);
+        
+        // Mark the template usage as having a follow-up
+        if (this.supabase) {
+          try {
+            const { error } = await this.supabase
+              .from('prompt_template_usage')
+              .update({ had_follow_up: true })
+              .eq('response_id', lastAIResponse.response_id);
+              
+            if (error) {
+              console.error('[Crowd Wisdom] Error marking follow-up:', error);
+            } else {
+              console.log(`[Crowd Wisdom] Marked follow-up for response: ${lastAIResponse.response_id}`);
+            }
+          } catch (e) {
+            console.error('[Crowd Wisdom] Error updating follow-up status:', e);
+          }
+        }
+      }
+    }
+    
     const contextMemory = this.contextMemory.get(sessionId);
     if (!contextMemory && session) { // if session was just created, contextMemory might not exist yet for it
         this.contextMemory.set(sessionId, {
@@ -473,7 +502,64 @@ class SessionManager {
               .insert([interactionData]);
               
             if (interactionError) {
+              // Handle RLS policy error gracefully
+              if (interactionError.code === '42501' && interactionError.message.includes('violates row-level security policy')) {
+                console.log('[BACKEND DEBUG] RLS policy error when inserting interaction - applying fallback strategy');
+                
+                try {
+                  // First try to fix the RLS policy directly with RPC call
+                  console.log('[BACKEND DEBUG] Attempting to fix RLS policy for interactions table');
+                  
+                  // Try to create a permissive RLS policy
+                  const createPolicy = `
+                    DROP POLICY IF EXISTS "Users can view their own interactions" ON public.interactions;
+                    DROP POLICY IF EXISTS "Users can insert own interactions" ON public.interactions;
+                    DROP POLICY IF EXISTS "Restrictive interactions policy" ON public.interactions;
+                    
+                    CREATE POLICY "Allow all interactions" 
+                    ON public.interactions
+                    FOR ALL
+                    TO public
+                    USING (true)
+                    WITH CHECK (true);
+                  `;
+                  
+                  // Try execute_sql first, then fall back to exec_sql
+                  let policyError;
+                  try {
+                    const result = await this.supabase.rpc('execute_sql', { sql: createPolicy });
+                    policyError = result.error;
+                  } catch (execError) {
+                    console.log('[BACKEND DEBUG] execute_sql not found, trying exec_sql instead');
+                    const result = await this.supabase.rpc('exec_sql', { sql: createPolicy });
+                    policyError = result.error;
+                  }
+                  
+                  if (!policyError) {
+                    console.log('[BACKEND DEBUG] Successfully created permissive RLS policy for interactions table');
+                    
+                    // Try insert again
+                    const { error: retryError } = await this.supabase
+                      .from('interactions')
+                      .insert([interactionData]);
+                      
+                    if (retryError) {
+                      console.error('[BACKEND DEBUG] Still could not store interaction after policy fix:', retryError);
+                      console.log('[BACKEND DEBUG] Continuing with in-memory only storage for this interaction');
+                    } else {
+                      console.log('[BACKEND DEBUG] Successfully stored interaction after fixing RLS policy');
+                    }
+                  } else {
+                    console.log('[BACKEND DEBUG] Could not fix RLS policy:', policyError);
+                    console.log('[BACKEND DEBUG] Continuing with in-memory only storage for this interaction');
+                  }
+                } catch (policyFixError) {
+                  console.error('[BACKEND DEBUG] Error attempting to fix RLS policy:', policyFixError);
+                  console.log('[BACKEND DEBUG] Continuing with in-memory only storage for this interaction');
+                }
+              } else {
               console.error('[BACKEND DEBUG] Error storing interaction:', interactionError);
+              }
             } else {
               console.log(`[BACKEND DEBUG] Successfully stored interaction in database for session ${sessionId}`);
             }

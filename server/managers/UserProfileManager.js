@@ -99,23 +99,40 @@ class UserProfileManager {
 
   async getProfile(userId) {
     try {
-      console.log('UserProfileManager: Getting profile for', userId);
-      
-      // First, check if profile exists in database
+      // Attempt to retrieve the profile using direct query first, without .single()
       const { data, error } = await supabase
         .from('user_profiles')
         .select('*')
-        .eq('id', userId)
-        .single();
+        .eq('id', userId);
       
-      // If profile exists, format and return it
-      if (!error && data) {
-        console.log('UserProfileManager: Raw profile data from database:', {
-          interestsType: typeof data.interests,
-          domainsType: typeof data.preferred_analogy_domains
-        });
-        
-        // Helper function to ensure array format
+      if (error) {
+        console.error('Error retrieving user profile:', error);
+        return null;
+      }
+      
+      // Check if we have multiple or no profiles
+      if (!data || data.length === 0) {
+        console.log(`No profile found for user ${userId}, will create default`);
+        return await this.createDefaultProfile(userId);
+      } else if (data.length > 1) {
+        console.log(`Multiple profiles found for user ${userId}, using the most recent one`);
+        // Sort by updated_at and use the most recent profile
+        data.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+        return this.formatProfile(data[0]);
+      } else {
+        // We have exactly one profile
+        return this.formatProfile(data[0]);
+      }
+    } catch (error) {
+      console.error('Exception in getProfile:', error);
+      return null;
+    }
+  }
+
+  // Format the profile to ensure arrays are correctly formatted
+  formatProfile(profile) {
+    if (!profile) return null;
+    
         const ensureArray = (value) => {
           if (Array.isArray(value)) {
             return value;
@@ -125,7 +142,6 @@ class UserProfileManager {
               const parsed = JSON.parse(value);
               return Array.isArray(parsed) ? parsed : [value];
             } catch (e) {
-              console.error('Error parsing array string:', e);
               return [value]; // If we can't parse it, wrap the string in an array
             }
           }
@@ -135,69 +151,25 @@ class UserProfileManager {
           return [value]; // For any other type, wrap in array
         };
 
-        // Make deep copies to avoid reference issues
-        const processedData = {
-          ...data,
-          interests: ensureArray(data.interests),
-          preferred_analogy_domains: ensureArray(data.preferred_analogy_domains)
+    // Create a new formatted profile with correct array types
+    const formattedProfile = {
+      ...profile,
+      interests: ensureArray(profile.interests),
+      preferred_analogy_domains: ensureArray(profile.preferred_analogy_domains)
         };
         
-        console.log('UserProfileManager: Processed profile data:', {
-          interests: processedData.interests,
-          preferred_analogy_domains: processedData.preferred_analogy_domains
+    console.log('Formatted profile arrays:', {
+      interests: formattedProfile.interests,
+      preferred_analogy_domains: formattedProfile.preferred_analogy_domains
         });
         
-        return processedData;
-      }
-      
-      // If profile doesn't exist, create it
-      if (error && error.code === 'PGRST116') {
-        console.log(`Profile not found for user ${userId}, creating default profile`);
-        
+    return formattedProfile;
+  }
+
+  async createDefaultProfile(userId) {
         try {
-          // Create a default profile with gaming and cooking as preferred domains
+      // Create a default profile
           const defaultProfile = {
-            username: 'user_' + userId.substring(0, 8),
-            occupation: 'Student',
-            age: 25,
-            education_level: 'Undergraduate',
-            interests: ['Video Games', 'Art'],
-            learning_style: 'Visual',
-            technical_depth: 50,
-            preferred_analogy_domains: ['Gaming', 'Cooking'],
-            main_learning_goal: 'Personal Interest'
-          };
-          
-          return this.createProfile(userId, defaultProfile);
-        } catch (createError) {
-          console.error('Error creating default profile:', createError);
-          
-          // Return a memory-only profile as last resort
-          console.log('Creating memory-only profile as fallback');
-          return {
-            id: userId,
-            username: 'user_' + userId.substring(0, 8),
-            occupation: 'Student',
-            age: 25,
-            education_level: 'Undergraduate',
-            interests: ['Video Games', 'Art'],
-            learning_style: 'Visual',
-            technical_depth: 50,
-            preferred_analogy_domains: ['Gaming', 'Cooking'],
-            main_learning_goal: 'Personal Interest'
-          };
-        }
-      }
-      
-      // For other errors, throw them
-      console.error('Error fetching user profile:', error);
-      throw error;
-    } catch (error) {
-      console.error('Error in getProfile:', error);
-      
-      // Return memory-only profile as absolute last resort
-      console.log('Creating memory-only profile due to error');
-      return {
         id: userId,
         username: 'user_' + userId.substring(0, 8),
         occupation: 'Student',
@@ -209,6 +181,21 @@ class UserProfileManager {
         preferred_analogy_domains: ['Gaming', 'Cooking'],
         main_learning_goal: 'Personal Interest'
       };
+      
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .insert([defaultProfile])
+        .select();
+      
+      if (error) {
+        console.error('Error creating default profile:', error);
+        return defaultProfile; // Return the default anyway
+      }
+      
+      return data[0] || defaultProfile;
+    } catch (error) {
+      console.error('Exception creating default profile:', error);
+      return null;
     }
   }
 
