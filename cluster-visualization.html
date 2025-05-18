@@ -1,0 +1,2522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Cluster Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', 'Segoe UI', Roboto, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 30px;
+        }
+        .chart-container {
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            padding: 25px;
+            margin-bottom: 30px;
+            background-color: #fff;
+            transition: all 0.3s ease;
+        }
+        .chart-container:hover {
+            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 25px;
+            padding: 15px;
+            background-color: #f0f2f5;
+            border-radius: 8px;
+        }
+        .controls label {
+            font-weight: 600;
+            margin-right: 8px;
+        }
+        .controls select {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            background-color: white;
+            font-size: 14px;
+        }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 6px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-right: 20px;
+            margin-bottom: 8px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background-color: #f0f2f5;
+            transition: all 0.2s;
+        }
+        .legend-item:hover {
+            background-color: #e6e8eb;
+        }
+        .legend-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            margin-right: 8px;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        .cluster-info {
+            margin-top: 25px;
+            max-height: 350px;
+            overflow-y: auto;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .tooltip {
+            position: absolute;
+            background: #fff;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            pointer-events: none;
+            font-size: 14px;
+            box-shadow: 0 3px 14px rgba(0,0,0,0.15);
+            max-width: 280px;
+            z-index: 1000;
+            transition: opacity 0.2s;
+        }
+        .tooltip h4 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .tooltip p {
+            margin: 5px 0;
+        }
+        .user-details {
+            padding: 25px;
+            margin-top: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            background-color: #fff;
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+        .preference-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #444;
+        }
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .checkbox-group div {
+            display: flex;
+            align-items: center;
+        }
+        .checkbox-group label {
+            font-weight: normal;
+            margin-left: 5px;
+            cursor: pointer;
+        }
+        button {
+            padding: 10px 18px;
+            background-color: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #3a7bc8;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 25px;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            margin-right: 5px;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            background-color: #f5f5f5;
+            transition: all 0.2s;
+        }
+        .tab.active {
+            background-color: white;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+            font-weight: 600;
+        }
+        .tab:hover:not(.active) {
+            background-color: #e9ecef;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .status-message {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 6px;
+            background-color: #e6f7ff;
+            border-left: 4px solid #1890ff;
+            animation: fadeIn 0.3s;
+        }
+        
+        .error-message {
+            background-color: #fff2f0;
+            border-left: 4px solid #ff4d4f;
+        }
+        
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .chart-header h3 {
+            margin: 0;
+        }
+        
+        .control-group {
+            padding: 8px;
+            border-radius: 6px;
+        }
+        
+        .custom-cluster-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            margin-top: 20px;
+        }
+        
+        .cluster-criteria, .custom-clusters-list {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        
+        .criteria-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .criteria-row select, .criteria-row input {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            background-color: white;
+        }
+        
+        .custom-cluster-item {
+            background-color: #f9f9f9;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid #4a90e2;
+        }
+        
+        .custom-cluster-item h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        .custom-cluster-item .actions {
+            margin-top: 10px;
+        }
+        
+        .criteria-badge {
+            display: inline-block;
+            background-color: #e6f7ff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            font-size: 13px;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .interest-cluster-form {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            margin-bottom: 20px;
+        }
+        
+        .interest-checklist {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 6px;
+        }
+        
+        .interest-category {
+            background-color: #fff;
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px solid #eee;
+        }
+        
+        .interest-category h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #444;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        .checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+        
+        .checkbox-grid label {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+        }
+        
+        .checkbox-grid input[type="checkbox"] {
+            margin-right: 6px;
+        }
+        
+        .clustering-option {
+            margin-bottom: 10px;
+        }
+        
+        .clustering-option label {
+            display: flex;
+            align-items: center;
+        }
+        
+        .clustering-option input[type="radio"] {
+            margin-right: 8px;
+        }
+        
+        .cluster-rename-entry {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+            border-radius: 6px;
+        }
+        
+        .cluster-rename-entry .cluster-info {
+            flex: 1;
+            margin-right: 15px;
+        }
+        
+        .cluster-rename-entry input[type="text"] {
+            padding: 8px;
+            flex: 1;
+            max-width: 250px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        
+        .cluster-rename-entry button {
+            margin-left: 10px;
+            white-space: nowrap;
+        }
+        
+        .rename-clusters-form {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        
+        .cluster-rename-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 6px;
+        }
+        
+        .sub-tabs {
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .sub-tab {
+            padding: 10px 20px;
+            font-size: 14px;
+        }
+        
+        .subtab-content {
+            display: none;
+        }
+        
+        .subtab-content.active {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        .feedback-history {
+            margin-top: 25px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+
+        .feedback-item {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .feedback-item .user-input {
+            padding: 10px;
+            border-left: 3px solid #4a90e2;
+            background-color: #f8f9fa;
+            margin-bottom: 10px;
+        }
+
+        .feedback-item .system-response {
+            padding: 10px;
+            border-left: 3px solid #42b983;
+            background-color: #f8f9fa;
+            margin-bottom: 10px;
+        }
+
+        .feedback-item .user-feedback {
+            display: flex;
+            align-items: center;
+            padding: 5px 10px;
+            background-color: #f0f2f5;
+            border-radius: 4px;
+        }
+
+        .feedback-item .feedback-rating {
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        .feedback-item .feedback-date {
+            margin-left: auto;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .feedback-positive {
+            color: #42b983;
+        }
+
+        .feedback-negative {
+            color: #e75c3c;
+        }
+
+        .feedback-neutral {
+            color: #f39c12;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>User Cluster Visualization</h1>
+        
+        <div class="tabs">
+            <div class="tab active" data-tab="visualization">Cluster Visualization</div>
+            <div class="tab" data-tab="userPreferences">Update User Preferences</div>
+            <div class="tab" data-tab="clusterManagement">Cluster Management</div>
+        </div>
+        
+        <div id="visualization" class="tab-content active">
+            <div class="controls">
+                <div class="control-group">
+                    <label for="x-axis">X Axis:</label>
+                    <select id="x-axis">
+                        <option value="technical_depth" selected>Technical Depth</option>
+                        <option value="visual_learning">Visual Learning</option>
+                        <option value="practical_examples">Practical Examples</option>
+                        <option value="age">Age</option>
+                        <option value="interest_science">Interest: Science</option>
+                        <option value="interest_technology">Interest: Technology</option>
+                        <option value="interest_sports">Interest: Sports</option>
+                        <option value="interest_art">Interest: Art</option>
+                        <option value="interest_music">Interest: Music</option>
+                        <option value="professional_level">Professional Level</option>
+                        <option value="avg_feedback_rating">Average Feedback Rating</option>
+                        <option value="feedback_count">Feedback Count</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label for="y-axis">Y Axis:</label>
+                    <select id="y-axis">
+                        <option value="technical_depth">Technical Depth</option>
+                        <option value="visual_learning" selected>Visual Learning</option>
+                        <option value="practical_examples">Practical Examples</option>
+                        <option value="age">Age</option>
+                        <option value="interest_science">Interest: Science</option>
+                        <option value="interest_technology">Interest: Technology</option>
+                        <option value="interest_sports">Interest: Sports</option>
+                        <option value="interest_art">Interest: Art</option>
+                        <option value="interest_music">Interest: Music</option>
+                        <option value="professional_level">Professional Level</option>
+                        <option value="avg_feedback_rating">Average Feedback Rating</option>
+                        <option value="feedback_count">Feedback Count</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <button id="apply-dimensions" type="button">Apply Dimensions</button>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <svg id="chart" width="800" height="500"></svg>
+                <div class="legend" id="legend"></div>
+            </div>
+            
+            <div class="cluster-info" id="cluster-info"></div>
+        </div>
+        
+        <div id="userPreferences" class="tab-content">
+            <h2>Update User Preferences</h2>
+            <p>Select a user to update their preferences and potentially reassign them to a different cluster.</p>
+            
+            <div class="form-group">
+                <label for="user-select">Select User:</label>
+                <select id="user-select">
+                    <option value="">-- Select User --</option>
+                </select>
+            </div>
+            
+            <div id="user-details" class="user-details">
+                <h3>Current User Information</h3>
+                <div id="current-info"></div>
+                
+                <h3>Conversation Feedback History</h3>
+                <div id="feedback-history" class="feedback-history">
+                    <p id="feedback-loading">Loading conversation feedback...</p>
+                </div>
+                
+                <h3>Update Preferences</h3>
+                <form id="preference-form" class="preference-form">
+                    <div class="form-group">
+                        <label for="technical-depth">Technical Depth (1-100):</label>
+                        <input type="range" id="technical-depth" name="technical_depth" min="1" max="100" value="50" step="1">
+                        <span id="technical-depth-value">50</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="learning-style">Learning Style:</label>
+                        <select id="learning-style" name="learning_style">
+                            <option value="visual">Visual</option>
+                            <option value="auditory">Auditory</option>
+                            <option value="reading">Reading/Writing</option>
+                            <option value="kinesthetic">Kinesthetic</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>Interests:</label>
+                        <div class="checkbox-group" id="interests-group">
+                            <!-- Will be populated dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>Preferred Analogy Domains:</label>
+                        <div class="checkbox-group" id="analogy-domains-group">
+                            <!-- Will be populated dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" style="grid-column: span 2;">
+                        <button type="submit">Update Preferences</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div id="clusterManagement" class="tab-content">
+            <h2>Create Custom Clusters</h2>
+            <p>Define custom clusters based on user preferences and attributes.</p>
+            
+            <div class="tabs sub-tabs">
+                <div class="tab sub-tab active" data-subtab="criteria-based">Criteria-Based Clusters</div>
+                <div class="tab sub-tab" data-subtab="interest-based">Interest-Based Clusters</div>
+                <div class="tab sub-tab" data-subtab="rename-clusters">Rename Clusters</div>
+            </div>
+            
+            <div id="criteria-based" class="subtab-content active">
+                <div class="custom-cluster-form">
+                    <div class="cluster-criteria">
+                        <h3>Cluster Criteria</h3>
+                        <p>Select the criteria that define your custom clusters.</p>
+                        
+                        <div class="form-group">
+                            <label for="cluster-name">Cluster Name:</label>
+                            <input type="text" id="cluster-name" placeholder="E.g., Technical Professionals">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Primary Criteria:</label>
+                            <div class="criteria-row">
+                                <select id="primary-attribute">
+                                    <option value="technical_depth">Technical Depth</option>
+                                    <option value="learning_style">Learning Style</option>
+                                    <option value="interests">Interests</option>
+                                    <option value="age">Age</option>
+                                    <option value="education_level">Education Level</option>
+                                    <option value="occupation">Occupation</option>
+                                </select>
+                                
+                                <select id="primary-operator">
+                                    <option value="equals">Equals</option>
+                                    <option value="greater_than">Greater Than</option>
+                                    <option value="less_than">Less Than</option>
+                                    <option value="contains">Contains</option>
+                                </select>
+                                
+                                <input type="text" id="primary-value" placeholder="Value">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Secondary Criteria (Optional):</label>
+                            <div class="criteria-row">
+                                <select id="secondary-attribute">
+                                    <option value="">None</option>
+                                    <option value="technical_depth">Technical Depth</option>
+                                    <option value="learning_style">Learning Style</option>
+                                    <option value="interests">Interests</option>
+                                    <option value="age">Age</option>
+                                    <option value="education_level">Education Level</option>
+                                    <option value="occupation">Occupation</option>
+                                </select>
+                                
+                                <select id="secondary-operator">
+                                    <option value="equals">Equals</option>
+                                    <option value="greater_than">Greater Than</option>
+                                    <option value="less_than">Less Than</option>
+                                    <option value="contains">Contains</option>
+                                </select>
+                                
+                                <input type="text" id="secondary-value" placeholder="Value">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <button id="create-cluster" type="button">Create Custom Cluster</button>
+                        </div>
+                    </div>
+                    
+                    <div class="custom-clusters-list">
+                        <h3>Custom Clusters</h3>
+                        <div id="custom-clusters">
+                            <p>No custom clusters created yet.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="interest-based" class="subtab-content">
+                <div class="interest-cluster-form">
+                    <h3>Create Interest-Based Clusters</h3>
+                    <p>Select multiple interests to create clusters of users who share these interests.</p>
+                    
+                    <div class="form-group">
+                        <label for="interest-cluster-name">Cluster Name:</label>
+                        <input type="text" id="interest-cluster-name" placeholder="E.g., Arts & Sports Enthusiasts">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Select Interests:</label>
+                        <div class="interest-checklist">
+                            <div class="interest-category">
+                                <h4>Arts & Culture</h4>
+                                <div class="checkbox-grid">
+                                    <label><input type="checkbox" name="interest" value="Art"> Art</label>
+                                    <label><input type="checkbox" name="interest" value="Music"> Music</label>
+                                    <label><input type="checkbox" name="interest" value="Literature"> Literature</label>
+                                    <label><input type="checkbox" name="interest" value="Photography"> Photography</label>
+                                    <label><input type="checkbox" name="interest" value="Writing"> Writing</label>
+                                    <label><input type="checkbox" name="interest" value="Dancing"> Dancing</label>
+                                </div>
+                            </div>
+                            
+                            <div class="interest-category">
+                                <h4>Sports & Fitness</h4>
+                                <div class="checkbox-grid">
+                                    <label><input type="checkbox" name="interest" value="Sports"> Sports</label>
+                                    <label><input type="checkbox" name="interest" value="Basketball"> Basketball</label>
+                                    <label><input type="checkbox" name="interest" value="Football"> Football</label>
+                                    <label><input type="checkbox" name="interest" value="Soccer"> Soccer</label>
+                                    <label><input type="checkbox" name="interest" value="Tennis"> Tennis</label>
+                                    <label><input type="checkbox" name="interest" value="Fitness"> Fitness</label>
+                                </div>
+                            </div>
+                            
+                            <div class="interest-category">
+                                <h4>Science & Technology</h4>
+                                <div class="checkbox-grid">
+                                    <label><input type="checkbox" name="interest" value="Science"> Science</label>
+                                    <label><input type="checkbox" name="interest" value="Technology"> Technology</label>
+                                    <label><input type="checkbox" name="interest" value="Programming"> Programming</label>
+                                    <label><input type="checkbox" name="interest" value="Astronomy"> Astronomy</label>
+                                    <label><input type="checkbox" name="interest" value="Physics"> Physics</label>
+                                    <label><input type="checkbox" name="interest" value="Biology"> Biology</label>
+                                </div>
+                            </div>
+                            
+                            <div class="interest-category">
+                                <h4>Lifestyle & Hobbies</h4>
+                                <div class="checkbox-grid">
+                                    <label><input type="checkbox" name="interest" value="Cooking"> Cooking</label>
+                                    <label><input type="checkbox" name="interest" value="Travel"> Travel</label>
+                                    <label><input type="checkbox" name="interest" value="Yoga"> Yoga</label>
+                                    <label><input type="checkbox" name="interest" value="Meditation"> Meditation</label>
+                                    <label><input type="checkbox" name="interest" value="Gaming"> Gaming</label>
+                                    <label><input type="checkbox" name="interest" value="Movies"> Movies</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="clustering-option">
+                            <label>
+                                <input type="radio" name="interest-matching" value="any" checked>
+                                Match users with ANY of these interests
+                            </label>
+                        </div>
+                        <div class="clustering-option">
+                            <label>
+                                <input type="radio" name="interest-matching" value="all">
+                                Match users with ALL of these interests
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <button id="create-interest-cluster" type="button">Create Interest Cluster</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="rename-clusters" class="subtab-content">
+                <div class="rename-clusters-form">
+                    <h3>Rename Existing Clusters</h3>
+                    <p>Give descriptive names to existing system-generated clusters.</p>
+                    
+                    <div class="cluster-renaming-list">
+                        <div class="form-group cluster-rename-controls">
+                            <label for="cluster-rename-strategy">Naming Strategy:</label>
+                            <select id="cluster-rename-strategy">
+                                <option value="manual">Manual Naming</option>
+                                <option value="auto-descriptive">Generate Descriptive Names</option>
+                            </select>
+                            <button id="apply-naming-strategy" type="button">Apply to All Clusters</button>
+                        </div>
+                        
+                        <div id="cluster-naming-list">
+                            <!-- Will be populated dynamically -->
+                            <p>Loading clusters...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables to store our data
+        let userData = [];
+        let clusterData = [];
+        let userFeedbackData = {}; // Store feedback data by user ID
+        let isLoading = false;
+        let colorScale; // Define colorScale globally
+        
+        // Predefined options for checkboxes
+        const INTERESTS = [
+          'Sports', 'Video Games', 'Movies', 'Books', 'Meditation',
+          'Yoga', 'Technology', 'Cooking', 'Music', 'Travel',
+          'Fitness', 'Art', 'Photography', 'Writing', 'Dancing',
+          'Science', 'History', 'Languages', 'Philosophy', 'Astronomy'
+        ];
+        
+        const ANALOGY_DOMAINS = [
+          'Gaming', 'Sports', 'Movies', 'Technology', 'Cooking',
+          'Everyday Life', 'Science', 'Historical Events', 'Nature',
+          'Music', 'Architecture', 'Business'
+        ];
+        
+        // Fetch data from your backend
+        async function fetchData() {
+            try {
+                setLoading(true);
+                showStatus('Fetching cluster data...');
+                
+                // Fetch the cluster data
+                const clusterResponse = await fetch('/api/clusters');
+                const userResponse = await fetch('/api/clustered-users');
+                
+                if (!clusterResponse.ok) {
+                    throw new Error(`Failed to fetch clusters: ${clusterResponse.statusText}`);
+                }
+                
+                if (!userResponse.ok) {
+                    throw new Error(`Failed to fetch users: ${userResponse.statusText}`);
+                }
+                
+                clusterData = await clusterResponse.json();
+                userData = await userResponse.json();
+                
+                console.log("Successfully fetched data from API:");
+                console.log("Clusters:", clusterData);
+                console.log("Users:", userData);
+                
+                if (clusterData.length === 0 || userData.length === 0) {
+                    showStatus('No cluster data available. Please ensure your database has user clusters defined.', true);
+                } else {
+                    hideStatus();
+                    // For each user, add cluster centroid values for visualization
+                    userData = userData.map(user => {
+                        const cluster = clusterData.find(c => c.id === user.cluster_id);
+                        return {
+                            ...user,
+                            visual_learning: cluster ? cluster.centroid.visual_learning * 100 : 50,
+                            practical_examples: cluster ? cluster.centroid.practical_examples * 100 : 70,
+                            technical_depth: user.technical_depth || 50,
+                            // Initialize feedback metrics with default values
+                            avg_feedback_rating: 0,
+                            feedback_count: 0
+                        };
+                    });
+                    
+                    // Fetch feedback data for each user
+                    await fetchUserFeedbackForVisualization();
+                    
+                    renderVisualization();
+                    populateUserSelect();
+                }
+            } catch (error) {
+                console.error("Error fetching data:", error);
+                showStatus(`Error loading data: ${error.message}`, true);
+            } finally {
+                setLoading(false);
+            }
+        }
+        
+        // Fetch feedback data for all users for visualization purposes
+        async function fetchUserFeedbackForVisualization() {
+            showStatus('Fetching user feedback data for visualization...');
+            
+            try {
+                // Process each user sequentially to avoid overwhelming the server
+                for (const user of userData) {
+                    try {
+                        const response = await fetch(`/api/user-feedback/${user.id}`);
+                        
+                        if (!response.ok) {
+                            console.warn(`Couldn't fetch feedback for user ${user.id}: ${response.statusText}`);
+                            continue;
+                        }
+                        
+                        const data = await response.json();
+                        
+                        if (data.feedback && data.feedback.length > 0) {
+                            // Calculate average rating
+                            const validRatings = data.feedback.filter(f => typeof f.rating === 'number' && f.rating > 0);
+                            if (validRatings.length > 0) {
+                                const totalRating = validRatings.reduce((sum, item) => sum + item.rating, 0);
+                                user.avg_feedback_rating = Math.round((totalRating / validRatings.length) * 10) / 10;
+                                user.feedback_count = validRatings.length;
+                            }
+                            
+                            // Store feedback data for reference
+                            userFeedbackData[user.id] = data.feedback;
+                        }
+                    } catch (error) {
+                        console.warn(`Error fetching feedback for user ${user.id}:`, error);
+                    }
+                }
+                
+                console.log("User feedback data fetched for visualization.");
+                hideStatus();
+            } catch (error) {
+                console.error("Error fetching user feedback for visualization:", error);
+                showStatus("Error loading feedback data. Proceeding with limited data.", true);
+            }
+        }
+        
+        // Helper function to show loading state
+        function setLoading(loading) {
+            isLoading = loading;
+            const loadingSpinner = document.getElementById('loading-spinner');
+            if (loadingSpinner) {
+                loadingSpinner.style.display = loading ? 'inline-block' : 'none';
+            }
+        }
+        
+        // Helper function to show status messages
+        function showStatus(message, isError = false) {
+            let statusDiv = document.getElementById('status-message');
+            if (!statusDiv) {
+                statusDiv = document.createElement('div');
+                statusDiv.id = 'status-message';
+                statusDiv.className = 'status-message';
+                document.querySelector('.chart-container').prepend(statusDiv);
+            }
+            
+            statusDiv.textContent = message;
+            statusDiv.className = 'status-message' + (isError ? ' error-message' : '');
+            statusDiv.style.display = 'block';
+        }
+        
+        // Helper function to hide status messages
+        function hideStatus() {
+            const statusDiv = document.getElementById('status-message');
+            if (statusDiv) {
+                statusDiv.style.display = 'none';
+            }
+        }
+        
+        // Format dimension value based on dimension type
+        function formatDimensionValue(value, dimension) {
+            if (dimension === 'avg_feedback_rating') {
+                return `${value}/5`;
+            } else if (dimension === 'feedback_count') {
+                return `${value} ratings`;
+            } else {
+                return `${Math.round(value)}/100`;
+            }
+        }
+        
+        // Get the appropriate domain range for a given dimension
+        function getDimensionDomain(dimension) {
+            if (dimension === 'avg_feedback_rating') {
+                return [0, 5]; // Rating scale from 0-5
+            } else if (dimension === 'feedback_count') {
+                // Find max feedback count from user data
+                const maxCount = userData.reduce((max, user) => Math.max(max, user.feedback_count || 0), 0);
+                return [0, Math.max(maxCount, 1)]; // Make sure we don't have a 0 max
+            } else {
+                return [0, 100]; // Default scale for most dimensions
+            }
+        }
+        
+        function renderVisualization() {
+            const svg = d3.select("#chart");
+            const width = +svg.attr("width");
+            const height = +svg.attr("height");
+            const margin = { top: 40, right: 40, bottom: 60, left: 60 };
+            const innerWidth = width - margin.left - margin.right;
+            const innerHeight = height - margin.top - margin.bottom;
+            
+            // Clear previous visualization
+            svg.selectAll("*").remove();
+            
+            // Get selected dimensions
+            const xDimension = document.getElementById("x-axis").value;
+            const yDimension = document.getElementById("y-axis").value;
+            
+            // Process the data to extract interest values and feedback metrics if needed
+            const processedUserData = userData.map(user => {
+                const processedUser = {...user};
+                
+                // Process interest-based dimensions
+                if (xDimension.startsWith('interest_') || yDimension.startsWith('interest_')) {
+                    const interestCategories = {
+                        science: ['Science', 'Physics', 'Chemistry', 'Biology', 'Astronomy'],
+                        technology: ['Technology', 'Programming', 'Computers', 'Robotics', 'AI'],
+                        sports: ['Sports', 'Basketball', 'Football', 'Soccer', 'Tennis', 'Swimming', 'Fitness'],
+                        art: ['Art', 'Painting', 'Drawing', 'Photography', 'Design'],
+                        music: ['Music', 'Guitar', 'Piano', 'Singing', 'Drums', 'Violin']
+                    };
+                    
+                    // Calculate interest scores for each category
+                    for (const [category, keywords] of Object.entries(interestCategories)) {
+                        const matchCount = (user.interests || []).filter(interest => 
+                            keywords.some(keyword => 
+                                interest.toLowerCase().includes(keyword.toLowerCase())
+                            )
+                        ).length;
+                        
+                        // Calculate a score out of 100
+                        processedUser[`interest_${category}`] = matchCount > 0 
+                            ? Math.min(100, (matchCount / keywords.length) * 100) 
+                            : 0;
+                    }
+                }
+                
+                // Process professional level (derived from education_level and occupation)
+                if (xDimension === 'professional_level' || yDimension === 'professional_level') {
+                    // Define a professional level score based on education and occupation
+                    const eduLevelScores = {
+                        'high_school': 20,
+                        'associate': 40,
+                        'undergraduate': 60,
+                        'graduate': 80,
+                        'postgraduate': 100
+                    };
+                    
+                    const occupationScores = {
+                        'student': 30,
+                        'entry_level': 50,
+                        'professional': 70,
+                        'manager': 85,
+                        'executive': 100
+                    };
+                    
+                    // Calculate combined score
+                    let eduScore = eduLevelScores[user.education_level] || 50;
+                    let occScore = occupationScores[user.occupation] || 50;
+                    
+                    processedUser.professional_level = Math.round((eduScore + occScore) / 2);
+                }
+                
+                return processedUser;
+            });
+            
+            // Create scales with appropriate domains for the selected dimensions
+            const xDomain = getDimensionDomain(xDimension);
+            const yDomain = getDimensionDomain(yDimension);
+            
+            const xScale = d3.scaleLinear()
+                .domain(xDomain)
+                .range([0, innerWidth]);
+                
+            const yScale = d3.scaleLinear()
+                .domain(yDomain)
+                .range([innerHeight, 0]);
+            
+            // Create a color scale for clusters - use a nicer color palette - now globally accessible
+            colorScale = d3.scaleOrdinal(d3.schemeTableau10)
+                .domain(clusterData.map(d => d.id));
+            
+            const sizeScale = d3.scaleLinear()
+                .domain([0, d3.max(clusterData, d => d.member_count) || 1])
+                .range([5, 20]);
+            
+            // Create a group element for the chart
+            const g = svg.append("g")
+                .attr("transform", `translate(${margin.left}, ${margin.top})`);
+            
+            // Add grid lines for better readability
+            g.append("g")
+                .attr("class", "grid")
+                .attr("transform", `translate(0, ${innerHeight})`)
+                .call(d3.axisBottom(xScale)
+                    .tickSize(-innerHeight)
+                    .tickFormat("")
+                )
+                .attr("stroke-opacity", 0.1)
+                .select(".domain")
+                .remove();
+                
+            g.append("g")
+                .attr("class", "grid")
+                .call(d3.axisLeft(yScale)
+                    .tickSize(-innerWidth)
+                    .tickFormat("")
+                )
+                .attr("stroke-opacity", 0.1)
+                .select(".domain")
+                .remove();
+            
+            // Create axes
+            const xAxis = d3.axisBottom(xScale);
+            const yAxis = d3.axisLeft(yScale);
+            
+            g.append("g")
+                .attr("class", "x-axis")
+                .attr("transform", `translate(0, ${innerHeight})`)
+                .call(xAxis);
+                
+            g.append("g")
+                .attr("class", "y-axis")
+                .call(yAxis);
+            
+            // Add axis labels
+            g.append("text")
+                .attr("class", "x-axis-label")
+                .attr("x", innerWidth / 2)
+                .attr("y", innerHeight + 40)
+                .style("text-anchor", "middle")
+                .style("font-weight", "bold")
+                .text(formatDimensionLabel(xDimension));
+                
+            g.append("text")
+                .attr("class", "y-axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -innerHeight / 2)
+                .attr("y", -40)
+                .style("text-anchor", "middle")
+                .style("font-weight", "bold")
+                .text(formatDimensionLabel(yDimension));
+            
+            // Create tooltip
+            const tooltip = d3.select("body").selectAll(".tooltip").data([0])
+                .join("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+            
+            // Define the simulation for force layout
+            const simulation = d3.forceSimulation(processedUserData)
+                .force("x", d3.forceX(d => xScale(d[xDimension])).strength(0.5))
+                .force("y", d3.forceY(d => yScale(d[yDimension])).strength(0.5))
+                .force("collide", d3.forceCollide(5).iterations(2))
+                .stop();
+            
+            // Run the simulation
+            for (let i = 0; i < 100; ++i) simulation.tick();
+            
+            // Plot cluster centroids with transition
+            const centroids = g.selectAll(".cluster-centroid")
+                .data(clusterData)
+                .enter()
+                .append("circle")
+                .attr("class", "cluster-centroid")
+                .attr("cx", d => {
+                    // For cluster centroids, use the dimension value directly (scaled to 100)
+                    let value = d.centroid[xDimension];
+                    // If it's a custom dimension not in the centroid, use a default value
+                    if (value === undefined) {
+                        if (xDimension.startsWith('interest_')) {
+                            // Use the average of users in this cluster for this interest
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            value = clusterUsers.length > 0 
+                                ? d3.mean(clusterUsers, u => u[xDimension] || 0) / 100
+                                : 0.5;
+                        } else if (xDimension === 'professional_level') {
+                            // Use a default value
+                            value = 0.5;
+                        } else if (xDimension === 'avg_feedback_rating') {
+                            // Calculate the average feedback rating for this cluster
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            const usersWithFeedback = clusterUsers.filter(u => u.feedback_count > 0);
+                            if (usersWithFeedback.length > 0) {
+                                // Scale from 0-5 to 0-1 for compatibility with the 0-1 scale
+                                value = d3.mean(usersWithFeedback, u => u.avg_feedback_rating) / 5;
+                            } else {
+                                value = 0;
+                            }
+                        } else if (xDimension === 'feedback_count') {
+                            // Calculate the average feedback count for this cluster
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            if (clusterUsers.length > 0) {
+                                const maxCount = d3.max(userData, u => u.feedback_count || 0);
+                                value = d3.mean(clusterUsers, u => u.feedback_count || 0) / maxCount;
+                            } else {
+                                value = 0;
+                            }
+                        } else {
+                            value = 0.5; // Default value
+                        }
+                    }
+                    
+                    // Use the appropriate scale
+                    if (xDimension === 'avg_feedback_rating') {
+                        return xScale(value * 5); // Scale from 0-1 to 0-5
+                    } else if (xDimension === 'feedback_count') {
+                        const maxCount = d3.max(userData, u => u.feedback_count || 0);
+                        return xScale(value * maxCount);
+                    } else {
+                        return xScale(value * 100);
+                    }
+                })
+                .attr("cy", d => {
+                    // Similar handling for y-axis
+                    let value = d.centroid[yDimension];
+                    if (value === undefined) {
+                        if (yDimension.startsWith('interest_')) {
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            value = clusterUsers.length > 0 
+                                ? d3.mean(clusterUsers, u => u[yDimension] || 0) / 100
+                                : 0.5;
+                        } else if (yDimension === 'professional_level') {
+                            value = 0.5;
+                        } else if (yDimension === 'avg_feedback_rating') {
+                            // Calculate the average feedback rating for this cluster
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            const usersWithFeedback = clusterUsers.filter(u => u.feedback_count > 0);
+                            if (usersWithFeedback.length > 0) {
+                                // Scale from 0-5 to 0-1 for compatibility with the 0-1 scale
+                                value = d3.mean(usersWithFeedback, u => u.avg_feedback_rating) / 5;
+                            } else {
+                                value = 0;
+                            }
+                        } else if (yDimension === 'feedback_count') {
+                            // Calculate the average feedback count for this cluster
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            if (clusterUsers.length > 0) {
+                                const maxCount = d3.max(userData, u => u.feedback_count || 0);
+                                value = d3.mean(clusterUsers, u => u.feedback_count || 0) / maxCount;
+                            } else {
+                                value = 0;
+                            }
+                        } else {
+                            value = 0.5;
+                        }
+                    }
+                    
+                    // Use the appropriate scale
+                    if (yDimension === 'avg_feedback_rating') {
+                        return yScale(value * 5); // Scale from 0-1 to 0-5
+                    } else if (yDimension === 'feedback_count') {
+                        const maxCount = d3.max(userData, u => u.feedback_count || 0);
+                        return yScale(value * maxCount);
+                    } else {
+                        return yScale(value * 100);
+                    }
+                })
+                .attr("r", 0) // Start with radius 0 for animation
+                .attr("fill", d => colorScale(d.id))
+                .attr("stroke", "#333")
+                .attr("stroke-width", 1.5)
+                .attr("opacity", 0.8)
+                .on("mouseover", function(event, d) {
+                    d3.select(this)
+                        .transition()
+                        .duration(200)
+                        .attr("stroke-width", 2.5)
+                        .attr("opacity", 1);
+                        
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 1);
+                        
+                    // Get custom name or default    
+                    const clusterName = d.metadata?.custom_name || `Cluster ${d.id.substring(0, 8)}...`;
+                    
+                    // Calculate cluster-wide feedback metrics
+                    let feedbackInfo = '';
+                    const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                    const usersWithFeedback = clusterUsers.filter(u => u.feedback_count > 0);
+                    
+                    if (usersWithFeedback.length > 0) {
+                        const avgRating = d3.mean(usersWithFeedback, u => u.avg_feedback_rating);
+                        const totalFeedbackCount = d3.sum(usersWithFeedback, u => u.feedback_count);
+                        feedbackInfo = `
+                            <p><strong>Avg. Feedback Rating:</strong> ${avgRating.toFixed(1)}/5</p>
+                            <p><strong>Total Feedback:</strong> ${totalFeedbackCount} ratings</p>
+                            <p><strong>Users With Feedback:</strong> ${usersWithFeedback.length}/${clusterUsers.length}</p>
+                        `;
+                    }
+                    
+                    tooltip.html(`
+                        <h4>${clusterName}</h4>
+                        <p><strong>Members:</strong> ${d.member_count}</p>
+                        <p><strong>Technical Depth:</strong> ${Math.round(d.centroid.technical_depth * 100)}/100</p>
+                        <p><strong>Visual Learning:</strong> ${Math.round(d.centroid.visual_learning * 100)}/100</p>
+                        <p><strong>Practical Examples:</strong> ${Math.round(d.centroid.practical_examples * 100)}/100</p>
+                        ${feedbackInfo}
+                        <p><strong>Creation Method:</strong> ${d.metadata?.creation_method || 'Unknown'}</p>
+                    `)
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function(d) {
+                    d3.select(this)
+                        .transition()
+                        .duration(200)
+                        .attr("stroke-width", 1.5)
+                        .attr("opacity", 0.8);
+                        
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                });
+            
+            // Animate centroids
+            centroids.transition()
+                .duration(800)
+                .delay((d, i) => i * 100)
+                .attr("r", d => sizeScale(d.member_count));
+            
+            // Add labels to centroids
+            g.selectAll(".cluster-label")
+                .data(clusterData)
+                .enter()
+                .append("text")
+                .attr("class", "cluster-label")
+                .attr("x", d => {
+                    let value = d.centroid[xDimension];
+                    if (value === undefined) {
+                        if (xDimension.startsWith('interest_')) {
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            value = clusterUsers.length > 0 
+                                ? d3.mean(clusterUsers, u => u[xDimension] || 0) / 100
+                                : 0.5;
+                        } else if (xDimension === 'professional_level') {
+                            value = 0.5;
+                        } else if (xDimension === 'avg_feedback_rating') {
+                            // Calculate the average feedback rating for this cluster
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            const usersWithFeedback = clusterUsers.filter(u => u.feedback_count > 0);
+                            if (usersWithFeedback.length > 0) {
+                                // Scale from 0-5 to 0-1 for compatibility with the 0-1 scale
+                                value = d3.mean(usersWithFeedback, u => u.avg_feedback_rating) / 5;
+                            } else {
+                                value = 0;
+                            }
+                        } else if (xDimension === 'feedback_count') {
+                            // Calculate the average feedback count for this cluster
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            if (clusterUsers.length > 0) {
+                                const maxCount = d3.max(userData, u => u.feedback_count || 0);
+                                value = d3.mean(clusterUsers, u => u.feedback_count || 0) / maxCount;
+                            } else {
+                                value = 0;
+                            }
+                        } else {
+                            value = 0.5;
+                        }
+                    }
+                    return xScale(value * 100);
+                })
+                .attr("y", d => {
+                    let value = d.centroid[yDimension];
+                    if (value === undefined) {
+                        if (yDimension.startsWith('interest_')) {
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            value = clusterUsers.length > 0 
+                                ? d3.mean(clusterUsers, u => u[yDimension] || 0) / 100
+                                : 0.5;
+                        } else if (yDimension === 'professional_level') {
+                            value = 0.5;
+                        } else if (yDimension === 'avg_feedback_rating') {
+                            // Calculate the average feedback rating for this cluster
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            const usersWithFeedback = clusterUsers.filter(u => u.feedback_count > 0);
+                            if (usersWithFeedback.length > 0) {
+                                // Scale from 0-5 to 0-1 for compatibility with the 0-1 scale
+                                value = d3.mean(usersWithFeedback, u => u.avg_feedback_rating) / 5;
+                            } else {
+                                value = 0;
+                            }
+                        } else if (yDimension === 'feedback_count') {
+                            // Calculate the average feedback count for this cluster
+                            const clusterUsers = processedUserData.filter(u => u.cluster_id === d.id);
+                            if (clusterUsers.length > 0) {
+                                const maxCount = d3.max(userData, u => u.feedback_count || 0);
+                                value = d3.mean(clusterUsers, u => u.feedback_count || 0) / maxCount;
+                            } else {
+                                value = 0;
+                            }
+                        } else {
+                            value = 0.5;
+                        }
+                    }
+                    return yScale(value * 100) - sizeScale(d.member_count) - 5;
+                })
+                .attr("text-anchor", "middle")
+                .attr("font-size", "10px")
+                .attr("opacity", 0)
+                .text(d => `C-${d.id.substring(0, 6)}`)
+                .transition()
+                .duration(800)
+                .delay((d, i) => i * 100 + 500)
+                .attr("opacity", 0.7);
+            
+            // Plot individual users with transition
+            g.selectAll(".user-point")
+                .data(processedUserData)
+                .enter()
+                .append("circle")
+                .attr("class", "user-point")
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y)
+                .attr("r", 0) // Start with radius 0 for animation
+                .attr("fill", d => colorScale(d.cluster_id))
+                .attr("stroke", "#fff")
+                .attr("stroke-width", 1.5)
+                .attr("opacity", 0.7)
+                .on("mouseover", function(event, d) {
+                    d3.select(this)
+                        .transition()
+                        .duration(200)
+                        .attr("r", 6)
+                        .attr("stroke-width", 2)
+                        .attr("opacity", 1);
+                        
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 1);
+                    
+                    // Create a more detailed tooltip for users
+                    let tooltipContent = `
+                        <h4>${d.username || 'User'}</h4>
+                        <p><strong>Learning Style:</strong> ${d.learning_style || 'Not specified'}</p>
+                        <p><strong>Technical Depth:</strong> ${d.technical_depth}/100</p>
+                        <p><strong>Visual Learning:</strong> ${Math.round(d.visual_learning)}/100</p>`;
+                    
+                    // Add feedback information if available
+                    if (d.feedback_count > 0) {
+                        tooltipContent += `
+                        <p><strong>Avg. Feedback Rating:</strong> ${d.avg_feedback_rating}/5 (${d.feedback_count} ratings)</p>`;
+                    }
+                    
+                    tooltipContent += `<p><strong>Cluster:</strong> ${d.cluster_id.substring(0, 8)}...</p>`;
+                    
+                    // Add axis-specific values if they're custom
+                    if (xDimension.startsWith('interest_') || xDimension === 'professional_level' || 
+                        xDimension === 'avg_feedback_rating' || xDimension === 'feedback_count') {
+                        tooltipContent += `<p><strong>${formatDimensionLabel(xDimension)}:</strong> ${formatDimensionValue(d[xDimension], xDimension)}</p>`;
+                    }
+                    
+                    if (yDimension.startsWith('interest_') || yDimension === 'professional_level' || 
+                        yDimension === 'avg_feedback_rating' || yDimension === 'feedback_count') {
+                        tooltipContent += `<p><strong>${formatDimensionLabel(yDimension)}:</strong> ${formatDimensionValue(d[yDimension], yDimension)}</p>`;
+                    }
+                    
+                    // Add education and age if available
+                    if (d.education_level) {
+                        tooltipContent += `<p><strong>Education:</strong> ${d.education_level}</p>`;
+                    }
+                    if (d.age) {
+                        tooltipContent += `<p><strong>Age:</strong> ${d.age}</p>`;
+                    }
+                    
+                    // Add interests if available
+                    if (d.interests && d.interests.length > 0) {
+                        tooltipContent += `<p><strong>Interests:</strong> ${d.interests.join(', ')}</p>`;
+                    }
+                    
+                    tooltip.html(tooltipContent)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function(d) {
+                    d3.select(this)
+                        .transition()
+                        .duration(200)
+                        .attr("r", 4)
+                        .attr("stroke-width", 1.5)
+                        .attr("opacity", 0.7);
+                        
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                })
+                .on("click", function(event, d) {
+                    // Set the user selection dropdown to this user
+                    const userSelect = document.getElementById('user-select');
+                    userSelect.value = d.id;
+                    
+                    // Trigger the change event
+                    const changeEvent = new Event('change');
+                    userSelect.dispatchEvent(changeEvent);
+                    
+                    // Switch to the user preferences tab
+                    document.querySelector('.tab[data-tab="userPreferences"]').click();
+                })
+                .transition()
+                .duration(800)
+                .delay((d, i) => i * 20)
+                .attr("r", 4);
+            
+            // Create legend with enhanced styling and custom names
+            createLegend();
+            
+            // Display cluster information
+            displayClusterInfo(clusterData);
+        }
+        
+        function displayClusterInfo(clusters) {
+            const clusterInfoDiv = document.getElementById("cluster-info");
+            clusterInfoDiv.innerHTML = "";
+            
+            const heading = document.createElement("h3");
+            heading.textContent = "Cluster Details";
+            clusterInfoDiv.appendChild(heading);
+            
+            clusters.forEach(cluster => {
+                const clusterDiv = document.createElement("div");
+                clusterDiv.style.marginBottom = "20px";
+                clusterDiv.style.padding = "15px";
+                clusterDiv.style.borderRadius = "8px";
+                clusterDiv.style.backgroundColor = "#f9f9f9";
+                clusterDiv.style.borderLeft = "4px solid " + d3.schemeTableau10[clusters.indexOf(cluster) % 10];
+                
+                // Use custom name if available
+                const clusterName = cluster.metadata?.custom_name || `Cluster ${cluster.id.substring(0, 8)}...`;
+                
+                const clusterTitle = document.createElement("h4");
+                clusterTitle.textContent = clusterName;
+                clusterTitle.style.margin = "0 0 10px 0";
+                clusterDiv.appendChild(clusterTitle);
+                
+                const clusterDetails = document.createElement("div");
+                clusterDetails.innerHTML = `
+                    <p><strong>Member Count:</strong> ${cluster.member_count}</p>
+                    <p><strong>Creation Method:</strong> ${cluster.metadata?.creation_method || 'Unknown'}</p>
+                    <p><strong>Technical Depth:</strong> ${Math.round(cluster.centroid.technical_depth * 100)}/100</p>
+                    <p><strong>Visual Learning:</strong> ${Math.round(cluster.centroid.visual_learning * 100)}/100</p>
+                    <p><strong>Practical Examples:</strong> ${Math.round(cluster.centroid.practical_examples * 100)}/100</p>
+                `;
+                
+                // Add description if available
+                if (cluster.metadata && cluster.metadata.description) {
+                    const description = document.createElement("p");
+                    description.innerHTML = `<strong>Description:</strong> ${cluster.metadata.description}`;
+                    clusterDetails.appendChild(description);
+                }
+                
+                clusterDiv.appendChild(clusterDetails);
+                clusterInfoDiv.appendChild(clusterDiv);
+            });
+            
+            // Add a message if no clusters
+            if (clusters.length === 0) {
+                const noDataMsg = document.createElement("p");
+                noDataMsg.textContent = "No cluster data available. Please ensure your database has user clusters defined.";
+                noDataMsg.style.padding = "15px";
+                noDataMsg.style.backgroundColor = "#fff2f0";
+                noDataMsg.style.borderRadius = "6px";
+                clusterInfoDiv.appendChild(noDataMsg);
+            }
+        }
+        
+        function formatDimensionLabel(dimension) {
+            return dimension
+                .split('_')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+        }
+        
+        function populateUserSelect() {
+            const userSelect = document.getElementById('user-select');
+            userSelect.innerHTML = '<option value="">-- Select User --</option>';
+            
+            userData.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.id;
+                option.textContent = user.username || `User ${user.id.substring(0, 8)}...`;
+                userSelect.appendChild(option);
+            });
+            
+            // Populate checkbox groups
+            populateCheckboxGroup('interests-group', INTERESTS);
+            populateCheckboxGroup('analogy-domains-group', ANALOGY_DOMAINS);
+            
+            // Add event listener to user select
+            userSelect.addEventListener('change', function() {
+                const userId = this.value;
+                if (userId) {
+                    const user = userData.find(u => u.id === userId);
+                    displayUserDetails(user);
+                } else {
+                    document.getElementById('user-details').style.display = 'none';
+                }
+            });
+            
+            // Add event listener to preference form
+            document.getElementById('preference-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                updateUserPreferences();
+            });
+            
+            // Add event listener to technical depth slider
+            document.getElementById('technical-depth').addEventListener('input', function() {
+                document.getElementById('technical-depth-value').textContent = this.value;
+            });
+        }
+        
+        function populateCheckboxGroup(elementId, options) {
+            const container = document.getElementById(elementId);
+            container.innerHTML = '';
+            
+            options.forEach(option => {
+                const div = document.createElement('div');
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `${elementId}-${option.toLowerCase().replace(/\s/g, '-')}`;
+                checkbox.name = elementId === 'interests-group' ? 'interests' : 'analogy_domains';
+                checkbox.value = option;
+                
+                const label = document.createElement('label');
+                label.htmlFor = checkbox.id;
+                label.textContent = option;
+                
+                div.appendChild(checkbox);
+                div.appendChild(label);
+                container.appendChild(div);
+            });
+        }
+        
+        function displayUserDetails(user) {
+            const userDetails = document.getElementById('user-details');
+            const currentInfo = document.getElementById('current-info');
+            
+            // Display user info
+            currentInfo.innerHTML = `
+                <p><strong>Username:</strong> ${user.username || 'Not specified'}</p>
+                <p><strong>Learning Style:</strong> ${user.learning_style || 'Not specified'}</p>
+                <p><strong>Technical Depth:</strong> ${user.technical_depth}/100</p>
+                <p><strong>Age:</strong> ${user.age || 'Not specified'}</p>
+                <p><strong>Education Level:</strong> ${user.education_level || 'Not specified'}</p>
+                <p><strong>Occupation:</strong> ${user.occupation || 'Not specified'}</p>
+                <p><strong>Learning Goal:</strong> ${user.main_learning_goal || 'Not specified'}</p>
+                <p><strong>Interests:</strong> ${user.interests?.join(', ') || 'None'}</p>
+                <p><strong>Analogy Domains:</strong> ${user.preferred_analogy_domains?.join(', ') || 'None'}</p>
+                <p><strong>Current Cluster:</strong> ${user.cluster_id?.substring(0, 8) || 'Unassigned'}...</p>
+            `;
+            
+            // Fetch and display user conversation feedback
+            fetchUserFeedback(user.id);
+            
+            // Set form values
+            document.getElementById('technical-depth').value = user.technical_depth || 50;
+            document.getElementById('technical-depth-value').textContent = user.technical_depth || 50;
+            
+            const learningStyleSelect = document.getElementById('learning-style');
+            for (let i = 0; i < learningStyleSelect.options.length; i++) {
+                if (learningStyleSelect.options[i].value === user.learning_style) {
+                    learningStyleSelect.selectedIndex = i;
+                    break;
+                }
+            }
+            
+            // Clear all checkboxes
+            document.querySelectorAll('#interests-group input, #analogy-domains-group input').forEach(cb => {
+                cb.checked = false;
+            });
+            
+            // Set interests checkboxes
+            if (user.interests) {
+                user.interests.forEach(interest => {
+                    const checkbox = document.querySelector(`#interests-group-${interest.toLowerCase().replace(/\s/g, '-')}`);
+                    if (checkbox) checkbox.checked = true;
+                });
+            }
+            
+            // Set analogy domains checkboxes
+            if (user.preferred_analogy_domains) {
+                user.preferred_analogy_domains.forEach(domain => {
+                    const checkbox = document.querySelector(`#analogy-domains-group-${domain.toLowerCase().replace(/\s/g, '-')}`);
+                    if (checkbox) checkbox.checked = true;
+                });
+            }
+            
+            userDetails.style.display = 'block';
+        }
+        
+        // Function to fetch user conversation feedback
+        async function fetchUserFeedback(userId) {
+            const feedbackHistory = document.getElementById('feedback-history');
+            feedbackHistory.innerHTML = '<p id="feedback-loading">Loading conversation feedback...</p>';
+            
+            try {
+                const response = await fetch(`/api/user-feedback/${userId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch user feedback: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                // Check for message indicating system not configured
+                if (data.message) {
+                    feedbackHistory.innerHTML = `<p>${data.message}</p>`;
+                    return;
+                }
+                
+                if (!data.feedback || data.feedback.length === 0) {
+                    feedbackHistory.innerHTML = '<p>No conversation feedback found for this user.</p>';
+                    return;
+                }
+                
+                // Display feedback
+                feedbackHistory.innerHTML = '';
+                
+                // Add debug information 
+                const debugInfo = document.createElement('div');
+                debugInfo.style.backgroundColor = '#f0f2f5';
+                debugInfo.style.padding = '10px';
+                debugInfo.style.marginBottom = '15px';
+                debugInfo.style.borderRadius = '4px';
+                debugInfo.innerHTML = `<strong>Debug:</strong> Found ${data.feedback.length} feedback items<br>`;
+                
+                if (data.feedback.length > 0) {
+                    const firstItem = data.feedback[0];
+                    debugInfo.innerHTML += `First item rating (raw): <code>${JSON.stringify(firstItem.rating)}</code><br>`;
+                    debugInfo.innerHTML += `First item rating (parsed): <code>${typeof firstItem.rating === 'number' ? firstItem.rating : Number(firstItem.rating) || 0}</code>`;
+                }
+                
+                // Uncomment this line to show debug info
+                // feedbackHistory.appendChild(debugInfo);
+                
+                data.feedback.forEach(item => {
+                    // Ensure rating is properly parsed as a number
+                    const rating = typeof item.rating === 'number' ? item.rating : Number(item.rating) || 0;
+                    console.log('Item rating:', item.rating, 'Parsed to:', rating);
+                    
+                    const feedbackItem = document.createElement('div');
+                    feedbackItem.className = 'feedback-item';
+                    
+                    // Determine feedback class based on rating
+                    let feedbackClass = 'feedback-neutral';
+                    if (rating >= 4) {
+                        feedbackClass = 'feedback-positive';
+                    } else if (rating <= 2) {
+                        feedbackClass = 'feedback-negative';
+                    }
+                    
+                    // Format date
+                    const feedbackDate = new Date(item.timestamp);
+                    const formattedDate = feedbackDate.toLocaleString();
+                    
+                    // Process the system response to extract relevant content
+                    let formattedSystemResponse = item.system_response;
+                    
+                    try {
+                        // Check if it's a JSON string
+                        if (typeof item.system_response === 'string' && 
+                            (item.system_response.startsWith('{') || item.system_response.startsWith('['))) {
+                            
+                            const responseObj = JSON.parse(item.system_response);
+                            
+                            // Extract the most relevant parts for display
+                            if (responseObj.explanation) {
+                                formattedSystemResponse = responseObj.explanation;
+                            } else if (responseObj.recap) {
+                                formattedSystemResponse = responseObj.recap;
+                            } else if (responseObj.response) {
+                                formattedSystemResponse = responseObj.response;
+                            } else if (responseObj.text) {
+                                formattedSystemResponse = responseObj.text;
+                            } else if (responseObj.content) {
+                                formattedSystemResponse = responseObj.content;
+                            }
+                        }
+                    } catch (e) {
+                        console.log('Error parsing system response as JSON, using raw text');
+                        // Keep original text if JSON parsing fails
+                    }
+                    
+                    // Truncate long text for better display
+                    const truncateText = (text, maxLength = 250) => {
+                        if (!text) return 'No text recorded';
+                        if (text.length <= maxLength) return text;
+                        return text.substring(0, maxLength) + '...';
+                    };
+                    
+                    // Create star rating display
+                    const createStarRating = (rating) => {
+                        const fullStars = Math.floor(rating);
+                        const halfStar = rating % 1 >= 0.5;
+                        const emptyStars = 5 - fullStars - (halfStar ? 1 : 0);
+                        
+                        let starsHtml = '';
+                        
+                        // Add full stars
+                        for (let i = 0; i < fullStars; i++) {
+                            starsHtml += '<span class="star full-star">★</span>';
+                        }
+                        
+                        // Add half star if needed
+                        if (halfStar) {
+                            starsHtml += '<span class="star half-star">★</span>';
+                        }
+                        
+                        // Add empty stars
+                        for (let i = 0; i < emptyStars; i++) {
+                            starsHtml += '<span class="star empty-star">☆</span>';
+                        }
+                        
+                        return `<div class="star-rating ${feedbackClass}">${starsHtml}</div>`;
+                    };
+                    
+                    feedbackItem.innerHTML = `
+                        <div class="user-input">
+                            <strong>User:</strong> ${truncateText(item.user_input)}
+                        </div>
+                        <div class="system-response">
+                            <strong>System:</strong> ${truncateText(formattedSystemResponse)}
+                        </div>
+                        <div class="user-feedback">
+                            <div class="feedback-rating-container">
+                                ${createStarRating(rating)}
+                                <span class="rating-text ${feedbackClass}">${rating}/5</span>
+                            </div>
+                            <span class="feedback-comment">${item.comment || ''}</span>
+                            <span class="feedback-date">${formattedDate}</span>
+                        </div>
+                    `;
+                    
+                    // Add expand/collapse functionality for long conversations
+                    if ((item.user_input && item.user_input.length > 250) || 
+                        (formattedSystemResponse && formattedSystemResponse.length > 250)) {
+                        const expandButton = document.createElement('button');
+                        expandButton.textContent = 'Show full conversation';
+                        expandButton.className = 'expand-btn';
+                        expandButton.style.cssText = 'margin-top: 10px; font-size: 12px; padding: 5px 10px;';
+                        
+                        expandButton.addEventListener('click', function() {
+                            if (this.textContent === 'Show full conversation') {
+                                feedbackItem.querySelector('.user-input').innerHTML = 
+                                    `<strong>User:</strong> ${item.user_input || 'No input recorded'}`;
+                                feedbackItem.querySelector('.system-response').innerHTML = 
+                                    `<strong>System:</strong> ${formattedSystemResponse || 'No response recorded'}`;
+                                this.textContent = 'Show less';
+                            } else {
+                                feedbackItem.querySelector('.user-input').innerHTML = 
+                                    `<strong>User:</strong> ${truncateText(item.user_input)}`;
+                                feedbackItem.querySelector('.system-response').innerHTML = 
+                                    `<strong>System:</strong> ${truncateText(formattedSystemResponse)}`;
+                                this.textContent = 'Show full conversation';
+                            }
+                        });
+                        
+                        feedbackItem.appendChild(expandButton);
+                    }
+                    
+                    feedbackHistory.appendChild(feedbackItem);
+                });
+                
+                // Add CSS styles for stars
+                const styleEl = document.createElement('style');
+                styleEl.textContent = `
+                    .star-rating {
+                        display: inline-flex;
+                        font-size: 18px;
+                        margin-right: 8px;
+                    }
+                    .star {
+                        margin-right: 2px;
+                    }
+                    .full-star, .half-star {
+                        color: gold;
+                        text-shadow: 0 0 1px #333;
+                    }
+                    .empty-star {
+                        color: #ccc;
+                    }
+                    .feedback-rating-container {
+                        display: flex;
+                        align-items: center;
+                    }
+                    .rating-text {
+                        font-weight: bold;
+                        font-size: 14px;
+                    }
+                    .feedback-positive {
+                        color: #42b983;
+                    }
+                    .feedback-negative {
+                        color: #e75c3c;
+                    }
+                `;
+                document.head.appendChild(styleEl);
+                
+            } catch (error) {
+                console.error('Error fetching user feedback:', error);
+                feedbackHistory.innerHTML = `<p>Error loading feedback: ${error.message}</p>`;
+            }
+        }
+        
+        async function updateUserPreferences() {
+            const userId = document.getElementById('user-select').value;
+            if (!userId) return;
+            
+            setLoading(true);
+            showStatus('Updating user preferences...');
+            
+            const technicalDepth = parseInt(document.getElementById('technical-depth').value);
+            const learningStyle = document.getElementById('learning-style').value;
+            
+            // Get selected interests
+            const interests = Array.from(document.querySelectorAll('#interests-group input:checked')).map(cb => cb.value);
+            
+            // Get selected analogy domains
+            const analogyDomains = Array.from(document.querySelectorAll('#analogy-domains-group input:checked')).map(cb => cb.value);
+            
+            try {
+                const response = await fetch('/api/update-user-preferences', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        technical_depth: technicalDepth,
+                        learning_style: learningStyle,
+                        interests: interests,
+                        preferred_analogy_domains: analogyDomains
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to update preferences: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                
+                showStatus(`Preferences updated successfully! ${result.message || 'User may have been reassigned to a different cluster.'}`);
+                
+                // Refresh data after a short delay
+                setTimeout(() => {
+                    fetchData();
+                }, 1500);
+            } catch (error) {
+                console.error('Error updating user preferences:', error);
+                showStatus(`Error updating preferences: ${error.message}`, true);
+            } finally {
+                setLoading(false);
+            }
+        }
+        
+        // Move all initialization code into DOMContentLoaded event
+        document.addEventListener('DOMContentLoaded', function() {
+            // Apply dimensions button click handler
+            document.getElementById('apply-dimensions').addEventListener('click', renderVisualization);
+            
+            // Create custom cluster button click handler
+            document.getElementById('create-cluster')?.addEventListener('click', createCustomCluster);
+            
+            // New listeners
+            document.getElementById('create-interest-cluster')?.addEventListener('click', createInterestCluster);
+            document.getElementById('apply-naming-strategy')?.addEventListener('click', applyNamingStrategy);
+            
+            // Tab switching functionality
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    // Remove active class from all tabs and content
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    
+                    // Add active class to clicked tab and corresponding content
+                    tab.classList.add('active');
+                    const contentId = tab.dataset.tab;
+                    const content = document.getElementById(contentId);
+                    if (content) {
+                        content.classList.add('active');
+                    }
+                });
+            });
+            
+            // Sub tabs for cluster management
+            document.querySelectorAll('.sub-tab').forEach(tab => {
+                tab.addEventListener('click', function() {
+                    // Remove active class from all tabs and content
+                    document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.subtab-content').forEach(c => c.classList.remove('active'));
+                    
+                    // Add active class to clicked tab and corresponding content
+                    this.classList.add('active');
+                    const subtabId = this.dataset.subtab;
+                    const subtabContent = document.getElementById(subtabId);
+                    if (subtabContent) {
+                        subtabContent.classList.add('active');
+                        
+                        // Additional initialization based on tab
+                        if (subtabId === 'rename-clusters') {
+                            displayClusterNamingOptions();
+                        }
+                    }
+                });
+            });
+            
+            // Add event listeners to the axis selectors
+            document.getElementById("x-axis")?.addEventListener("change", renderVisualization);
+            document.getElementById("y-axis")?.addEventListener("change", renderVisualization);
+            
+            // Add a loading spinner to the chart container
+            const chartContainer = document.querySelector('.chart-container');
+            if (chartContainer) {
+                const chartHeader = document.createElement('div');
+                chartHeader.className = 'chart-header';
+                chartHeader.innerHTML = `
+                    <h3>User Cluster Visualization</h3>
+                    <div>
+                        <span id="loading-spinner" class="loading-spinner" style="display: none;"></span>
+                    </div>
+                `;
+                chartContainer.prepend(chartHeader);
+            }
+            
+            // Initial data load
+            fetchData();
+        });
+        
+        // Custom cluster creation
+        let customClusters = [];
+        
+        function createCustomCluster() {
+            const clusterName = document.getElementById('cluster-name').value;
+            
+            if (!clusterName) {
+                showStatus('Please provide a name for the custom cluster', true);
+                return;
+            }
+            
+            const primaryAttribute = document.getElementById('primary-attribute').value;
+            const primaryOperator = document.getElementById('primary-operator').value;
+            const primaryValue = document.getElementById('primary-value').value;
+            
+            if (!primaryValue) {
+                showStatus('Please provide a value for the primary criteria', true);
+                return;
+            }
+            
+            const secondaryAttribute = document.getElementById('secondary-attribute').value;
+            const secondaryOperator = document.getElementById('secondary-operator').value;
+            const secondaryValue = document.getElementById('secondary-value').value;
+            
+            // Create the custom cluster object
+            const newCluster = {
+                id: 'custom_' + Date.now(),
+                name: clusterName,
+                criteria: [
+                    {
+                        attribute: primaryAttribute,
+                        operator: primaryOperator,
+                        value: primaryValue
+                    }
+                ],
+                users: []
+            };
+            
+            // Add secondary criteria if provided
+            if (secondaryAttribute && secondaryValue) {
+                newCluster.criteria.push({
+                    attribute: secondaryAttribute,
+                    operator: secondaryOperator,
+                    value: secondaryValue
+                });
+            }
+            
+            // Assign users to this cluster
+            newCluster.users = assignUsersToCustomCluster(newCluster);
+            
+            // Save the custom cluster
+            customClusters.push(newCluster);
+            
+            // Display the custom clusters
+            displayCustomClusters();
+            
+            // Show success message
+            showStatus(`Created custom cluster "${clusterName}" with ${newCluster.users.length} users`);
+            
+            // Clear form
+            document.getElementById('cluster-name').value = '';
+            document.getElementById('primary-value').value = '';
+            document.getElementById('secondary-value').value = '';
+        }
+        
+        function assignUsersToCustomCluster(cluster) {
+            return userData.filter(user => {
+                // Check if user matches all criteria
+                return cluster.criteria.every(criteria => {
+                    return matchesCriteria(user, criteria);
+                });
+            }).map(user => user.id);
+        }
+        
+        function matchesCriteria(user, criteria) {
+            const { attribute, operator, value } = criteria;
+            
+            // Handle different attribute types
+            if (attribute === 'interests' || attribute === 'preferred_analogy_domains') {
+                const userArray = user[attribute] || [];
+                
+                switch (operator) {
+                    case 'contains':
+                        return userArray.some(item => 
+                            item.toLowerCase().includes(value.toLowerCase())
+                        );
+                    case 'equals':
+                        return userArray.some(item => 
+                            item.toLowerCase() === value.toLowerCase()
+                        );
+                    default:
+                        return false;
+                }
+            } else if (attribute === 'technical_depth' || attribute === 'age' || 
+                      attribute.startsWith('interest_') || attribute === 'professional_level') {
+                // Numeric comparison
+                const userValue = parseFloat(user[attribute] || 0);
+                const criteriaValue = parseFloat(value);
+                
+                switch (operator) {
+                    case 'equals':
+                        return userValue === criteriaValue;
+                    case 'greater_than':
+                        return userValue > criteriaValue;
+                    case 'less_than':
+                        return userValue < criteriaValue;
+                    default:
+                        return false;
+                }
+            } else {
+                // String comparison
+                const userValue = (user[attribute] || '').toLowerCase();
+                const criteriaValue = value.toLowerCase();
+                
+                switch (operator) {
+                    case 'equals':
+                        return userValue === criteriaValue;
+                    case 'contains':
+                        return userValue.includes(criteriaValue);
+                    default:
+                        return false;
+                }
+            }
+        }
+        
+        function displayCustomClusters() {
+            const container = document.getElementById('custom-clusters');
+            
+            if (customClusters.length === 0) {
+                container.innerHTML = '<p>No custom clusters created yet.</p>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            customClusters.forEach(cluster => {
+                const clusterDiv = document.createElement('div');
+                clusterDiv.className = 'custom-cluster-item';
+                
+                // Create criteria description strings
+                const criteriaDescriptions = cluster.criteria.map(criteria => {
+                    const attributeLabel = formatDimensionLabel(criteria.attribute);
+                    const operatorLabel = criteria.operator.replace('_', ' ');
+                    return `${attributeLabel} ${operatorLabel} ${criteria.value}`;
+                });
+                
+                clusterDiv.innerHTML = `
+                    <h4>${cluster.name}</h4>
+                    <div class="cluster-badges">
+                        ${criteriaDescriptions.map(desc => 
+                            `<span class="criteria-badge">${desc}</span>`
+                        ).join('')}
+                    </div>
+                    <p><strong>Users in cluster:</strong> ${cluster.users.length}</p>
+                    <div class="actions">
+                        <button class="visualize-btn" data-cluster-id="${cluster.id}">Visualize</button>
+                        <button class="delete-btn" data-cluster-id="${cluster.id}">Delete</button>
+                    </div>
+                `;
+                
+                container.appendChild(clusterDiv);
+            });
+            
+            // Add event listeners to buttons
+            document.querySelectorAll('.visualize-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const clusterId = this.getAttribute('data-cluster-id');
+                    visualizeCustomCluster(clusterId);
+                });
+            });
+            
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const clusterId = this.getAttribute('data-cluster-id');
+                    deleteCustomCluster(clusterId);
+                });
+            });
+        }
+        
+        function visualizeCustomCluster(clusterId) {
+            const customCluster = customClusters.find(c => c.id === clusterId);
+            
+            if (!customCluster) return;
+            
+            // Highlight these users in the visualization
+            d3.selectAll(".user-point")
+                .transition()
+                .duration(200)
+                .attr("opacity", d => customCluster.users.includes(d.id) ? 1 : 0.2)
+                .attr("r", d => customCluster.users.includes(d.id) ? 6 : 3)
+                .attr("stroke-width", d => customCluster.users.includes(d.id) ? 2 : 1);
+            
+            // Switch to visualization tab
+            document.querySelector('.tab[data-tab="visualization"]').click();
+            
+            showStatus(`Highlighting ${customCluster.users.length} users in the "${customCluster.name}" custom cluster`);
+        }
+        
+        function deleteCustomCluster(clusterId) {
+            const index = customClusters.findIndex(c => c.id === clusterId);
+            
+            if (index !== -1) {
+                customClusters.splice(index, 1);
+                displayCustomClusters();
+                showStatus('Custom cluster deleted');
+            }
+        }
+        
+        // Interest-based clustering functionality
+        function createInterestCluster() {
+            const clusterName = document.getElementById('interest-cluster-name').value;
+            
+            if (!clusterName) {
+                showStatus('Please provide a name for the interest cluster', true);
+                return;
+            }
+            
+            // Get selected interests
+            const selectedInterests = Array.from(
+                document.querySelectorAll('input[name="interest"]:checked')
+            ).map(checkbox => checkbox.value);
+            
+            if (selectedInterests.length === 0) {
+                showStatus('Please select at least one interest', true);
+                return;
+            }
+            
+            // Get matching strategy
+            const matchingStrategy = document.querySelector('input[name="interest-matching"]:checked').value;
+            
+            // Create the custom cluster object
+            const newCluster = {
+                id: 'interest_cluster_' + Date.now(),
+                name: clusterName,
+                criteria: {
+                    interests: selectedInterests,
+                    matching: matchingStrategy
+                },
+                users: []
+            };
+            
+            // Assign users to this cluster
+            newCluster.users = userData.filter(user => {
+                if (!user.interests || user.interests.length === 0) {
+                    return false;
+                }
+                
+                if (matchingStrategy === 'any') {
+                    // Match if user has ANY of the selected interests
+                    return user.interests.some(interest => 
+                        selectedInterests.some(selectedInterest => 
+                            interest.toLowerCase().includes(selectedInterest.toLowerCase())
+                        )
+                    );
+                } else {
+                    // Match if user has ALL of the selected interests
+                    return selectedInterests.every(selectedInterest => 
+                        user.interests.some(interest => 
+                            interest.toLowerCase().includes(selectedInterest.toLowerCase())
+                        )
+                    );
+                }
+            }).map(user => user.id);
+            
+            // Save the custom cluster
+            customClusters.push(newCluster);
+            
+            // Display the custom clusters
+            displayCustomClusters();
+            
+            // Show success message
+            showStatus(`Created interest cluster "${clusterName}" with ${newCluster.users.length} users`);
+            
+            // Clear form
+            document.getElementById('interest-cluster-name').value = '';
+            document.querySelectorAll('input[name="interest"]:checked').forEach(cb => {
+                cb.checked = false;
+            });
+        }
+        
+        // Cluster renaming functionality
+        function displayClusterNamingOptions() {
+            const container = document.getElementById('cluster-naming-list');
+            container.innerHTML = '';
+            
+            if (!clusterData || clusterData.length === 0) {
+                container.innerHTML = '<p>No clusters available to rename.</p>';
+                return;
+            }
+            
+            clusterData.forEach(cluster => {
+                const clusterDiv = document.createElement('div');
+                clusterDiv.className = 'cluster-rename-entry';
+                
+                // Get existing custom name or empty
+                let customName = cluster.metadata?.custom_name || '';
+                
+                // Generate descriptive name based on cluster characteristics
+                const descriptiveName = generateDescriptiveClusterName(cluster);
+                
+                clusterDiv.innerHTML = `
+                    <div class="cluster-info">
+                        <strong>ID:</strong> ${cluster.id.substring(0, 8)}...<br>
+                        <strong>Members:</strong> ${cluster.member_count}<br>
+                        <strong>Suggested Name:</strong> ${descriptiveName}
+                    </div>
+                    <input type="text" class="cluster-name-input" 
+                        data-cluster-id="${cluster.id}" 
+                        value="${customName}" 
+                        placeholder="${descriptiveName}">
+                    <button class="save-name-btn" data-cluster-id="${cluster.id}">Save</button>
+                `;
+                
+                container.appendChild(clusterDiv);
+            });
+            
+            // Add event listeners to save buttons
+            document.querySelectorAll('.save-name-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const clusterId = this.getAttribute('data-cluster-id');
+                    const nameInput = document.querySelector(`.cluster-name-input[data-cluster-id="${clusterId}"]`);
+                    const newName = nameInput.value.trim();
+                    
+                    saveClusterName(clusterId, newName);
+                });
+            });
+        }
+        
+        function saveClusterName(clusterId, name) {
+            // Find the cluster in our data
+            const cluster = clusterData.find(c => c.id === clusterId);
+            
+            if (!cluster) {
+                showStatus('Cluster not found', true);
+                return;
+            }
+            
+            // Update the metadata with the custom name
+            if (!cluster.metadata) {
+                cluster.metadata = {};
+            }
+            
+            cluster.metadata.custom_name = name;
+            
+            // In a real application, we would save this to the database
+            // For demo purposes, we'll just update our local data and show success
+            showStatus(`Renamed cluster to "${name}"`);
+            
+            // Refresh the visualization
+            renderVisualization();
+        }
+        
+        function generateDescriptiveClusterName(cluster) {
+            // Extract key characteristics to create a descriptive name
+            
+            // Technical depth level
+            let technicalLevel = 'Medium';
+            if (cluster.centroid.technical_depth < 0.3) {
+                technicalLevel = 'Beginner';
+            } else if (cluster.centroid.technical_depth > 0.7) {
+                technicalLevel = 'Expert';
+            }
+            
+            // Learning style
+            let learningStyle = '';
+            if (cluster.centroid.learning_style_weights) {
+                const styles = Object.entries(cluster.centroid.learning_style_weights)
+                    .sort((a, b) => b[1] - a[1]);
+                
+                if (styles.length > 0 && styles[0][1] > 0.5) {
+                    learningStyle = styles[0][0].charAt(0).toUpperCase() + styles[0][0].slice(1);
+                }
+            }
+            
+            // Check if visual or example preference is strong
+            let preferences = [];
+            if (cluster.centroid.visual_learning > 0.7) {
+                preferences.push('Visual');
+            }
+            if (cluster.centroid.practical_examples > 0.7) {
+                preferences.push('Practical');
+            }
+            
+            // Strongest interest domain if available
+            let domain = '';
+            if (cluster.centroid.interest_weights) {
+                const interests = Object.entries(cluster.centroid.interest_weights)
+                    .sort((a, b) => b[1] - a[1]);
+                
+                if (interests.length > 0 && interests[0][1] > 0.5) {
+                    domain = interests[0][0].charAt(0).toUpperCase() + interests[0][0].slice(1);
+                }
+            }
+            
+            // Build the name based on available info
+            let parts = [];
+            
+            if (technicalLevel) parts.push(technicalLevel);
+            if (learningStyle) parts.push(learningStyle);
+            
+            let descriptor = '';
+            if (preferences.length > 0) {
+                descriptor = preferences.join('-') + ' ';
+            }
+            
+            if (domain) {
+                parts.push(`${domain}-focused`);
+            }
+            
+            parts.push('Learners');
+            
+            return descriptor + parts.join(' ');
+        }
+        
+        function applyNamingStrategy() {
+            const strategy = document.getElementById('cluster-rename-strategy').value;
+            
+            if (strategy === 'auto-descriptive') {
+                // Auto-generate descriptive names for all clusters
+                clusterData.forEach(cluster => {
+                    const descriptiveName = generateDescriptiveClusterName(cluster);
+                    
+                    // Update the metadata with the generated name
+                    if (!cluster.metadata) {
+                        cluster.metadata = {};
+                    }
+                    
+                    cluster.metadata.custom_name = descriptiveName;
+                });
+                
+                showStatus('Applied descriptive names to all clusters');
+                
+                // Refresh the naming list and visualization
+                displayClusterNamingOptions();
+                renderVisualization();
+            }
+        }
+        
+        // Create legend function
+        function createLegend() {
+            const legend = d3.select("#legend");
+            legend.selectAll("*").remove();
+            
+            clusterData.forEach(cluster => {
+                // Use custom name if available
+                const clusterName = cluster.metadata?.custom_name || `Cluster ${cluster.id.substring(0, 6)}...`;
+                
+                const legendItem = legend.append("div")
+                    .attr("class", "legend-item")
+                    .on("mouseover", function() {
+                        d3.select(this).style("background-color", "#e0e0e0");
+                        
+                        // Highlight this cluster's centroid and users
+                        d3.selectAll(".cluster-centroid")
+                            .filter(d => d.id === cluster.id)
+                            .transition()
+                            .duration(200)
+                            .attr("opacity", 1)
+                            .attr("stroke-width", 2.5);
+                            
+                        d3.selectAll(".user-point")
+                            .filter(d => d.cluster_id === cluster.id)
+                            .transition()
+                            .duration(200)
+                            .attr("opacity", 1)
+                            .attr("stroke-width", 2);
+                            
+                        d3.selectAll(".user-point")
+                            .filter(d => d.cluster_id !== cluster.id)
+                            .transition()
+                            .duration(200)
+                            .attr("opacity", 0.3);
+                    })
+                    .on("mouseout", function() {
+                        d3.select(this).style("background-color", "#f0f2f5");
+                        
+                        // Restore all elements
+                        d3.selectAll(".cluster-centroid")
+                            .transition()
+                            .duration(200)
+                            .attr("opacity", 0.8)
+                            .attr("stroke-width", 1.5);
+                            
+                        d3.selectAll(".user-point")
+                            .transition()
+                            .duration(200)
+                            .attr("opacity", 0.7)
+                            .attr("stroke-width", 1.5);
+                    });
+                
+                legendItem.append("div")
+                    .attr("class", "legend-color")
+                    .style("background-color", colorScale(cluster.id));
+                
+                legendItem.append("div")
+                    .html(`<strong>${clusterName}</strong> (${cluster.member_count} users)`);
+            });
+        }
+    </script>
+</body>
+</html> 

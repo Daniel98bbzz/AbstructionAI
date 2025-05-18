@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Cluster View</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f7;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        .cluster {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        .cluster-header {
+            display: flex;
+            justify-content: space-between;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .user {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #eaeaea;
+            border-radius: 4px;
+            background-color: white;
+        }
+        .preference-bar {
+            height: 15px;
+            background-color: #e1e1e1;
+            border-radius: 8px;
+            margin: 5px 0;
+            overflow: hidden;
+        }
+        .preference-fill {
+            height: 100%;
+            background-color: #0071e3;
+            border-radius: 8px;
+        }
+        .preference-label {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2px;
+            font-size: 12px;
+            color: #666;
+        }
+        .cluster-prompt {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            border-left: 4px solid #0071e3;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #d4edda;
+            border-radius: 4px;
+            color: #155724;
+        }
+        .error {
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #f8d7da;
+            border-radius: 4px;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>User Clustering System Visualization</h1>
+        <div id="status" class="status">Loading cluster data...</div>
+        
+        <div id="clusters-container"></div>
+    </div>
+
+    <script>
+        // Load data immediately when page loads
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadAndDisplayData();
+        });
+        
+        async function loadAndDisplayData() {
+            const statusElement = document.getElementById('status');
+            const clustersContainer = document.getElementById('clusters-container');
+            
+            try {
+                // Fetch clusters
+                statusElement.textContent = 'Fetching cluster data...';
+                statusElement.className = 'status';
+                
+                const clustersResponse = await fetch('http://localhost:3001/api/clusters');
+                if (!clustersResponse.ok) {
+                    throw new Error(`Failed to fetch clusters: ${clustersResponse.status} ${clustersResponse.statusText}`);
+                }
+                const clustersData = await clustersResponse.json();
+                
+                // Fetch users in clusters
+                const usersResponse = await fetch('http://localhost:3001/api/cluster-users');
+                if (!usersResponse.ok) {
+                    throw new Error(`Failed to fetch users: ${usersResponse.status} ${usersResponse.statusText}`);
+                }
+                const usersData = await usersResponse.json();
+                
+                // Process and display the data
+                statusElement.textContent = 'Data loaded successfully!';
+                
+                // Group users by cluster
+                const usersByCluster = {};
+                usersData.users.forEach(user => {
+                    if (!usersByCluster[user.cluster_id]) {
+                        usersByCluster[user.cluster_id] = [];
+                    }
+                    usersByCluster[user.cluster_id].push(user);
+                });
+                
+                // Display each cluster and its users
+                clustersContainer.innerHTML = '';
+                if (clustersData.clusters && clustersData.clusters.length > 0) {
+                    clustersData.clusters.forEach(cluster => {
+                        const clusterElement = document.createElement('div');
+                        clusterElement.className = 'cluster';
+                        
+                        // Cluster header
+                        const clusterHeader = document.createElement('div');
+                        clusterHeader.className = 'cluster-header';
+                        
+                        // Cluster title and details
+                        const clusterTitle = document.createElement('h2');
+                        clusterTitle.textContent = `Cluster ${cluster.id.substring(0, 8)}`;
+                        
+                        const clusterInfo = document.createElement('div');
+                        clusterInfo.innerHTML = `
+                            <strong>Members:</strong> ${cluster.member_count} | 
+                            <strong>Created:</strong> ${new Date(cluster.created_at).toLocaleString()} | 
+                            <strong>Method:</strong> ${cluster.metadata?.creation_method || 'Unknown'}
+                        `;
+                        
+                        clusterHeader.appendChild(clusterTitle);
+                        clusterHeader.appendChild(clusterInfo);
+                        clusterElement.appendChild(clusterHeader);
+                        
+                        // Cluster centroid visualization
+                        const centroidSection = document.createElement('div');
+                        centroidSection.innerHTML = `<h3>Cluster Centroid</h3>`;
+                        
+                        if (cluster.centroid) {
+                            // Technical depth
+                            centroidSection.innerHTML += `
+                                <div>
+                                    <strong>Technical Depth:</strong>
+                                    <div class="preference-bar">
+                                        <div class="preference-fill" style="width: ${cluster.centroid.technical_depth * 100}%"></div>
+                                    </div>
+                                    <div class="preference-label">
+                                        <span>Beginner</span>
+                                        <span>${Math.round(cluster.centroid.technical_depth * 100)}%</span>
+                                        <span>Expert</span>
+                                    </div>
+                                </div>
+                            `;
+                            
+                            // Visual learning
+                            centroidSection.innerHTML += `
+                                <div>
+                                    <strong>Visual Learning:</strong>
+                                    <div class="preference-bar">
+                                        <div class="preference-fill" style="width: ${cluster.centroid.visual_learning * 100}%"></div>
+                                    </div>
+                                    <div class="preference-label">
+                                        <span>Text-based</span>
+                                        <span>${Math.round(cluster.centroid.visual_learning * 100)}%</span>
+                                        <span>Visual</span>
+                                    </div>
+                                </div>
+                            `;
+                            
+                            // Practical examples
+                            centroidSection.innerHTML += `
+                                <div>
+                                    <strong>Practical Examples:</strong>
+                                    <div class="preference-bar">
+                                        <div class="preference-fill" style="width: ${cluster.centroid.practical_examples * 100}%"></div>
+                                    </div>
+                                    <div class="preference-label">
+                                        <span>Theoretical</span>
+                                        <span>${Math.round(cluster.centroid.practical_examples * 100)}%</span>
+                                        <span>Practical</span>
+                                    </div>
+                                </div>
+                            `;
+                            
+                            // Learning styles
+                            if (cluster.centroid.learning_style_weights) {
+                                centroidSection.innerHTML += `<h4>Learning Styles</h4>`;
+                                const styles = Object.entries(cluster.centroid.learning_style_weights);
+                                
+                                styles.forEach(([style, weight]) => {
+                                    centroidSection.innerHTML += `
+                                        <div>
+                                            <strong>${style.charAt(0).toUpperCase() + style.slice(1)}:</strong>
+                                            <div class="preference-bar">
+                                                <div class="preference-fill" style="width: ${weight * 100}%"></div>
+                                            </div>
+                                            <div class="preference-label">
+                                                <span>Low</span>
+                                                <span>${Math.round(weight * 100)}%</span>
+                                                <span>High</span>
+                                            </div>
+                                        </div>
+                                    `;
+                                });
+                            }
+                            
+                            // Interest weights
+                            if (cluster.centroid.interest_weights) {
+                                centroidSection.innerHTML += `<h4>Interest Domains</h4>`;
+                                const interests = Object.entries(cluster.centroid.interest_weights)
+                                    .sort((a, b) => b[1] - a[1])
+                                    .filter(([_, weight]) => weight > 0);
+                                
+                                interests.forEach(([interest, weight]) => {
+                                    centroidSection.innerHTML += `
+                                        <div>
+                                            <strong>${interest.charAt(0).toUpperCase() + interest.slice(1)}:</strong>
+                                            <div class="preference-bar">
+                                                <div class="preference-fill" style="width: ${weight * 100}%"></div>
+                                            </div>
+                                            <div class="preference-label">
+                                                <span>Low</span>
+                                                <span>${Math.round(weight * 100)}%</span>
+                                                <span>High</span>
+                                            </div>
+                                        </div>
+                                    `;
+                                });
+                            }
+                        }
+                        
+                        clusterElement.appendChild(centroidSection);
+                        
+                        // Display cluster prompt if available
+                        if (cluster.metadata?.cluster_prompt) {
+                            const promptSection = document.createElement('div');
+                            promptSection.innerHTML = `<h3>Cluster Prompt</h3>`;
+                            
+                            const promptText = document.createElement('div');
+                            promptText.className = 'cluster-prompt';
+                            promptText.textContent = cluster.metadata.cluster_prompt;
+                            
+                            promptSection.appendChild(promptText);
+                            clusterElement.appendChild(promptSection);
+                        }
+                        
+                        // Users in this cluster
+                        const usersSection = document.createElement('div');
+                        usersSection.innerHTML = `<h3>Users in Cluster</h3>`;
+                        
+                        const clusterUsers = usersByCluster[cluster.id] || [];
+                        if (clusterUsers.length > 0) {
+                            clusterUsers.forEach(user => {
+                                const userElement = document.createElement('div');
+                                userElement.className = 'user';
+                                
+                                userElement.innerHTML = `
+                                    <h4>User ${user.user_id}</h4>
+                                    <div><strong>Similarity to Centroid:</strong> ${Math.round(user.similarity * 100)}%</div>
+                                    <div><strong>Last Updated:</strong> ${new Date(user.last_updated).toLocaleString()}</div>
+                                `;
+                                
+                                usersSection.appendChild(userElement);
+                            });
+                        } else {
+                            usersSection.innerHTML += `<p>No users assigned to this cluster yet.</p>`;
+                        }
+                        
+                        clusterElement.appendChild(usersSection);
+                        clustersContainer.appendChild(clusterElement);
+                    });
+                } else {
+                    clustersContainer.innerHTML = '<p>No clusters found in the database.</p>';
+                }
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                statusElement.textContent = `Error: ${error.message}`;
+                statusElement.className = 'error';
+            }
+        }
+    </script>
+</body>
+</html> 
