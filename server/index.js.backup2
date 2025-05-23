@@ -558,41 +558,31 @@ IMPORTANT: Based on topic analysis (${crowdWisdomTopic}) and successful past int
 - You should still use your own knowledge and expertise to craft the best response.
 ` : ''}
 
-IMPORTANT: Respond in a natural, conversational format to help make complex concepts easier to understand.
+IMPORTANT: Respond in a natural, intuitive format to make complex concepts easier to understand.
 
 For ALL QUERIES, provide a comprehensive, conversational explanation in a natural ChatGPT style:
 
 Write a natural, conversational explanation that flows like you're having an engaging conversation with the user. This should be 400-800 words covering the concept thoroughly but in an accessible way.
 
-FORMATTING GUIDELINES:
-- Use **bold text** for key terms, important concepts, and definitions
-- Use numbered lists (1. 2. 3.) for steps, processes, or main points when appropriate
-- Use bullet points (•) for sub-items or lists
-- Break complex ideas into digestible paragraphs with clear structure
-- Make it engaging and easy to follow with good visual hierarchy
-- Use short, punchy sentences for emphasis when needed
-- Structure your response with clear logical flow
-- Use markdown formatting throughout for better readability
+Guidelines:
+- Use natural, flowing language like ChatGPT
+- Include examples naturally within the text to illustrate points  
+- Break complex ideas into digestible parts
+- Use analogies within the text if they help explain the concept
+- Make it engaging and easy to follow
+- DO NOT include bullet points, lists, or structured sections
+- DO NOT include key takeaways at the end
+- Keep it purely conversational and informative
 
-CRITICAL CONTENT RESTRICTIONS:
-- DO NOT include any analogies whatsoever (analogies will be generated separately)
-- DO NOT include any examples whatsoever (examples will be generated separately)
-- DO NOT include key takeaways, summary sections, or concluding bullet points
-- DO NOT compare the concept to anything else
-- DO NOT use phrases like "it's like", "similar to", "for example", "imagine", etc.
-- Focus PURELY on explaining the concept itself without comparisons or illustrations
+For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural, conversational style. Your response should be direct and helpful.
 
-WHAT TO INCLUDE:
-- Define the concept clearly
-- Explain how it works
-- Describe its components or steps
-- Discuss its applications and uses
-- Explain why it's important or useful
-- Keep everything focused on the concept itself
-
-IMPORTANT: This explanation will be shown in the "Main Answer" tab. Examples and analogies will be generated separately for their respective tabs, so NEVER include them here.
-
-For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural, conversational style. Your response should be direct and helpful with proper formatting.`
+${isRegeneration && feedback?.analogyTopic ? 
+  `When explaining, naturally incorporate examples related to: ${feedback.analogyTopic}` : 
+  effectivePreferences?.preferred_analogy_domains?.length ? 
+    `When explaining, naturally use examples from these domains: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}` : 
+    effectivePreferences?.interests?.length ? 
+      `When explaining, relate concepts to the user's interests: ${effectivePreferences?.interests?.join(', ')}` :
+      ``}`
     };
     
     historyMessages.push(systemContext);
@@ -619,7 +609,7 @@ For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural
 
     // Call OpenAI API with enhanced context
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",  // Use GPT-4o for more comprehensive responses
+      model: "gpt-4",  // Use GPT-4 for more comprehensive responses
       messages: historyMessages,
       temperature: 0.7,
       max_tokens: 4000,  // Increased token limit for longer responses
@@ -2112,7 +2102,7 @@ app.post('/api/generate-code-example', async (req, res) => {
     
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4",
       messages: [
         { role: "system", content: "You are a helpful programming tutor who excels at creating educational, clear code examples." },
         { role: "user", content: codePrompt }
@@ -2173,7 +2163,7 @@ app.post('/api/generate-flash-cards', async (req, res) => {
     
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4",
       messages: [
         { role: "system", content: "You are a helpful educational assistant who creates effective flash cards for learning." },
         { role: "user", content: cardsPrompt }
@@ -2305,13 +2295,122 @@ app.get('/api/debug/fix-user-profile/:userId', async (req, res) => {
       
       actionTaken = 'created';
       fixedProfile = createdData[0];
+      
+      // Also update the memory cache
+      if (global.userProfiles) {
+        global.userProfiles[userId] = fixedProfile;
+      }
+    } else if (data.length > 1) {
+      console.log(`Found ${data.length} profiles for user ${userId}, fixing...`);
+      
+      // Keep the most recently updated profile
+      data.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+      const profileToKeep = data[0];
+      const profilesToDelete = data.slice(1);
+      
+      console.log(`Keeping profile from ${profileToKeep.updated_at}, deleting ${profilesToDelete.length} others`);
+      
+      // Delete the duplicate profiles
+      for (const profile of profilesToDelete) {
+        const { error: deleteError } = await supabase
+          .from('user_profiles')
+          .delete()
+          .eq('id', profile.id)
+          .eq('created_at', profile.created_at); // Extra safety condition
+          
+        if (deleteError) {
+          console.error(`Error deleting duplicate profile ${profile.id}:`, deleteError);
+        }
+      }
+      
+      // Get the remaining profile
+      const { data: fixedData, error: fixedError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      if (fixedError) {
+        console.error('Error retrieving fixed profile:', fixedError);
+      } else {
+        fixedProfile = fixedData;
+        
+        // Also update the memory cache
+        if (global.userProfiles) {
+          global.userProfiles[userId] = fixedProfile;
+        }
+      }
+      
+      actionTaken = 'deduplicated';
     } else {
-      actionTaken = 'exists';
-      fixedProfile = data[0];
+      console.log(`Found exactly one profile for user ${userId}`);
+      
+      // Get the complete profile data
+      const { data: profileData, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      if (profileError) {
+        console.error('Error retrieving profile:', profileError);
+      } else {
+        fixedProfile = profileData;
+        
+        // Fix arrays if needed
+        const ensureArray = (value) => {
+          if (Array.isArray(value)) {
+            return value;
+          }
+          if (typeof value === 'string') {
+            try {
+              const parsed = JSON.parse(value);
+              return Array.isArray(parsed) ? parsed : [value];
+            } catch (e) {
+              return [value];
+            }
+          }
+          return value === null || value === undefined ? [] : [value];
+        };
+        
+        const interests = ensureArray(profileData.interests);
+        const domains = ensureArray(profileData.preferred_analogy_domains);
+        
+        // Update if necessary
+        if (typeof profileData.interests === 'string' || typeof profileData.preferred_analogy_domains === 'string') {
+          console.log('Fixing array format in profile');
+          
+          const { data: updatedData, error: updateError } = await supabase
+            .from('user_profiles')
+            .update({
+              interests: interests,
+              preferred_analogy_domains: domains
+            })
+            .eq('id', userId)
+            .select();
+          
+          if (updateError) {
+            console.error('Error updating profile arrays:', updateError);
+          } else if (updatedData) {
+            fixedProfile = updatedData[0];
+            
+            // Also update the memory cache
+            if (global.userProfiles) {
+              global.userProfiles[userId] = fixedProfile;
+            }
+            
+            actionTaken = 'fixed_arrays';
+          }
+        } else {
+          actionTaken = 'verified';
+        }
+      }
     }
     
+    // Return results
     return res.json({
       success: true,
+      userId,
       actionTaken,
       profile: fixedProfile
     });
@@ -2933,41 +3032,31 @@ IMPORTANT: Based on topic analysis (${crowdWisdomTopic}) and successful past int
 - You should still use your own knowledge and expertise to craft the best response.
 ` : ''}
 
-IMPORTANT: Respond in a natural, conversational format to help make complex concepts easier to understand.
+IMPORTANT: Respond in a natural, intuitive format to make complex concepts easier to understand.
 
 For ALL QUERIES, provide a comprehensive, conversational explanation in a natural ChatGPT style:
 
 Write a natural, conversational explanation that flows like you're having an engaging conversation with the user. This should be 400-800 words covering the concept thoroughly but in an accessible way.
 
-FORMATTING GUIDELINES:
-- Use **bold text** for key terms, important concepts, and definitions
-- Use numbered lists (1. 2. 3.) for steps, processes, or main points when appropriate
-- Use bullet points (•) for sub-items or lists
-- Break complex ideas into digestible paragraphs with clear structure
-- Make it engaging and easy to follow with good visual hierarchy
-- Use short, punchy sentences for emphasis when needed
-- Structure your response with clear logical flow
-- Use markdown formatting throughout for better readability
+Guidelines:
+- Use natural, flowing language like ChatGPT
+- Include examples naturally within the text to illustrate points  
+- Break complex ideas into digestible parts
+- Use analogies within the text if they help explain the concept
+- Make it engaging and easy to follow
+- DO NOT include bullet points, lists, or structured sections
+- DO NOT include key takeaways at the end
+- Keep it purely conversational and informative
 
-CRITICAL CONTENT RESTRICTIONS:
-- DO NOT include any analogies whatsoever (analogies will be generated separately)
-- DO NOT include any examples whatsoever (examples will be generated separately)
-- DO NOT include key takeaways, summary sections, or concluding bullet points
-- DO NOT compare the concept to anything else
-- DO NOT use phrases like "it's like", "similar to", "for example", "imagine", etc.
-- Focus PURELY on explaining the concept itself without comparisons or illustrations
+For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural, conversational style. Your response should be direct and helpful.
 
-WHAT TO INCLUDE:
-- Define the concept clearly
-- Explain how it works
-- Describe its components or steps
-- Discuss its applications and uses
-- Explain why it's important or useful
-- Keep everything focused on the concept itself
-
-IMPORTANT: This explanation will be shown in the "Main Answer" tab. Examples and analogies will be generated separately for their respective tabs, so NEVER include them here.
-
-For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural, conversational style. Your response should be direct and helpful with proper formatting.`
+${isRegeneration && feedback?.analogyTopic ? 
+  `When explaining, naturally incorporate examples related to: ${feedback.analogyTopic}` : 
+  effectivePreferences?.preferred_analogy_domains?.length ? 
+    `When explaining, naturally use examples from these domains: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}` : 
+    effectivePreferences?.interests?.length ? 
+      `When explaining, relate concepts to the user's interests: ${effectivePreferences?.interests?.join(', ')}` :
+      ``}`
     };
     
     historyMessages.push(systemContext);
@@ -2994,7 +3083,7 @@ For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural
 
     // Call OpenAI API with enhanced context
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",  // Use GPT-4o for more comprehensive responses
+      model: "gpt-4",  // Use GPT-4 for more comprehensive responses
       messages: historyMessages,
       temperature: 0.7,
       max_tokens: 4000,  // Increased token limit for longer responses
@@ -3257,7 +3346,7 @@ app.post('/api/component-feedback', async (req, res) => {
   }
 });
 
-
+// Helper function to calculate average
 // Add context endpoint
 app.get('/api/context/:sessionId', async (req, res) => {
   try {
@@ -4481,7 +4570,7 @@ app.post('/api/generate-code-example', async (req, res) => {
     
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4",
       messages: [
         { role: "system", content: "You are a helpful programming tutor who excels at creating educational, clear code examples." },
         { role: "user", content: codePrompt }
@@ -4542,7 +4631,7 @@ app.post('/api/generate-flash-cards', async (req, res) => {
     
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4",
       messages: [
         { role: "system", content: "You are a helpful educational assistant who creates effective flash cards for learning." },
         { role: "user", content: cardsPrompt }
@@ -4609,91 +4698,6 @@ app.post('/api/generate-flash-cards', async (req, res) => {
   }
 });
 
-// Add a debug endpoint to check and fix user profiles
-app.get('/api/debug/fix-user-profile/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    if (!userId) {
-      return res.status(400).json({ success: false, message: 'User ID is required' });
-    }
-    
-    console.log('Checking profile for user:', userId);
-    
-    // Step 1: Check how many profiles exist for this user
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('id, username, created_at, updated_at')
-      .eq('id', userId);
-    
-    if (error) {
-      console.error('Error checking profiles:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Error checking profiles', 
-        error: error.message 
-      });
-    }
-    
-    let actionTaken = 'none';
-    let fixedProfile = null;
-    
-    // Step 2: Take appropriate action based on results
-    if (data.length === 0) {
-      console.log(`No profile found for user ${userId}, creating one`);
-      
-      // Create a new profile
-      const defaultProfile = {
-        id: userId,
-        username: 'user_' + userId.substring(0, 8),
-        occupation: 'Student',
-        age: 25,
-        education_level: 'Undergraduate',
-        interests: ['Video Games', 'Art'],
-        learning_style: 'Visual',
-        technical_depth: 50,
-        preferred_analogy_domains: ['Gaming', 'Cooking'],
-        main_learning_goal: 'Personal Interest',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      
-      const { data: createdData, error: createError } = await supabase
-        .from('user_profiles')
-        .insert([defaultProfile])
-        .select();
-      
-      if (createError) {
-        console.error('Error creating profile:', createError);
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Failed to create profile', 
-          error: createError.message 
-        });
-      }
-      
-      actionTaken = 'created';
-      fixedProfile = createdData[0];
-    } else {
-      actionTaken = 'exists';
-      fixedProfile = data[0];
-    }
-    
-    return res.json({
-      success: true,
-      actionTaken,
-      profile: fixedProfile
-    });
-  } catch (error) {
-    console.error('Error in fix-user-profile endpoint:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
-  }
-});
-
 // Add endpoint to generate examples based on explanation
 app.post('/api/generate-examples', async (req, res) => {
   try {
@@ -4703,28 +4707,11 @@ app.post('/api/generate-examples', async (req, res) => {
       return res.status(400).json({ error: 'Explanation is required' });
     }
     
-    console.log('💡 EXAMPLES DEBUG - Received request:', {
-      explanation: explanation.substring(0, 100) + '...',
-      query: query,
-      userPreferences: userPreferences,
-      userPreferencesType: typeof userPreferences,
-      hasUserPreferences: !!userPreferences,
-      interests: userPreferences?.interests,
-      interestsLength: userPreferences?.interests?.length,
-      interestsType: typeof userPreferences?.interests
-    });
-    
-    const userInterests = userPreferences?.interests?.length ? 
-      userPreferences.interests : ['general topics'];
-    
-    console.log('💡 Using interests for examples:', userInterests);
-    console.log('💡 Interest source:', userPreferences?.interests?.length ? 'user preferences' : 'fallback');
+    console.log('Generating examples for explanation');
     
     const examplesPrompt = `Based on this explanation: "${explanation}"
 
 Generate exactly 5 practical, concrete examples that illustrate the concept. Each example should be relatable and help someone understand the topic better.
-
-IMPORTANT: Try to relate the examples to these user interests when possible: ${userInterests.join(', ')}
 
 Respond with a JSON array in this exact format:
 [
@@ -4736,25 +4723,16 @@ Respond with a JSON array in this exact format:
     "title": "Example Title 2", 
     "description": "2-3 sentence description of the example"
   },
-  {
-    "title": "Example Title 3",
-    "description": "2-3 sentence description of the example"
-  },
-  {
-    "title": "Example Title 4",
-    "description": "2-3 sentence description of the example"
-  },
-  {
-    "title": "Example Title 5",
-    "description": "2-3 sentence description of the example"
-  }
+  ...
 ]
 
-Make the examples relevant to the user's interests: ${userInterests.join(', ')}`;
+User preferences: ${JSON.stringify(userPreferences || {})}
+
+Make the examples relevant to the user's interests if possible: ${userPreferences?.interests?.join(', ') || 'general topics'}`;
     
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4",
       messages: [
         { role: "system", content: "You are a helpful educational assistant who creates practical, relatable examples. Always respond with valid JSON." },
         { role: "user", content: examplesPrompt }
@@ -4764,7 +4742,6 @@ Make the examples relevant to the user's interests: ${userInterests.join(', ')}`
     });
     
     const responseText = completion.choices[0].message.content;
-    console.log('Raw examples response:', responseText.substring(0, 200) + '...');
     
     try {
       // Try to parse JSON directly
@@ -4774,18 +4751,13 @@ Make the examples relevant to the user's interests: ${userInterests.join(', ')}`
         throw new Error('Response is not an array');
       }
       
-      console.log('Successfully parsed examples:', examples.length);
-      
       return res.json({ examples });
     } catch (parseError) {
-      console.error('Failed to parse examples response:', parseError);
-      
       // If JSON parsing fails, try to extract array
       const jsonMatch = responseText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         try {
           const examples = JSON.parse(jsonMatch[0]);
-          console.log('Extracted and parsed examples:', examples.length);
           return res.json({ examples });
         } catch (e) {
           console.error('Failed to parse extracted JSON:', e);
@@ -4793,7 +4765,7 @@ Make the examples relevant to the user's interests: ${userInterests.join(', ')}`
       }
       
       // Fallback: create examples from the text
-      console.log('Creating fallback examples');
+      console.log('Creating fallback examples from response text');
       const fallbackExamples = [
         {
           title: "Practical Application",
@@ -4806,14 +4778,6 @@ Make the examples relevant to the user's interests: ${userInterests.join(', ')}`
         {
           title: "Professional Use Case",
           description: "This concept is widely used in professional and academic contexts."
-        },
-        {
-          title: "Simple Demonstration",
-          description: "A basic example that shows the fundamental principles of this concept."
-        },
-        {
-          title: "Advanced Application",
-          description: "How this concept is used in more complex scenarios and systems."
         }
       ];
       
@@ -4834,70 +4798,41 @@ app.post('/api/generate-analogies', async (req, res) => {
       return res.status(400).json({ error: 'Explanation is required' });
     }
     
-    console.log('🔍 ANALOGIES DEBUG - Received request:', {
-      explanation: explanation.substring(0, 100) + '...',
-      query: query,
-      userPreferences: userPreferences,
-      userPreferencesType: typeof userPreferences,
-      hasUserPreferences: !!userPreferences,
-      interests: userPreferences?.interests,
-      interestsLength: userPreferences?.interests?.length,
-      interestsType: typeof userPreferences?.interests,
-      preferred_analogy_domains: userPreferences?.preferred_analogy_domains,
-      domainsLength: userPreferences?.preferred_analogy_domains?.length,
-      domainsType: typeof userPreferences?.preferred_analogy_domains
-    });
+    console.log('Generating analogies for explanation');
     
     const analogyDomains = userPreferences?.preferred_analogy_domains?.length ? 
-      userPreferences.preferred_analogy_domains : 
-      (userPreferences?.interests?.length ? userPreferences.interests : ['everyday life']);
-    
-    console.log('🎯 Using analogy domains:', analogyDomains);
-    console.log('🎯 Domain source:', userPreferences?.preferred_analogy_domains?.length ? 
-      'preferred_analogy_domains' : 
-      (userPreferences?.interests?.length ? 'interests' : 'fallback'));
+      userPreferences.preferred_analogy_domains : userPreferences?.interests || ['everyday life'];
     
     const analogiesPrompt = `Based on this explanation: "${explanation}"
 
-Generate exactly 3 analogies that help explain this concept.
+Generate exactly 3 analogies that help explain this concept using these domains: ${analogyDomains.join(', ')}
 
-IMPORTANT: You MUST use ONLY these specific domains for your analogies: ${analogyDomains.join(', ')}
-
-Each analogy should:
-1. Use ONLY the specified domains (${analogyDomains.join(', ')})
-2. Make the concept easier to understand by comparing it to something familiar from those domains
-3. Be creative and insightful within those domain constraints
+Each analogy should make the concept easier to understand by comparing it to something familiar.
 
 Respond with a JSON array in this exact format:
 [
   {
     "title": "Analogy Title",
-    "description": "2-3 sentence analogy explanation using the specified domain",
-    "domain": "Domain name (must be one of: ${analogyDomains.join(', ')})"
+    "description": "2-3 sentence analogy explanation",
+    "domain": "Domain name (e.g., cooking, gaming, etc.)"
   },
   {
     "title": "Analogy Title 2",
-    "description": "2-3 sentence analogy explanation using the specified domain", 
-    "domain": "Domain name (must be one of: ${analogyDomains.join(', ')})"
+    "description": "2-3 sentence analogy explanation", 
+    "domain": "Domain name"
   },
-  {
-    "title": "Analogy Title 3",
-    "description": "2-3 sentence analogy explanation using the specified domain",
-    "domain": "Domain name (must be one of: ${analogyDomains.join(', ')})"
-  }
+  ...
 ]
 
-Remember: ONLY use analogies from these domains: ${analogyDomains.join(', ')}
-Do NOT use generic analogies or domains outside of this list.`;
+User preferences: ${JSON.stringify(userPreferences || {})}
+
+Focus on analogies from these domains: ${analogyDomains.join(', ')}`;
     
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4",
       messages: [
-        { 
-          role: "system", 
-          content: `You are a helpful educational assistant who creates insightful analogies. You MUST use ONLY the specified domains provided by the user for your analogies. Always respond with valid JSON.` 
-        },
+        { role: "system", content: "You are a helpful educational assistant who creates insightful analogies. Always respond with valid JSON." },
         { role: "user", content: analogiesPrompt }
       ],
       temperature: 0.7,
@@ -4905,7 +4840,6 @@ Do NOT use generic analogies or domains outside of this list.`;
     });
     
     const responseText = completion.choices[0].message.content;
-    console.log('Raw analogies response:', responseText.substring(0, 200) + '...');
     
     try {
       // Try to parse JSON directly
@@ -4915,37 +4849,99 @@ Do NOT use generic analogies or domains outside of this list.`;
         throw new Error('Response is not an array');
       }
       
-      console.log('Successfully parsed analogies:', analogies.map(a => ({ title: a.title, domain: a.domain })));
-      
       return res.json({ analogies });
     } catch (parseError) {
-      console.error('Failed to parse analogies response:', parseError);
-      
       // If JSON parsing fails, try to extract array
       const jsonMatch = responseText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         try {
           const analogies = JSON.parse(jsonMatch[0]);
-          console.log('Extracted and parsed analogies:', analogies.map(a => ({ title: a.title, domain: a.domain })));
           return res.json({ analogies });
         } catch (e) {
           console.error('Failed to parse extracted JSON:', e);
         }
       }
       
-      // Fallback: create analogies from the specified domains
-      console.log('Creating fallback analogies with domains:', analogyDomains);
-      const fallbackAnalogies = analogyDomains.slice(0, 3).map((domain, idx) => ({
-        title: `${domain} Analogy`,
-        description: `This concept is similar to a process in ${domain} that demonstrates the same principles.`,
-        domain: domain
-      }));
+      // Fallback: create analogies from the text
+      console.log('Creating fallback analogies from response text');
+      const fallbackAnalogies = [
+        {
+          title: "Simple Comparison",
+          description: "This concept is like a familiar process that we encounter in daily life.",
+          domain: "everyday life"
+        },
+        {
+          title: "Practical Analogy",
+          description: "Think of this concept as similar to something you already understand well.",
+          domain: analogyDomains[0] || "general"
+        }
+      ];
       
       return res.json({ analogies: fallbackAnalogies });
     }
   } catch (error) {
     console.error('Error generating analogies:', error);
     res.status(500).json({ error: 'Failed to generate analogies' });
+  }
+});
+
+// Add code example generation endpoint
+app.post('/api/generate-code-example', async (req, res) => {
+  try {
+    const { prompt, technical_depth = 50 } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+    
+    console.log('Generating code example with technical depth:', technical_depth);
+    
+    // Create a prompt that focuses on code generation
+    const codePrompt = `Generate a clear, well-commented code example for the following concept:\n${prompt}\n\n
+    Make sure the code is:
+    1. Concise but educational
+    2. Well-commented to explain how it relates to the concept
+    3. Runnable where possible
+    4. At a technical level of ${technical_depth}/100 (higher = more technical)
+    
+    IMPORTANT: Do NOT respond with JSON. Instead, just provide the code example with a language indicator.
+    Use the format:
+    
+    \`\`\`[language]
+    [your code here]
+    \`\`\``;
+    
+    // Call OpenAI API
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: "You are a helpful programming tutor who excels at creating educational, clear code examples." },
+        { role: "user", content: codePrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 1000
+    });
+    
+    const responseText = completion.choices[0].message.content;
+    
+    // Try to extract code using markdown code blocks
+    const codeBlockMatch = responseText.match(/```([a-zA-Z0-9]+)?\n([\s\S]*?)\n```/);
+    if (codeBlockMatch) {
+      return res.json({
+        language: codeBlockMatch[1] || 'javascript',
+        code: codeBlockMatch[2].trim()
+      });
+    }
+    
+    // If no code block found, return the entire response as text
+    return res.json({
+      language: 'text',
+      code: responseText.trim()
+    });
+    
+  } catch (error) {
+    console.error('Error generating code example:', error);
+    res.status(500).json({ error: 'Failed to generate code example' });
   }
 });
 

@@ -9,6 +9,7 @@ import QueryToQuiz from '../components/QueryToQuiz';
 import { generateQuizQuestions as generateQuizAPI } from '../api/quizApi';
 import { toast } from 'react-hot-toast';
 import ProjectPreferencesModal from '../components/ProjectPreferencesModal';
+import ResponseTabs from '../components/ResponseTabs';
 
 function QueryPage() {
   const [quizMode, setQuizMode] = useState(false);
@@ -39,6 +40,9 @@ function QueryPage() {
       visualLearning: 50,
       practicalExamples: 50,
       technicalDepth: 50,
+      // Add default interests and analogy domains so they're not empty
+      interests: ['Technology', 'Science'],
+      preferred_analogy_domains: ['Technology', 'Everyday Life']
     };
   });
   const [messages, setMessages] = useState(() => {
@@ -491,26 +495,59 @@ function QueryPage() {
       projectPreferences: activeProjectData?.preferences
     });
 
-    // Merge project preferences with global preferences to ensure no values are empty
+    // Fetch current user profile to ensure we have the latest preferences
+    let userProfileData = null;
+    try {
+      const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+      if (!userError && currentUser) {
+        // Try to get user profile from our debug endpoint to ensure we get the real data
+        const profileResponse = await fetch(`/api/debug/actual-profile/${currentUser.id}`);
+        if (profileResponse.ok) {
+          const profileResult = await profileResponse.json();
+          userProfileData = profileResult.parsed || profileResult.raw;
+          console.log('Fetched current user profile data:', {
+            interests: userProfileData?.interests || [],
+            preferred_analogy_domains: userProfileData?.preferred_analogy_domains || []
+          });
+        }
+      }
+    } catch (profileError) {
+      console.error('Error fetching user profile:', profileError);
+    }
+
+    // Enhanced preferences merging with user profile fallback
     const queryPreferences = {
       interests: activeProjectData?.preferences?.interests?.length ? 
-        activeProjectData.preferences.interests : preferences.interests || [],
+        activeProjectData.preferences.interests : 
+        (userProfileData?.interests?.length ? userProfileData.interests : preferences.interests || []),
       learning_style: activeProjectData?.preferences?.learning_style || 
-        preferences.visualLearning > 70 ? 'Visual' : 'Verbal',
+        (userProfileData?.learning_style || (preferences.visualLearning > 70 ? 'Visual' : 'Verbal')),
       technical_depth: activeProjectData?.preferences?.technical_depth || 
-        preferences.technicalDepth || 50,
+        (userProfileData?.technical_depth || preferences.technicalDepth || 50),
       preferred_analogy_domains: activeProjectData?.preferences?.preferred_analogy_domains?.length ?
-        activeProjectData.preferences.preferred_analogy_domains : [
-          // Default to interests if no specific analogy domains are set
-          ...(activeProjectData?.preferences?.interests || preferences.interests || [])
-        ]
+        activeProjectData.preferences.preferred_analogy_domains : 
+        (userProfileData?.preferred_analogy_domains?.length ? 
+          userProfileData.preferred_analogy_domains : 
+          // Use interests as analogy domains if no specific domains are set
+          (activeProjectData?.preferences?.interests?.length ? 
+            activeProjectData.preferences.interests : 
+            (userProfileData?.interests?.length ? userProfileData.interests : preferences.interests || []))
+        )
     };
 
-    // Log the preferences being used for this query
-    console.log('Using preferences for query:', {
+    // Debug logging to track preference sources
+    console.log('Enhanced preferences construction:', {
       projectId: activeProject,
-      preferences: queryPreferences,
-      isUsingProjectPreferences: !!activeProjectData?.preferences
+      projectPreferences: activeProjectData?.preferences,
+      userProfileData: userProfileData,
+      globalPreferences: preferences,
+      finalQueryPreferences: queryPreferences,
+      sources: {
+        interests: activeProjectData?.preferences?.interests?.length ? 'project' : 
+                  (userProfileData?.interests?.length ? 'user_profile' : 'global'),
+        preferred_analogy_domains: activeProjectData?.preferences?.preferred_analogy_domains?.length ? 'project' : 
+                                 (userProfileData?.preferred_analogy_domains?.length ? 'user_profile' : 'interests_fallback')
+      }
     });
 
     // Retrieve the current session ID for this conversation
@@ -585,7 +622,7 @@ function QueryPage() {
         sessionId: response.sessionId || conversationSessionId
       });
       
-      // Create a message object, properly handling both structured and conversational responses
+      // Create a message object with the main explanation first
       const aiMessage = {
         id: response.id || Date.now().toString(),
         content: response.explanation || response,
@@ -598,41 +635,213 @@ function QueryPage() {
         analogy_title: response.analogy_title || null,
         example: response.example || null,
         example_title: response.example_title || null,
+        examples: response.examples || [], // Start with any existing examples
+        analogies: response.analogies || [], // Start with any existing analogies
         resources: response.resources || response.additional_sources || null,
         recap: response.recap || null,
         key_takeaways: response.key_takeaways || null,
+        // Only set loading states if we don't already have content
+        loadingExamples: !response.examples || response.examples.length === 0,
+        loadingAnalogies: !response.analogies || response.analogies.length === 0,
         // Store preferences used for this response to maintain consistency
         preferences: queryPreferences
       };
       
-      // Remove the thinking message and add the AI response
+      // Remove the thinking message and add the AI response immediately
       setMessages(prev => prev.filter(msg => msg.role !== 'thinking').concat(aiMessage));
       
-      // Update project conversation
-      setProjects(prev => prev.map(project => {
-        if (project.id === activeProject) {
-          return {
-            ...project,
-            conversations: project.conversations.map(conv => {
-              if (conv.id === activeConversation) {
-                const updatedMessages = conv.messages || [];
-                return {
-                  ...conv,
-                  messages: [...updatedMessages, aiMessage],
-                  lastMessageTime: Date.now(),
-                  title: conv.title === 'New Conversation' ? generateTitle(query) : conv.title,
-                  sessionId: response.sessionId || conv.sessionId || conversationSessionId,
-                  // Store current preferences at the conversation level as well
-                  currentPreferences: queryPreferences
-                };
-              }
-              return conv;
-            }),
-            lastModified: Date.now()
-          };
+      // Only generate examples and analogies if they don't already exist
+      const needsExamples = !response.examples || response.examples.length === 0;
+      const needsAnalogies = !response.analogies || response.analogies.length === 0;
+      
+      if (needsExamples || needsAnalogies) {
+        console.log('Generating missing content:', { needsExamples, needsAnalogies });
+        
+        // Create promises for only the content we need
+        const promises = [];
+        
+        if (needsExamples) {
+          promises.push(
+            fetch('/api/generate-examples', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                explanation: response.explanation || response,
+                query: query,
+                userPreferences: queryPreferences
+              })
+            }).then(res => res.json()).then(data => ({ type: 'examples', data }))
+          );
         }
-        return project;
-      }));
+        
+        if (needsAnalogies) {
+          promises.push(
+            fetch('/api/generate-analogies', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                explanation: response.explanation || response,
+                query: query,
+                userPreferences: queryPreferences
+              })
+            }).then(res => res.json()).then(data => ({ type: 'analogies', data }))
+          );
+        }
+        
+        // Now generate examples and analogies separately in parallel
+        try {
+          const results = await Promise.allSettled(promises);
+          
+          // Track what content was generated
+          let generatedExamples = null;
+          let generatedAnalogies = null;
+          
+          results.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+              const { type, data } = result.value;
+              
+              if (type === 'examples' && data.examples) {
+                console.log('✅ Generated examples:', data.examples.length);
+                generatedExamples = data.examples;
+                setMessages(prev => prev.map(msg => 
+                  msg.id === aiMessage.id 
+                    ? { ...msg, examples: data.examples, loadingExamples: false }
+                    : msg
+                ));
+              } else if (type === 'analogies' && data.analogies) {
+                console.log('✅ Generated analogies:', data.analogies.length);
+                generatedAnalogies = data.analogies;
+                setMessages(prev => prev.map(msg => 
+                  msg.id === aiMessage.id 
+                    ? { ...msg, analogies: data.analogies, loadingAnalogies: false }
+                    : msg
+                ));
+              }
+            } else {
+              console.error('❌ Failed to generate content:', result.reason);
+              // Remove loading states for failed generations
+              if (result.reason?.type === 'examples') {
+                setMessages(prev => prev.map(msg => 
+                  msg.id === aiMessage.id 
+                    ? { ...msg, loadingExamples: false }
+                    : msg
+                ));
+              } else if (result.reason?.type === 'analogies') {
+                setMessages(prev => prev.map(msg => 
+                  msg.id === aiMessage.id 
+                    ? { ...msg, loadingAnalogies: false }
+                    : msg
+                ));
+              }
+            }
+          });
+          
+          // Update the aiMessage with generated content for persistence
+          const updatedAiMessage = {
+            ...aiMessage,
+            examples: generatedExamples || aiMessage.examples,
+            analogies: generatedAnalogies || aiMessage.analogies,
+            loadingExamples: false,
+            loadingAnalogies: false
+          };
+          
+          // Update project conversation with the complete message including examples and analogies
+          setProjects(prev => prev.map(project => {
+            if (project.id === activeProject) {
+              return {
+                ...project,
+                conversations: project.conversations.map(conv => {
+                  if (conv.id === activeConversation) {
+                    // Find the conversation's current messages and update the AI message
+                    const conversationMessages = conv.messages || [];
+                    const userMessageIndex = conversationMessages.findIndex(m => m.content === query && m.role === 'user');
+                    const messagesSoFar = userMessageIndex >= 0 ? conversationMessages.slice(0, userMessageIndex + 1) : conversationMessages;
+                    
+                    return {
+                      ...conv,
+                      messages: [...messagesSoFar, updatedAiMessage],
+                      lastMessageTime: Date.now(),
+                      title: conv.title === 'New Conversation' ? generateTitle(query) : conv.title,
+                      sessionId: response.sessionId || conv.sessionId || conversationSessionId,
+                      currentPreferences: queryPreferences
+                    };
+                  }
+                  return conv;
+                }),
+                lastModified: Date.now()
+              };
+            }
+            return project;
+          }));
+          
+        } catch (supplementaryError) {
+          console.error('Error generating supplementary content:', supplementaryError);
+          // Remove loading states even if generation fails
+          setMessages(prev => prev.map(msg => 
+            msg.id === aiMessage.id 
+              ? { ...msg, loadingExamples: false, loadingAnalogies: false }
+              : msg
+          ));
+          
+          // Still update project conversation even if supplementary generation failed
+          setProjects(prev => prev.map(project => {
+            if (project.id === activeProject) {
+              return {
+                ...project,
+                conversations: project.conversations.map(conv => {
+                  if (conv.id === activeConversation) {
+                    const conversationMessages = conv.messages || [];
+                    const userMessageIndex = conversationMessages.findIndex(m => m.content === query && m.role === 'user');
+                    const messagesSoFar = userMessageIndex >= 0 ? conversationMessages.slice(0, userMessageIndex + 1) : conversationMessages;
+                    
+                    return {
+                      ...conv,
+                      messages: [...messagesSoFar, { ...aiMessage, loadingExamples: false, loadingAnalogies: false }],
+                      lastMessageTime: Date.now(),
+                      title: conv.title === 'New Conversation' ? generateTitle(query) : conv.title,
+                      sessionId: response.sessionId || conv.sessionId || conversationSessionId,
+                      currentPreferences: queryPreferences
+                    };
+                  }
+                  return conv;
+                }),
+                lastModified: Date.now()
+              };
+            }
+            return project;
+          }));
+        }
+      } else {
+        console.log('✅ Using existing examples and analogies from response');
+        
+        // Update project conversation for responses that already have examples/analogies
+        setProjects(prev => prev.map(project => {
+          if (project.id === activeProject) {
+            return {
+              ...project,
+              conversations: project.conversations.map(conv => {
+                if (conv.id === activeConversation) {
+                  const conversationMessages = conv.messages || [];
+                  const userMessageIndex = conversationMessages.findIndex(m => m.content === query && m.role === 'user');
+                  const messagesSoFar = userMessageIndex >= 0 ? conversationMessages.slice(0, userMessageIndex + 1) : conversationMessages;
+                  
+                  return {
+                    ...conv,
+                    messages: [...messagesSoFar, aiMessage],
+                    lastMessageTime: Date.now(),
+                    title: conv.title === 'New Conversation' ? generateTitle(query) : conv.title,
+                    sessionId: response.sessionId || conv.sessionId || conversationSessionId,
+                    currentPreferences: queryPreferences
+                  };
+                }
+                return conv;
+              }),
+              lastModified: Date.now()
+            };
+          }
+          return project;
+        }));
+      }
       
       // Also update the local sessionId state for future queries
       if (response.sessionId) {
@@ -786,6 +995,8 @@ function QueryPage() {
         analogy_title: response.analogy_title || null,
         example: response.example || null,
         example_title: response.example_title || null,
+        examples: response.examples || [],
+        analogies: response.analogies || [],
         resources: response.resources || response.additional_sources || null,
         recap: response.recap || null,
         key_takeaways: response.key_takeaways || null,
@@ -1249,153 +1460,43 @@ examplePlaceholder();`
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Chat container */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {messages.map((message, index) => (
             <div key={message.id || index} className={`message ${message.role}`}>
               <div
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-3xl rounded-lg p-4 ${
+                  className={`w-full rounded-lg p-6 ${
                     message.role === 'user'
-                      ? 'bg-primary-600 text-white'
+                      ? 'bg-primary-600 text-white ml-auto max-w-4xl'
                       : message.role === 'error'
-                      ? 'bg-red-100 text-red-700'
+                      ? 'bg-red-100 text-red-700 max-w-full'
                       : message.role === 'system'
-                      ? 'bg-yellow-50 text-yellow-700'
+                      ? 'bg-yellow-50 text-yellow-700 max-w-full'
                       : message.role === 'thinking'
-                      ? 'bg-gray-100 text-gray-700 animate-pulse'
-                      : 'bg-white shadow'
+                      ? 'bg-gray-100 text-gray-700 animate-pulse max-w-full'
+                      : 'bg-transparent shadow-none w-full'
                   }`}
                 >
                   {message.role === 'assistant' ? (
-                    <div className="space-y-4">
-                      {message.isRegenerated && (
-                        <div className="text-sm text-green-600 font-medium mb-2">
-                          Improved answer based on your feedback:
-                        </div>
-                      )}
-                      
-                      {/* Determine if this is a structured response or a conversational one */}
-                      {message.is_structured ? (
-                        /* Structured response with enhanced visual presentation */
-                        <div className="space-y-6">
-                          {/* Introduction - Large engaging font */}
-                          {message.introduction && (
-                            <div className="prose max-w-none">
-                              <h3 className="text-xl font-medium text-gray-900">{message.introduction}</h3>
-                            </div>
-                          )}
-                          
-                          {/* Main explanation - Well-formatted with proper spacing */}
-                          {message.content && message.content !== message.introduction && (
-                            <div className="prose max-w-none bg-white rounded-lg">
-                              {message.content.split('\n\n').map((paragraph, idx) => (
-                                paragraph.trim() ? (
-                                  <p key={idx} className="mb-3 text-base">{paragraph.trim()}</p>
-                                ) : null
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* Example - if present, show in a highlighted box */}
-                          {message.example && (
-                            <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
-                              <h4 className="font-medium text-green-800 mb-2">{message.example_title || "Example"}</h4>
-                              <div className="text-green-700">
-                                {message.example.split('\n').map((line, idx) => (
-                                  <p key={idx} className="mb-2">{line}</p>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Analogy - in a distinct styled box */}
-                          {message.analogy && (
-                            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
-                              <h4 className="font-medium text-blue-800 mb-2">{message.analogy_title || "Analogy"}</h4>
-                              <div className="text-blue-700">
-                                {message.analogy.split('\n').map((line, idx) => (
-                                  <p key={idx} className="mb-2">{line}</p>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Key Takeaways - Formatted as bullet points */}
-                          {message.key_takeaways && message.key_takeaways.length > 0 && (
-                            <div className="bg-yellow-50 p-4 rounded-lg">
-                              <h4 className="font-medium text-yellow-800 mb-2">Key Takeaways</h4>
-                              <ul className="list-disc pl-5 space-y-1 text-yellow-700">
-                                {message.key_takeaways.map((point, idx) => (
-                                  <li key={idx} className="mb-1">{point}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          
-                          {/* Recap (for backward compatibility) */}
-                          {message.recap && !message.key_takeaways && (
-                            <div className="bg-yellow-50 p-4 rounded-lg">
-                              <h4 className="font-medium text-yellow-800 mb-2">Key Points</h4>
-                              <div className="text-yellow-700">
-                                {message.recap.startsWith('-') ? 
-                                  <ul className="list-disc pl-5 space-y-1">
-                                    {message.recap.split('\n-').map((point, idx) => (
-                                      point.trim() ? <li key={idx} className="mb-1">{point.trim()}</li> : null
-                                    ))}
-                                  </ul>
-                                  :
-                                  <p>{message.recap}</p>
-                                }
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Resources section */}
-                          {((message.resources && message.resources.length > 0) || 
-                            (message.additional_sources && message.additional_sources.length > 0)) && (
-                            <div className="mt-4">
-                              <h4 className="font-medium text-gray-900 mb-2">Resources:</h4>
-                              <ul className="list-disc pl-5 space-y-1">
-                                {(message.resources || message.additional_sources || []).map((resource, idx) => (
-                                  <li key={idx}>
-                                    <a
-                                      href={resource.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary-600 hover:text-primary-500"
-                                    >
-                                      {resource.title}
-                                    </a>
-                                    {resource.description && (
-                                      <p className="text-sm text-gray-500">{resource.description}</p>
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        /* Conversational response - clean, readable formatting but less structured */
-                        <div className="prose max-w-none">
-                          {/* If there's an introduction, display it with emphasis */}
-                          {message.introduction && (
-                            <p className="font-medium text-lg mb-3">{message.introduction}</p>
-                          )}
-                          
-                          {/* Show the main content with proper paragraph breaks */}
-                          {message.content && message.content !== message.introduction && 
-                            message.content.split('\n\n').map((paragraph, idx) => (
-                              paragraph.trim() ? (
-                                <p key={idx} className="mb-4 text-base">{paragraph.trim()}</p>
-                              ) : null
-                            ))
-                          }
-                        </div>
-                      )}
-                    </div>
+                    <ResponseTabs 
+                      message={message} 
+                      userPreferences={{
+                        interests: (() => {
+                          const activeProjectData = projects.find(p => p.id === activeProject);
+                          return activeProjectData?.preferences?.interests?.length ? 
+                            activeProjectData.preferences.interests : 
+                            preferences.interests || [];
+                        })(),
+                        preferred_analogy_domains: (() => {
+                          const activeProjectData = projects.find(p => p.id === activeProject);
+                          return activeProjectData?.preferences?.preferred_analogy_domains?.length ?
+                            activeProjectData.preferences.preferred_analogy_domains :
+                            preferences.preferred_analogy_domains || [];
+                        })()
+                      }}
+                    />
                   ) : message.role === 'thinking' ? (
                     <div className="flex items-center space-x-2">
                       <div className="animate-pulse flex space-x-2">
@@ -1503,8 +1604,8 @@ examplePlaceholder();`
         </div>
 
         {/* Input container */}
-        <div className="border-t bg-white p-4">
-          <div className="max-w-4xl mx-auto">
+        <div className="border-t bg-white p-6">
+          <div className="w-full">
             <form onSubmit={handleSubmit} className="flex space-x-4">
               <div className="flex-1">
                 <textarea
