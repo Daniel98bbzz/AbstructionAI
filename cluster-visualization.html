@@ -493,6 +493,114 @@
         .feedback-neutral {
             color: #f39c12;
         }
+        
+        /* Similar Topics Styles */
+        .similar-topics-list {
+            margin-top: 25px;
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        
+        .topic-item {
+            margin-bottom: 15px;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border-left: 3px solid #4a90e2;
+            transition: all 0.2s ease;
+        }
+        
+        .topic-item:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        
+        .topic-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .topic-user {
+            font-weight: bold;
+            color: #4a90e2;
+        }
+        
+        .topic-date {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .topic-name {
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        
+        .topic-query {
+            color: #333;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-style: italic;
+        }
+        
+        #fetch-topics-btn {
+            margin-left: 10px;
+        }
+        
+        #cluster-preferences {
+            margin: 20px 0;
+            background-color: #e6f7ff;
+        }
+        
+        .preference-tag {
+            display: inline-block;
+            background-color: #f0f2f5;
+            padding: 5px 10px;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        
+        .no-topics-message {
+            padding: 20px;
+            text-align: center;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            margin-top: 20px;
+            color: #666;
+        }
+        
+        .no-topics-message.error-message {
+            background-color: #fff2f0;
+            border-left: 4px solid #ff4d4f;
+            text-align: left;
+            color: #333;
+        }
+        
+        .no-topics-message.error-message ul {
+            margin-top: 5px;
+            margin-left: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .topics-title {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .topics-title h4 {
+            margin: 0;
+            color: #444;
+        }
     </style>
 </head>
 <body>
@@ -503,6 +611,7 @@
             <div class="tab active" data-tab="visualization">Cluster Visualization</div>
             <div class="tab" data-tab="userPreferences">Update User Preferences</div>
             <div class="tab" data-tab="clusterManagement">Cluster Management</div>
+            <div class="tab" data-tab="similarTopics">Similar User Topics</div>
         </div>
         
         <div id="visualization" class="tab-content active">
@@ -804,6 +913,31 @@
                 </div>
             </div>
         </div>
+        
+        <div id="similarTopics" class="tab-content">
+            <h2>Similar User Topics</h2>
+            <p>View recent chat topics from other users in your cluster.</p>
+            
+            <div class="form-group">
+                <label for="similar-user-select">Select Your User ID:</label>
+                <select id="similar-user-select">
+                    <option value="">-- Select User --</option>
+                </select>
+                <button id="fetch-topics-btn" type="button">Fetch Topics</button>
+            </div>
+            
+            <div id="cluster-preferences" class="status-message" style="display: none;">
+                <h4>Your Cluster Information</h4>
+                <div id="user-preferences-info"></div>
+            </div>
+            
+            <div id="similar-topics-container" style="display: none;">
+                <h3>Recent Topics from Users in Your Cluster</h3>
+                <div id="similar-topics-list" class="similar-topics-list">
+                    <p id="topics-loading">Select a user and click "Fetch Topics" to see topics from your cluster.</p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -865,6 +999,10 @@
                             visual_learning: cluster ? cluster.centroid.visual_learning * 100 : 50,
                             practical_examples: cluster ? cluster.centroid.practical_examples * 100 : 70,
                             technical_depth: user.technical_depth || 50,
+                            // Include additional clustering parameters
+                            level_of_interest: user.level_of_interest || 'Unknown',
+                            education_level: user.education_level || 'Unknown',
+                            learning_style: user.learning_style || 'visual',
                             // Initialize feedback metrics with default values
                             avg_feedback_rating: 0,
                             feedback_count: 0
@@ -876,6 +1014,7 @@
                     
                     renderVisualization();
                     populateUserSelect();
+                    populateSimilarUserSelect(); // Also populate the similar user select dropdown
                 }
             } catch (error) {
                 console.error("Error fetching data:", error);
@@ -1958,6 +2097,12 @@
             document.getElementById('create-interest-cluster')?.addEventListener('click', createInterestCluster);
             document.getElementById('apply-naming-strategy')?.addEventListener('click', applyNamingStrategy);
             
+            // Similar Topics functionality
+            document.getElementById('fetch-topics-btn')?.addEventListener('click', function() {
+                const userId = document.getElementById('similar-user-select').value;
+                fetchSimilarUserTopics(userId);
+            });
+            
             // Tab switching functionality
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.addEventListener('click', () => {
@@ -1971,6 +2116,11 @@
                     const content = document.getElementById(contentId);
                     if (content) {
                         content.classList.add('active');
+                        
+                        // If switching to the similar topics tab, populate the user select
+                        if (contentId === 'similarTopics') {
+                            populateSimilarUserSelect();
+                        }
                     }
                 });
             });
@@ -2517,6 +2667,138 @@
                     .html(`<strong>${clusterName}</strong> (${cluster.member_count} users)`);
             });
         }
+        
+        // Add event listeners to the axis selectors
+        document.getElementById("x-axis")?.addEventListener("change", renderVisualization);
+        document.getElementById("y-axis")?.addEventListener("change", renderVisualization);
+        
+        // Similar Topics functionality
+        function populateSimilarUserSelect() {
+            const userSelect = document.getElementById('similar-user-select');
+            userSelect.innerHTML = '<option value="">-- Select User --</option>';
+            
+            userData.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.id;
+                option.textContent = user.username || `User ${user.id.substring(0, 8)}...`;
+                userSelect.appendChild(option);
+            });
+        }
+        
+        async function fetchSimilarUserTopics(userId) {
+            if (!userId) {
+                showSimilarTopicsMessage('Please select a user first');
+                return;
+            }
+            
+            const topicsContainer = document.getElementById('similar-topics-container');
+            const topicsList = document.getElementById('similar-topics-list');
+            const preferencesContainer = document.getElementById('cluster-preferences');
+            const preferencesInfo = document.getElementById('user-preferences-info');
+            
+            topicsList.innerHTML = '<p id="topics-loading">Loading topics from users in your cluster...<div class="loading-spinner" style="display:inline-block;"></div></p>';
+            topicsContainer.style.display = 'block';
+            preferencesContainer.style.display = 'none';
+            
+            try {
+                // Get the user data
+                const user = userData.find(u => u.id === userId);
+                
+                if (user) {
+                    // Display only cluster information, not the missing preference fields
+                    const cluster = clusterData.find(c => c.id === user.cluster_id);
+                    let clusterName = user.cluster_id ? 
+                        (cluster?.metadata?.custom_name || `Cluster ${user.cluster_id.substring(0, 8)}...`) : 
+                        'Not assigned to a cluster';
+                    
+                    preferencesInfo.innerHTML = `
+                        <div class="preference-tags">
+                            <span class="preference-tag">Cluster: ${clusterName}</span>
+                            <span class="preference-tag">User: ${user.username || 'Anonymous'}</span>
+                        </div>
+                    `;
+                    preferencesContainer.style.display = 'block';
+                }
+                
+                // Fetch topics from users in the same cluster
+                const response = await fetch(`/api/cluster-topics/${userId}`);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    // Handle specific error codes
+                    if (response.status === 404) {
+                        topicsList.innerHTML = `<div class="no-topics-message">${data.message || 'User or cluster not found'}</div>`;
+                    } else {
+                        throw new Error(data.details || data.error || `HTTP error ${response.status}`);
+                    }
+                    return;
+                }
+                
+                if (data.message && (!data.topics || data.topics.length === 0)) {
+                    topicsList.innerHTML = `<div class="no-topics-message">${data.message}</div>`;
+                    return;
+                }
+                
+                if (!data.topics || data.topics.length === 0) {
+                    topicsList.innerHTML = '<div class="no-topics-message">No topics found from users in your cluster</div>';
+                    return;
+                }
+                
+                // Render the topics
+                topicsList.innerHTML = '';
+                
+                // Add title with count
+                const titleDiv = document.createElement('div');
+                titleDiv.className = 'topics-title';
+                titleDiv.innerHTML = `<h4>Found ${data.topics.length} recent topics from users in your cluster</h4>`;
+                topicsList.appendChild(titleDiv);
+                
+                data.topics.forEach(topic => {
+                    const topicDate = new Date(topic.timestamp);
+                    const formattedDate = topicDate.toLocaleString();
+                    
+                    const topicItem = document.createElement('div');
+                    topicItem.className = 'topic-item';
+                    
+                    topicItem.innerHTML = `
+                        <div class="topic-header">
+                            <div class="topic-user">${topic.username || 'Anonymous User'}</div>
+                            <div class="topic-date">${formattedDate}</div>
+                        </div>
+                        <div class="topic-name">${topic.topic}</div>
+                        <div class="topic-query">${topic.query || 'No query recorded'}</div>
+                    `;
+                    
+                    topicsList.appendChild(topicItem);
+                });
+                
+            } catch (error) {
+                console.error('Error fetching similar topics:', error);
+                topicsList.innerHTML = `
+                    <div class="no-topics-message error-message">
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <p>This could be due to:</p>
+                        <ul>
+                            <li>Database schema issues</li>
+                            <li>Server configuration problems</li>
+                            <li>Database connection errors</li>
+                        </ul>
+                        <p>Please check the server logs for more details.</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function showSimilarTopicsMessage(message) {
+            const topicsContainer = document.getElementById('similar-topics-container');
+            const topicsList = document.getElementById('similar-topics-list');
+            
+            topicsList.innerHTML = `<div class="no-topics-message">${message}</div>`;
+            topicsContainer.style.display = 'block';
+        }
+        
+        // Add a loading spinner to the chart container
+        const chartContainer = document.querySelector('.chart-container');
     </script>
 </body>
 </html> 

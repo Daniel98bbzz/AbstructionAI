@@ -1,13 +1,15 @@
 // src/pages/QuizPage.jsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import Quiz from '../components/Quiz';
 
 function QuizPage() {
   const { user } = useAuth();
+  const location = useLocation();
   const [topic, setTopic] = useState('');
+  const [difficulty, setDifficulty] = useState('medium');
   const [recentTopics, setRecentTopics] = useState([]);
   const [popularTopics, setPopularTopics] = useState([
     'Quantum Physics',
@@ -30,6 +32,23 @@ function QuizPage() {
       fetchQuizHistory();
     }
   }, [user]);
+
+  // Handle URL parameters for pre-filling topic and difficulty
+  useEffect(() => {
+    const urlParams = new URLSearchParams(location.search);
+    const topicParam = urlParams.get('topic');
+    const difficultyParam = urlParams.get('difficulty');
+    
+    if (topicParam) {
+      setTopic(decodeURIComponent(topicParam));
+      // Automatically start quiz if topic is provided in URL
+      setShowQuiz(true);
+    }
+    
+    if (difficultyParam) {
+      setDifficulty(difficultyParam);
+    }
+  }, [location.search]);
 
   const fetchRecentTopics = async () => {
     try {
@@ -112,7 +131,7 @@ function QuizPage() {
   }
 
   if (showQuiz) {
-    return <Quiz query={topic} onClose={handleCloseQuiz} />;
+    return <Quiz query={topic} onClose={handleCloseQuiz} initialDifficulty={difficulty} />;
   }
 
   return (

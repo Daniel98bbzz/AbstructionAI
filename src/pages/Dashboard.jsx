@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery } from '../contexts/QueryContext';
 import QuizStats from '../components/QuizStats';
+import ClusterTopicSuggestions from '../components/ClusterTopicSuggestions';
+import ClusterQuizSuggestions from '../components/ClusterQuizSuggestions';
 
 
 function Dashboard() {
@@ -308,27 +310,37 @@ function Dashboard() {
         <QuizStats />
       </div>
 
-      {/* Suggested Topics */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-        <div className="px-4 py-5 sm:px-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">
-            Suggested Topics
-          </h3>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            Based on your learning history
-          </p>
-        </div>
-        <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {stats.topCategories.map((category, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer">
-                <h4 className="text-lg font-medium text-gray-900">{category}</h4>
-                <p className="mt-1 text-sm text-gray-500">
-                  Explore advanced concepts and practical applications
-                </p>
-              </div>
-            ))}
+      {/* Cluster Topic Suggestions */}
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+        <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
+          <div>
+            <h3 className="text-lg leading-6 font-medium text-gray-900">
+              What Others Are Learning
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">
+              Recent topics from users with similar learning preferences
+            </p>
           </div>
+        </div>
+        <div className="border-t border-gray-200">
+          <ClusterTopicSuggestions />
+        </div>
+      </div>
+
+      {/* Cluster Quiz Suggestions */}
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+        <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
+          <div>
+            <h3 className="text-lg leading-6 font-medium text-gray-900">
+              What Others Are Challenging
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">
+              Quiz scores from users with similar learning preferences - can you beat them?
+            </p>
+          </div>
+        </div>
+        <div className="border-t border-gray-200">
+          <ClusterQuizSuggestions />
         </div>
       </div>
 

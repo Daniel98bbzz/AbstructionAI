@@ -447,6 +447,205 @@ app.get('/api/user-feedback/:userId', async (req, res) => {
   }
 });
 
+// API endpoint to get recent chat topics from users in the same cluster
+app.get('/api/cluster-topics/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log(`Fetching cluster topics for user ${userId}...`);
+    
+    // First, get the user's cluster assignment - only fetch cluster_id
+    const { data: userCluster, error: clusterError } = await supabase
+      .from('user_profiles')
+      .select('cluster_id')
+      .eq('id', userId)
+      .single();
+    
+    if (clusterError) {
+      console.error('Error fetching user profile:', clusterError);
+      throw clusterError;
+    }
+    
+    console.log('User profile data:', userCluster);
+    
+    if (!userCluster) {
+      return res.status(404).json({ 
+        error: 'User not found',
+        message: 'Could not find this user in the database'
+      });
+    }
+    
+    if (!userCluster.cluster_id) {
+      return res.status(404).json({ 
+        error: 'User has no cluster assignment',
+        message: 'This user is not assigned to any cluster yet'
+      });
+    }
+    
+    console.log(`User ${userId} belongs to cluster ${userCluster.cluster_id}`);
+    
+    // Simply match users in the same cluster - don't try to use columns that don't exist
+    const { data: clusterUsers, error: usersError } = await supabase
+      .from('user_profiles')
+      .select('id, username')
+      .eq('cluster_id', userCluster.cluster_id)
+      .neq('id', userId) // Exclude the current user
+      .limit(50);
+    
+    if (usersError) {
+      console.error('Error fetching cluster users:', usersError);
+      throw usersError;
+    }
+    
+    if (!clusterUsers || clusterUsers.length === 0) {
+      return res.json({ 
+        topics: [],
+        message: 'No other users found in your cluster'
+      });
+    }
+    
+    console.log(`Found ${clusterUsers.length} users in the same cluster`);
+    
+    // Get user IDs
+    const userIds = clusterUsers.map(user => user.id);
+    
+    // Try to fetch topics from interactions table
+    try {
+      // First try with topic_name
+      const { data: topicsWithNames, error: topicsWithNamesError } = await supabase
+        .from('interactions')
+        .select('id, user_id, query, created_at, topic_name')
+        .in('user_id', userIds)
+        .not('query', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      
+      // If we get data and it has topic_name field, use it
+      if (!topicsWithNamesError && topicsWithNames && topicsWithNames.length > 0 && 
+          topicsWithNames[0].hasOwnProperty('topic_name')) {
+        
+        // Format the topics
+        const formattedTopics = topicsWithNames.map(item => {
+          const user = clusterUsers.find(u => u.id === item.user_id);
+          return {
+            id: item.id,
+            user_id: item.user_id,
+            username: user ? user.username : 'Anonymous User',
+            query: item.query,
+            topic: item.topic_name || 'Untitled Topic',
+            timestamp: item.created_at
+          };
+        });
+        
+        return res.json({ topics: formattedTopics });
+      }
+      
+      // If no topic_name or error, try without it
+      const { data: topics, error: topicsError } = await supabase
+        .from('interactions')
+        .select('id, user_id, query, created_at')
+        .in('user_id', userIds)
+        .not('query', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      
+      if (!topicsError && topics && topics.length > 0) {
+        // Format the topics without topic names
+        const formattedTopics = topics.map(item => {
+          const user = clusterUsers.find(u => u.id === item.user_id);
+          return {
+            id: item.id,
+            user_id: item.user_id,
+            username: user ? user.username : 'Anonymous User',
+            query: item.query,
+            topic: 'Untitled Topic', // No topic name available
+            timestamp: item.created_at
+          };
+        });
+        
+        return res.json({ topics: formattedTopics });
+      }
+    } catch (interactionError) {
+      console.log('Error querying interactions table:', interactionError);
+      // Continue to try the feedback table
+    }
+    
+    // Try the feedback table as a fallback
+    try {
+      // First try with topic field
+      const { data: feedbackWithTopic, error: feedbackWithTopicError } = await supabase
+        .from('feedback')
+        .select('id, user_id, query_text, created_at, topic')
+        .in('user_id', userIds)
+        .not('query_text', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      
+      // If we get data and it has topic field, use it
+      if (!feedbackWithTopicError && feedbackWithTopic && feedbackWithTopic.length > 0 &&
+          feedbackWithTopic[0].hasOwnProperty('topic')) {
+        
+        // Format the topics
+        const formattedTopics = feedbackWithTopic.map(item => {
+          const user = clusterUsers.find(u => u.id === item.user_id);
+          return {
+            id: item.id,
+            user_id: item.user_id,
+            username: user ? user.username : 'Anonymous User',
+            query: item.query_text,
+            topic: item.topic || 'Untitled Topic',
+            timestamp: item.created_at
+          };
+        });
+        
+        return res.json({ topics: formattedTopics });
+      }
+      
+      // If no topic field or error, try without it
+      const { data: feedback, error: feedbackError } = await supabase
+        .from('feedback')
+        .select('id, user_id, query_text, created_at')
+        .in('user_id', userIds)
+        .not('query_text', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      
+      if (!feedbackError && feedback && feedback.length > 0) {
+        // Format the feedback without topic names
+        const formattedTopics = feedback.map(item => {
+          const user = clusterUsers.find(u => u.id === item.user_id);
+          return {
+            id: item.id,
+            user_id: item.user_id,
+            username: user ? user.username : 'Anonymous User',
+            query: item.query_text,
+            topic: 'Untitled Topic', // No topic available
+            timestamp: item.created_at
+          };
+        });
+        
+        return res.json({ topics: formattedTopics });
+      }
+    } catch (feedbackError) {
+      console.log('Error querying feedback table:', feedbackError);
+    }
+    
+    // If we reach here, no data was found
+    return res.json({ 
+      topics: [],
+      message: 'No recent chat topics found from users in your cluster'
+    });
+    
+  } catch (error) {
+    console.error('Error fetching cluster topics:', error);
+    res.status(500).json({ error: 'Failed to fetch cluster topics', details: error.message });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Visualization server running at http://localhost:${PORT}`);
