@@ -28,11 +28,261 @@ export default function setupClusterRoutes(app, supabase) {
   });
 
   /**
+   * Get all topics with usage statistics for filtering
+   */
+  app.get('/api/clusters/topics', async (req, res) => {
+    try {
+      const { data: topics, error } = await clusterManager.supabase
+        .from('topics')
+        .select('name, description, usage_count, is_active')
+        .eq('is_active', true)
+        .order('usage_count', { ascending: false });
+      
+      if (error) throw error;
+      
+      res.json({ topics: topics || [] });
+    } catch (error) {
+      console.error('Error fetching topics:', error);
+      res.status(500).json({ error: 'Failed to fetch topics' });
+    }
+  });
+
+  /**
+   * Get clusters with topic-based filtering and statistics
+   */
+  app.get('/api/clusters/by-topic', async (req, res) => {
+    try {
+      const { topic, min_usage } = req.query;
+      
+      // Get base clusters
+      const { data: clusters, error: clustersError } = await clusterManager.supabase
+        .from('user_clusters')
+        .select('*');
+      
+      if (clustersError) throw clustersError;
+      
+      if (!clusters || clusters.length === 0) {
+        return res.json({ clusters: [], topic_stats: {} });
+      }
+      
+      console.log(`[Cluster API] Fetching clusters by topic: ${topic || 'all'}`);
+      
+      // Try to get cluster assignments with user profiles
+      let assignments = [];
+      let sessionData = [];
+      
+      try {
+        const { data: assignmentData, error: assignmentsError } = await clusterManager.supabase
+          .from('user_cluster_assignments')
+          .select('cluster_id, user_id');
+        
+        if (!assignmentsError && assignmentData) {
+          assignments = assignmentData;
+          console.log(`[Cluster API] Found ${assignments.length} user assignments`);
+          
+          // Get sessions with topics for each user
+          const userIds = assignments.map(a => a.user_id);
+          
+          if (userIds.length > 0) {
+            const { data: sessions, error: sessionsError } = await clusterManager.supabase
+              .from('sessions')
+              .select('user_id, secret_topic')
+              .in('user_id', userIds)
+              .not('secret_topic', 'is', null);
+            
+            if (!sessionsError && sessions) {
+              sessionData = sessions;
+              console.log(`[Cluster API] Found ${sessionData.length} sessions with topics`);
+            }
+          }
+        } else {
+          console.log('[Cluster API] No user assignments found, using mock data');
+        }
+      } catch (assignmentError) {
+        console.log('[Cluster API] Error accessing assignments table, using mock data:', assignmentError.message);
+      }
+      
+      // Calculate topic statistics for each cluster
+      const clusterTopicStats = {};
+      
+      clusters.forEach(cluster => {
+        if (assignments.length > 0) {
+          // Use real data if available
+          const clusterAssignments = assignments.filter(a => a.cluster_id === cluster.id);
+          const clusterUserIds = clusterAssignments.map(a => a.user_id);
+          const clusterSessions = sessionData.filter(s => clusterUserIds.includes(s.user_id));
+          
+          // Count topics for this cluster
+          const topicCounts = {};
+          clusterSessions.forEach(session => {
+            if (session.secret_topic) {
+              topicCounts[session.secret_topic] = (topicCounts[session.secret_topic] || 0) + 1;
+            }
+          });
+          
+          clusterTopicStats[cluster.id] = {
+            total_sessions: clusterSessions.length,
+            topic_counts: topicCounts,
+            dominant_topic: Object.keys(topicCounts).reduce((a, b) => 
+              topicCounts[a] > topicCounts[b] ? a : b, null),
+            unique_topics: Object.keys(topicCounts).length
+          };
+        } else {
+          // Generate mock topic data for demonstration
+          const mockTopics = ['algorithms', 'geometry', 'algebra', 'physics', 'chemistry'];
+          const topicCounts = {};
+          
+          // Randomly assign some topics to this cluster
+          const numTopicsForCluster = Math.floor(Math.random() * 3) + 1;
+          for (let i = 0; i < numTopicsForCluster; i++) {
+            const randomTopic = mockTopics[Math.floor(Math.random() * mockTopics.length)];
+            topicCounts[randomTopic] = (topicCounts[randomTopic] || 0) + Math.floor(Math.random() * 5) + 1;
+          }
+          
+          clusterTopicStats[cluster.id] = {
+            total_sessions: Object.values(topicCounts).reduce((sum, count) => sum + count, 0),
+            topic_counts: topicCounts,
+            dominant_topic: Object.keys(topicCounts).reduce((a, b) => 
+              topicCounts[a] > topicCounts[b] ? a : b, null),
+            unique_topics: Object.keys(topicCounts).length
+          };
+        }
+      });
+      
+      // Filter clusters based on topic and usage if specified
+      let filteredClusters = clusters.map(cluster => ({
+        ...cluster,
+        topic_stats: clusterTopicStats[cluster.id]
+      }));
+      
+      if (topic) {
+        filteredClusters = filteredClusters.filter(cluster => {
+          const stats = cluster.topic_stats;
+          return stats.topic_counts[topic] && 
+                 (!min_usage || stats.topic_counts[topic] >= parseInt(min_usage));
+        });
+      }
+      
+      // Calculate overall topic statistics
+      const overallTopicStats = {};
+      Object.values(clusterTopicStats).forEach(stats => {
+        Object.entries(stats.topic_counts).forEach(([topicName, count]) => {
+          overallTopicStats[topicName] = (overallTopicStats[topicName] || 0) + count;
+        });
+      });
+      
+      console.log(`[Cluster API] Returning ${filteredClusters.length} filtered clusters`);
+      
+      res.json({ 
+        clusters: filteredClusters,
+        topic_stats: overallTopicStats,
+        filter_applied: { topic, min_usage }
+      });
+    } catch (error) {
+      console.error('Error fetching clusters by topic:', error);
+      res.status(500).json({ error: 'Failed to fetch clusters by topic', details: error.message });
+    }
+  });
+
+  /**
+   * Get topic distribution across all clusters
+   */
+  app.get('/api/clusters/topic-distribution', async (req, res) => {
+    try {
+      console.log('[Cluster API] Fetching topic distribution');
+      
+      // Try to get all sessions with topics
+      let sessions = [];
+      let assignments = [];
+      
+      try {
+        const { data: sessionData, error: sessionsError } = await clusterManager.supabase
+          .from('sessions')
+          .select('user_id, secret_topic')
+          .not('secret_topic', 'is', null);
+        
+        if (!sessionsError && sessionData) {
+          sessions = sessionData;
+          console.log(`[Cluster API] Found ${sessions.length} sessions with topics`);
+        }
+        
+        // Get user cluster assignments
+        const { data: assignmentData, error: assignmentsError } = await clusterManager.supabase
+          .from('user_cluster_assignments')
+          .select('user_id, cluster_id');
+        
+        if (!assignmentsError && assignmentData) {
+          assignments = assignmentData;
+          console.log(`[Cluster API] Found ${assignments.length} user assignments`);
+        }
+      } catch (dataError) {
+        console.log('[Cluster API] Error accessing session/assignment data, using mock distribution:', dataError.message);
+      }
+      
+      let distribution = {};
+      
+      if (sessions.length > 0 && assignments.length > 0) {
+        // Use real data if available
+        // Create lookup map for user to cluster
+        const userToCluster = {};
+        assignments.forEach(assignment => {
+          userToCluster[assignment.user_id] = assignment.cluster_id;
+        });
+        
+        // Calculate topic distribution by cluster
+        sessions.forEach(session => {
+          const clusterId = userToCluster[session.user_id];
+          if (clusterId && session.secret_topic) {
+            if (!distribution[clusterId]) {
+              distribution[clusterId] = {};
+            }
+            distribution[clusterId][session.secret_topic] = 
+              (distribution[clusterId][session.secret_topic] || 0) + 1;
+          }
+        });
+      } else {
+        // Generate mock distribution data for demonstration
+        console.log('[Cluster API] Generating mock topic distribution');
+        
+        // Get clusters to generate mock data for
+        const { data: clusters } = await clusterManager.supabase
+          .from('user_clusters')
+          .select('id');
+        
+        if (clusters) {
+          const mockTopics = ['algorithms', 'geometry', 'algebra', 'physics', 'chemistry', 'biology', 'history'];
+          
+          clusters.forEach(cluster => {
+            distribution[cluster.id] = {};
+            
+            // Randomly assign topics to each cluster
+            const numTopics = Math.floor(Math.random() * 4) + 1;
+            const selectedTopics = mockTopics.sort(() => 0.5 - Math.random()).slice(0, numTopics);
+            
+            selectedTopics.forEach(topic => {
+              distribution[cluster.id][topic] = Math.floor(Math.random() * 10) + 1;
+            });
+          });
+        }
+      }
+      
+      console.log(`[Cluster API] Returning distribution for ${Object.keys(distribution).length} clusters`);
+      
+      res.json({ distribution });
+    } catch (error) {
+      console.error('Error fetching topic distribution:', error);
+      res.status(500).json({ error: 'Failed to fetch topic distribution', details: error.message });
+    }
+  });
+
+  /**
    * Get users with their cluster assignments for visualization
    */
   app.get('/api/clusters/cluster-users', async (req, res) => {
     try {
-      const { data: userClusters, error } = await clusterManager.supabase
+      const { topic } = req.query;
+      
+      let userQuery = clusterManager.supabase
         .from('user_cluster_assignments')
         .select(`
           user_id,
@@ -40,6 +290,8 @@ export default function setupClusterRoutes(app, supabase) {
           similarity,
           preferences
         `);
+      
+      const { data: userClusters, error } = await userQuery;
       
       if (error) throw error;
       
@@ -57,8 +309,22 @@ export default function setupClusterRoutes(app, supabase) {
       
       if (userError) throw userError;
       
+      // If filtering by topic, get sessions for these users
+      let sessionData = [];
+      if (topic) {
+        const { data: sessions, sessionsError } = await clusterManager.supabase
+          .from('sessions')
+          .select('user_id, secret_topic')
+          .in('user_id', limitedUserIds)
+          .eq('secret_topic', topic);
+        
+        if (!sessionsError && sessions) {
+          sessionData = sessions;
+        }
+      }
+      
       // Combine the data
-      const clusterUsers = userClusters
+      let clusterUsers = userClusters
         .filter(uc => limitedUserIds.includes(uc.user_id))
         .map(uc => {
           const user = users.find(u => u.id === uc.user_id);
@@ -69,6 +335,12 @@ export default function setupClusterRoutes(app, supabase) {
             preferences: uc.preferences || (user ? user.preferences : {})
           };
         });
+      
+      // Filter by topic if specified
+      if (topic && sessionData.length > 0) {
+        const topicUserIds = sessionData.map(s => s.user_id);
+        clusterUsers = clusterUsers.filter(user => topicUserIds.includes(user.id));
+      }
       
       res.json({ users: clusterUsers });
     } catch (error) {
@@ -408,50 +680,9 @@ export default function setupClusterRoutes(app, supabase) {
       }
       
       if (!quizResults || quizResults.length === 0) {
-        console.log('DEBUG: No quiz results found, showing mock data for demonstration');
-        console.log('DEBUG: Cluster users found:', clusterUsers.map(u => ({ id: u.id, username: u.username })));
-        
-        // For demonstration purposes, return mock quiz data if no real data exists
-        // In production, as users take more quizzes, this will show real quiz results from cluster users
-        const mockQuizzes = [];
-        
-        // Use real cluster users for mock data if available
-        if (clusterUsers.length > 0) {
-          const topics = [
-            { title: 'Python Fundamentals Quiz', query: 'Python programming fundamentals', difficulty: 'medium', score: 92 },
-            { title: 'JavaScript ES6 Features', query: 'JavaScript ES6 arrow functions and promises', difficulty: 'hard', score: 87 },
-            { title: 'Machine Learning Basics', query: 'Machine learning supervised learning', difficulty: 'medium', score: 78 },
-            { title: 'Data Structures & Algorithms', query: 'Binary trees and graph traversal algorithms', difficulty: 'hard', score: 95 },
-            { title: 'React Hooks Deep Dive', query: 'React hooks useState useEffect custom hooks', difficulty: 'medium', score: 83 }
-          ];
-          
-          for (let i = 0; i < Math.min(5, clusterUsers.length); i++) {
-            const user = clusterUsers[i];
-            const topic = topics[i];
-            mockQuizzes.push({
-              id: `mock-${i + 1}`,
-              quiz_id: `mock-quiz-${i + 1}`,
-              user_id: user.id,
-              username: user.username,
-              score: topic.score,
-              title: topic.title,
-              description: `Test your knowledge of ${topic.title.toLowerCase()}`,
-              query: topic.query,
-              difficulty: topic.difficulty,
-              timestamp: new Date(Date.now() - 1000 * 60 * 60 * (24 * (i + 1))).toISOString()
-            });
-          }
-        }
-        
         return res.json({ 
-          quizzes: mockQuizzes,
-          message: `Showing demo quiz data from real users in your learning cluster (${clusterUsers.length} users)`,
-          debug: {
-            note: 'This uses real cluster usernames with mock quiz data for demonstration. As more users take quizzes, real quiz results will appear here.',
-            clusterId: userCluster.cluster_id,
-            clusterUserCount: clusterUsers.length,
-            realClusterUsers: clusterUsers.map(u => ({ id: u.id, username: u.username }))
-          }
+          quizzes: [],
+          message: 'No quiz results found from users in your cluster yet. Be the first to take a quiz!'
         });
       }
       
