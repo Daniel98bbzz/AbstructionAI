@@ -749,6 +749,112 @@ ${isRegeneration && feedback?.analogyTopic ?
         applied: false
       }
     };
+
+    // Topic Classification - Classify the conversation topic using OpenAI
+    let secretTopic = null;
+    try {
+      console.log('[Topic Classification] Starting topic classification...');
+      
+      // Get existing topics from database
+      const { data: existingTopics, error: topicsError } = await supabase
+        .from('topics')
+        .select('name, description')
+        .eq('is_active', true);
+      
+      if (topicsError) {
+        console.error('[Topic Classification] Error fetching topics:', topicsError);
+      }
+      
+      const topicsList = existingTopics?.map(t => t.name) || [];
+      const topicsContext = existingTopics?.map(t => `${t.name}: ${t.description}`).join('\n') || '';
+      
+      // Create topic classification prompt
+      const topicClassificationPrompt = `You are a topic classifier for an educational AI tutoring system. 
+Analyze the following query and conversation context to determine the most appropriate topic.
+
+EXISTING TOPICS:
+${topicsContext}
+
+USER QUERY: ${query}
+
+CONVERSATION CONTEXT: ${sections.explanation?.substring(0, 500) || ''}
+
+INSTRUCTIONS:
+1. If the query fits one of the existing topics above, respond with EXACTLY that topic name
+2. If no existing topic fits well, create a new descriptive topic name (use underscores, lowercase)
+3. Respond with ONLY the topic name, nothing else
+4. Examples of good topic names: "linear_algebra", "organic_chemistry", "machine_learning", "calculus"
+
+TOPIC:`;
+
+      const topicCompletion = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [{ role: "user", content: topicClassificationPrompt }],
+        temperature: 0.1,
+        max_tokens: 50
+      });
+      
+      secretTopic = topicCompletion.choices[0].message.content.trim();
+      console.log(`[Topic Classification] Classified topic: ${secretTopic}`);
+      
+      // If it's a new topic, add it to the topics table
+      if (!topicsList.includes(secretTopic)) {
+        console.log(`[Topic Classification] Adding new topic: ${secretTopic}`);
+        const { error: insertError } = await supabase
+          .from('topics')
+          .insert({
+            name: secretTopic,
+            description: `Automatically generated topic for: ${secretTopic.replace(/_/g, ' ')}`
+          });
+        
+        if (insertError) {
+          console.error('[Topic Classification] Error adding new topic:', insertError);
+        }
+      }
+      
+      // Update topic usage count
+      const { data: topicData } = await supabase
+        .from('topics')
+        .select('usage_count')
+        .eq('name', secretTopic)
+        .single();
+      
+      const currentCount = topicData?.usage_count || 0;
+      const { error: updateError } = await supabase
+        .from('topics')
+        .update({ 
+          usage_count: currentCount + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq('name', secretTopic);
+      
+      if (updateError) {
+        console.error('[Topic Classification] Error updating topic usage:', updateError);
+      }
+      
+    } catch (topicError) {
+      console.error('[Topic Classification] Error in topic classification:', topicError);
+      secretTopic = 'general'; // Fallback topic
+    }
+
+    // Update session with secret_topic
+    try {
+      const { error: sessionUpdateError } = await supabase
+        .from('sessions')
+        .update({ secret_topic: secretTopic })
+        .eq('id', sessionData.id);
+      
+      if (sessionUpdateError) {
+        console.error('[Topic Classification] Error updating session with topic:', sessionUpdateError);
+      } else {
+        console.log(`[Topic Classification] Updated session ${sessionData.id} with topic: ${secretTopic}`);
+      }
+    } catch (sessionError) {
+      console.error('[Topic Classification] Error updating session:', sessionError);
+    }
+
+    // Add secret_topic to response for frontend
+    response.secret_topic = secretTopic;
     
     // Add AI response with unique ID for feedback
     const responseId = response.id || Date.now().toString();
@@ -768,6 +874,7 @@ ${isRegeneration && feedback?.analogyTopic ?
       quiz: response.quiz, // Add the quiz to the message
       timestamp: new Date().toISOString(),
       messageId: responseId,
+      secret_topic: secretTopic, // Add topic to message
       // Add Crowd Wisdom metadata to the message
       crowd_wisdom: response.crowd_wisdom
     };
@@ -2029,6 +2136,135 @@ app.get('/api/admin/crowd-wisdom/metrics', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching metrics:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Topic Management API Endpoints
+app.get('/api/topics', async (req, res) => {
+  try {
+    const { data: topics, error } = await supabase
+      .from('topics')
+      .select('*')
+      .eq('is_active', true)
+      .order('usage_count', { ascending: false });
+    
+    if (error) throw error;
+    
+    res.json({ success: true, topics });
+  } catch (error) {
+    console.error('Error fetching topics:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// User feedback endpoint - returns empty feedback for visualization
+app.get('/api/user-feedback/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // For now, return empty feedback to avoid errors in visualization
+    // This can be enhanced later to fetch actual feedback data
+    res.json({
+      success: true,
+      feedback: [],
+      message: 'No feedback data available for this user'
+    });
+  } catch (error) {
+    console.error('Error fetching user feedback:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/topics/stats', async (req, res) => {
+  try {
+    // Get topic statistics
+    const { data: topics, error: topicsError } = await supabase
+      .from('topics')
+      .select('name, usage_count, created_at')
+      .eq('is_active', true);
+    
+    if (topicsError) throw topicsError;
+    
+    // Get session counts by topic
+    const { data: sessions, error: sessionsError } = await supabase
+      .from('sessions')
+      .select('secret_topic')
+      .not('secret_topic', 'is', null);
+    
+    if (sessionsError) throw sessionsError;
+    
+    // Count sessions by topic
+    const sessionsByTopic = sessions.reduce((counts, session) => {
+      counts[session.secret_topic] = (counts[session.secret_topic] || 0) + 1;
+      return counts;
+    }, {});
+    
+    // Combine topic data with session counts
+    const topicStats = topics.map(topic => ({
+      ...topic,
+      session_count: sessionsByTopic[topic.name] || 0
+    }));
+    
+    const totalTopics = topics.length;
+    const totalSessions = sessions.length;
+    const mostUsedTopic = topicStats.reduce((max, topic) => 
+      topic.session_count > (max?.session_count || 0) ? topic : max, null);
+    
+    res.json({
+      success: true,
+      totalTopics,
+      totalSessions,
+      mostUsedTopic: mostUsedTopic?.name || 'None',
+      topicStats
+    });
+  } catch (error) {
+    console.error('Error fetching topic statistics:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/sessions/:sessionId/topic', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    
+    const { data: session, error } = await supabase
+      .from('sessions')
+      .select('secret_topic')
+      .eq('id', sessionId)
+      .single();
+    
+    if (error) throw error;
+    
+    res.json({ success: true, topic: session.secret_topic });
+  } catch (error) {
+    console.error('Error fetching session topic:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/topics', async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: 'Topic name is required' });
+    }
+    
+    const { data: topic, error } = await supabase
+      .from('topics')
+      .insert({
+        name: name.toLowerCase().replace(/\s+/g, '_'),
+        description
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    res.json({ success: true, topic });
+  } catch (error) {
+    console.error('Error creating topic:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -5,6 +5,7 @@ import { useQuery } from '../contexts/QueryContext';
 import QuizStats from '../components/QuizStats';
 import ClusterTopicSuggestions from '../components/ClusterTopicSuggestions';
 import ClusterQuizSuggestions from '../components/ClusterQuizSuggestions';
+import SecretFeedbackDashboard from '../components/SecretFeedbackDashboard';
 
 
 function Dashboard() {
@@ -408,6 +409,13 @@ function Dashboard() {
           </ul>
         </div>
       )}
+
+      {/* Secret Feedback Analytics Card */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-xl font-semibold mb-4">Feedback Analytics</h2>
+        <p className="text-gray-600 mb-4">Your interaction patterns and sentiment analysis</p>
+        <SecretFeedbackDashboard />
+      </div>
     </div>
   );
 }

@@ -3,3 +3,9 @@ node_modules/
 dist/
 *.log
 **/node_modules
+mcp.json
+**/mcp.json
+*.mcp.json
+.cursor
+**/.cursor
+*.cursor

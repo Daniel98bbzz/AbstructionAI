@@ -9,6 +9,7 @@ import QueryToQuiz from '../components/QueryToQuiz';
 import { generateQuizQuestions as generateQuizAPI } from '../api/quizApi';
 import { toast } from 'react-hot-toast';
 import ProjectPreferencesModal from '../components/ProjectPreferencesModal';
+import { processUserMessage, calculateScore } from '../utils/secretFeedbackClassifier';
 
 function QueryPage() {
   const [quizMode, setQuizMode] = useState(false);
@@ -525,6 +526,17 @@ function QueryPage() {
       role: 'user',
       timestamp: Date.now()
     };
+
+    // Process the user message for secret feedback (non-blocking)
+    if (user) {
+      processUserMessage(user.id, query, conversationSessionId).then(result => {
+        console.log('Secret feedback processed:', result);
+        // Optionally, you could store the result or trigger analytics
+      }).catch(error => {
+        console.error('Error processing secret feedback:', error);
+        // Fail silently to not interrupt the user experience
+      });
+    }
 
     // Update local messages state
     setMessages(prev => [...prev, userMessage]);
