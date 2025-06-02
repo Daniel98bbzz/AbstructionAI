@@ -10,6 +10,9 @@ import { generateQuizQuestions as generateQuizAPI } from '../api/quizApi';
 import { toast } from 'react-hot-toast';
 import ProjectPreferencesModal from '../components/ProjectPreferencesModal';
 import { processUserMessage, calculateScore } from '../utils/secretFeedbackClassifier';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 function QueryPage() {
   const [quizMode, setQuizMode] = useState(false);
@@ -1241,14 +1244,14 @@ examplePlaceholder();`
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Chat container */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-4">
           {messages.map((message, index) => (
             <div key={message.id || index} className={`message ${message.role}`}>
               <div
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-3xl rounded-lg p-4 ${
+                  className={`w-full rounded-lg p-4 lg:p-6 ${
                     message.role === 'user'
                       ? 'bg-primary-600 text-white'
                       : message.role === 'error'
@@ -1263,15 +1266,33 @@ examplePlaceholder();`
                   {message.role === 'assistant' ? (
                     <div className="space-y-4">
                       {/* Always display responses conversationally like ChatGPT */}
-                      <div className="prose max-w-none">
-                        {/* Show the main content with proper paragraph breaks */}
-                        {message.content && 
-                          message.content.split('\n\n').map((paragraph, idx) => (
-                            paragraph.trim() ? (
-                              <p key={idx} className="mb-4 text-base leading-relaxed">{paragraph.trim()}</p>
-                            ) : null
-                          ))
-                        }
+                      <div className="prose prose-lg max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-700 prose-p:leading-relaxed prose-strong:text-gray-900 prose-ul:my-4 prose-ol:my-4 prose-li:my-1 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-pre:bg-gray-900 prose-pre:text-white">
+                        {message.content && (
+                          <ReactMarkdown
+                            components={{
+                              code({node, inline, className, children, ...props}) {
+                                const match = /language-(\w+)/.exec(className || '');
+                                return !inline && match ? (
+                                  <SyntaxHighlighter
+                                    style={tomorrow}
+                                    language={match[1]}
+                                    PreTag="div"
+                                    className="rounded-md"
+                                    {...props}
+                                  >
+                                    {String(children).replace(/\n$/, '')}
+                                  </SyntaxHighlighter>
+                                ) : (
+                                  <code className={className} {...props}>
+                                    {children}
+                                  </code>
+                                );
+                              }
+                            }}
+                          >
+                            {message.content}
+                          </ReactMarkdown>
+                        )}
                       </div>
                     </div>
                   ) : message.role === 'thinking' ? (
@@ -1381,8 +1402,8 @@ examplePlaceholder();`
         </div>
 
         {/* Input container */}
-        <div className="border-t bg-white p-4">
-          <div className="max-w-4xl mx-auto">
+        <div className="border-t bg-white p-4 lg:p-6">
+          <div className="w-full px-2">
             <form onSubmit={handleSubmit} className="flex space-x-4">
               <div className="flex-1">
                 <textarea

@@ -1,11 +1,12 @@
 // src/layouts/MainLayout.jsx - Updated with Quiz link
 import React from 'react';
-import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 function MainLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = async () => {
     try {
@@ -15,6 +16,9 @@ function MainLayout() {
       console.error('Error logging out:', error);
     }
   };
+
+  // Check if current route is the query page (which needs full width)
+  const isQueryPage = location.pathname === '/query';
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -83,9 +87,15 @@ function MainLayout() {
 
       {/* Main content */}
       <main className="flex-grow">
-        <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        {isQueryPage ? (
+          // For QueryPage, use full width without container constraints
           <Outlet />
-        </div>
+        ) : (
+          // For other pages, use the normal container layout
+          <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+            <Outlet />
+          </div>
+        )}
       </main>
 
       {/* Footer */}

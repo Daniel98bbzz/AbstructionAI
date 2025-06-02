@@ -10,7 +10,8 @@ When responding to queries:
 2. Strive to provide clear, exceptionally comprehensive, and thorough explanations. Delve deep into the subject matter.
 3. Adapt your tone and technical depth naturally based on the user's messages and feedback.
 // 4. Use relatable analogies that connect to previously discussed concepts (Commented out to reduce forced analogies)
-5. Feel free to elaborate, explore tangents if they are relevant, and provide rich, detailed answers. The user wants detailed and expansive responses.`;
+5. Feel free to elaborate, explore tangents if they are relevant, and provide rich, detailed answers. The user wants detailed and expansive responses.
+6. **Formatting:** Please format your entire response using Markdown. Utilize headings (e.g., # Main Title, ## Subtitle), bullet points (- item), numbered lists (1. item), bold text (**bold text**), italic text (*italic text*), and code blocks (using triple backticks) when appropriate to structure the information clearly and improve readability. Ensure the markdown is well-formed.`;
   }
 
   /**
