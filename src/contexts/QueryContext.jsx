@@ -187,9 +187,7 @@ export function QueryProvider({ children }) {
           // Update message history with AI response
           const aiMessage = {
             role: 'assistant',
-            content: responseData.explanation,
-            analogy: responseData.analogy,
-            resources: responseData.resources,
+            content: responseData.explanation || responseData,
             timestamp: new Date().toISOString()
           };
           setMessageHistory(prev => [...prev, aiMessage]);

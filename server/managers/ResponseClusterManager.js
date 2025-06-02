@@ -570,7 +570,7 @@ Respond ONLY with this number.`;
 
       // Call OpenAI API for evaluation
       const completion = await openai.chat.completions.create({
-        model: "gpt-4" in openai.chat.completions ? "gpt-4" : "gpt-3.5-turbo",
+        model: "gpt-4o" in openai.chat.completions ? "gpt-4o" : "gpt-3.5-turbo",
         messages: [{ role: "user", content: evaluationPrompt }],
         temperature: 0.3,
         max_tokens: 5
@@ -651,7 +651,7 @@ Provide ONLY a single number between 0 and 1 representing the confusion score.`;
 
       // Call OpenAI API for evaluation
       const completion = await openai.chat.completions.create({
-        model: "gpt-4" in openai.chat.completions ? "gpt-4" : "gpt-3.5-turbo",
+        model: "gpt-4o" in openai.chat.completions ? "gpt-4o" : "gpt-3.5-turbo",
         messages: [{ role: "user", content: evaluationPrompt }],
         temperature: 0.3,
         max_tokens: 5
@@ -686,24 +686,22 @@ Provide ONLY a single number between 0 and 1 representing the confusion score.`;
       // Parse the template structure
       const templateData = JSON.parse(template.template_text);
       
-      // Create enhanced prompt guidance
-      let enhancedPrompt = `${query}\n\nAdditional guidance based on successful past interactions:\n`;
+      // Create enhanced prompt guidance for natural conversation
+      let enhancedPrompt = `${query}\n\nBased on successful past interactions on similar topics, consider naturally including:\n`;
       
       if (templateData.structure) {
-        enhancedPrompt += "Please structure your response with ";
-        
         const elements = [];
-        if (templateData.structure.has_introduction) elements.push("an introduction");
+        if (templateData.structure.has_introduction) elements.push("a brief introduction to set context");
         if (templateData.structure.has_explanation) elements.push("a detailed explanation");
-        if (templateData.structure.has_analogy) elements.push("a relevant analogy");
+        if (templateData.structure.has_analogy) elements.push("a helpful analogy to make the concept clearer");
         if (templateData.structure.has_example) elements.push("practical examples");
-        if (templateData.structure.has_key_takeaways) elements.push("key takeaways");
+        if (templateData.structure.has_key_takeaways) elements.push("key points to remember");
         
-        enhancedPrompt += elements.join(", ") + ".";
-        
-        if (templateData.structure.is_structured) {
-          enhancedPrompt += " Please use a well-structured JSON format for your response.";
+        if (elements.length > 0) {
+          enhancedPrompt += elements.join(", ") + ".\n\n";
         }
+        
+        enhancedPrompt += "Respond naturally and conversationally, integrating these elements seamlessly into your explanation.";
       }
       
       return enhancedPrompt;

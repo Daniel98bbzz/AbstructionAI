@@ -102,25 +102,25 @@ $$;
 INSERT INTO prompt_templates (topic, template_text, source, efficacy_score, usage_count)
 VALUES 
   ('computer_science', 
-   '{"query_pattern":"Explain [ENTITY] in computer science","structure":{"has_introduction":true,"has_explanation":true,"has_analogy":true,"has_example":true,"has_key_takeaways":true,"is_structured":true}}',
+   '{"query_pattern":"Explain [ENTITY] in computer science","structure":{"has_introduction":true,"has_explanation":true,"has_analogy":true,"has_example":true,"has_key_takeaways":true,"is_structured":false}}',
    'system',
    4.5,
    10),
    
   ('mathematics', 
-   '{"query_pattern":"What is [ENTITY] in mathematics","structure":{"has_introduction":true,"has_explanation":true,"has_analogy":true,"has_example":true,"has_key_takeaways":true,"is_structured":true}}',
+   '{"query_pattern":"What is [ENTITY] in mathematics","structure":{"has_introduction":true,"has_explanation":true,"has_analogy":true,"has_example":true,"has_key_takeaways":true,"is_structured":false}}',
    'system',
    4.5,
    10),
    
   ('physics', 
-   '{"query_pattern":"How does [ENTITY] work in physics","structure":{"has_introduction":true,"has_explanation":true,"has_analogy":true,"has_example":true,"has_key_takeaways":true,"is_structured":true}}',
+   '{"query_pattern":"How does [ENTITY] work in physics","structure":{"has_introduction":true,"has_explanation":true,"has_analogy":true,"has_example":true,"has_key_takeaways":true,"is_structured":false}}',
    'system',
    4.5,
    10),
    
   ('general', 
-   '{"query_pattern":"Explain [ENTITY]","structure":{"has_introduction":true,"has_explanation":true,"has_analogy":true,"has_example":true,"has_key_takeaways":true,"is_structured":true}}',
+   '{"query_pattern":"Explain [ENTITY]","structure":{"has_introduction":true,"has_explanation":true,"has_analogy":true,"has_example":true,"has_key_takeaways":true,"is_structured":false}}',
    'system',
    4.0,
    5);

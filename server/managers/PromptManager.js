@@ -2,13 +2,13 @@ import userProfileManager from './UserProfileManager.js';
 
 class PromptManager {
   constructor() {
-    // Default system prompt template
+    // Default system prompt template - now conversational
     this.systemPromptTemplate = `You are an adaptive educational AI assistant specialized in explaining complex technical and engineering concepts.
 Your responses should be personalized based on the user's interaction history and preferences.
 
 When responding to queries:
 1. Consider the conversation history and previous interactions
-2. Provide clear, concise explanations that build upon previous context
+2. Provide clear, comprehensive explanations that build upon previous context
 3. Adapt your tone and technical depth based on user feedback
 4. Use relatable analogies that connect to previously discussed concepts
 5. Suggest resources that complement earlier recommendations
@@ -23,20 +23,7 @@ Adjust your explanation based on:
 Field of study: {{field}}
 Education level: {{educationLevel}}
 
-Format your response as JSON with the following structure:
-{
-  "explanation": "Your context-aware explanation here",
-  "analogy": "Your real-world analogy here, referencing previous concepts when relevant",
-  "contextual_notes": "How this relates to previous discussions",
-  "resources": [
-    {
-      "title": "Resource title",
-      "url": "Resource URL",
-      "description": "Brief description of the resource",
-      "relevance": "How this relates to the current and previous topics"
-    }
-  ]
-}`;
+Respond naturally and conversationally, integrating all information seamlessly into your explanation. Use natural paragraph breaks to organize your thoughts and include examples, analogies, and resources naturally within your response.`;
   }
 
   /**
@@ -80,30 +67,20 @@ Please tailor your response based on these preferences:
 4. Include examples relevant to user's interests
 5. Focus on practical applications aligned with main learning goal
 
-IMPORTANT: Respond naturally and conversationally to the user's query. You should adapt your response style based on the type of question:
+IMPORTANT: Respond naturally and conversationally to the user's query. You should adapt your response style based on the type of question, but ALWAYS respond like you're having a natural conversation.
 
-- For EDUCATIONAL CONTENT and complex explanations, your response should generally include:
-  1. A brief introduction to the topic
-  2. A detailed explanation with examples
-  3. A helpful real-world analogy or comparison
-  4. Relevant resources when appropriate
-  5. A brief recap of key points for complex topics
+DO NOT use structured sections, headers, or JSON format. Write naturally and conversationally like ChatGPT would. Be comprehensive and detailed - use the full response capacity to provide thorough, helpful explanations in a natural conversational flow.
 
-DO NOT include section headers like "Introduction:", "Explanation:", "Analogy:", etc. in your response. Instead, organize your content into well-structured paragraphs with clear transitions between ideas.
+- For complex topics, explain them thoroughly with natural paragraph breaks
+- Integrate examples and analogies naturally within your explanation 
+- Use "you" to address the user directly
+- Be friendly and conversational
+- Feel free to ask follow-up questions when helpful
+- Adapt to the conversation flow naturally
 
-- For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural conversational style.
-
-Always adapt to the user's preferred communication style. If they ask for a brief answer, be concise. If they want detailed information, be thorough.
-
-Use proper paragraph breaks to organize your response and make it aesthetically pleasing and easy to read. Use whitespace effectively to separate ideas.
-
-CRITICAL - AVOID REPETITION: 
-1. Do NOT repeat yourself in your responses
-2. Do NOT start sentences with the same phrases (like "I'm sorry" or "Let me explain")
-3. NEVER repeat the same sentence or very similar sentences twice
-4. Before submitting your response, check it for duplicate sentences and remove them
-5. Avoid starting responses with apologies or standard phrases
-6. If you catch yourself writing the same phrase twice, delete one instance
+${profile.preferred_analogy_domains?.length > 0 ? 
+  `When helpful, use analogies from preferred domains (${profile.preferred_analogy_domains.join(', ')})` : 
+  `When helpful, use analogies specifically related to user interests (${interests.join(', ')})`}
 
 IMPORTANT: Always maintain consistency in your analogies and examples throughout a conversation. When the user asks follow-up questions or says they don't understand, continue using the same analogy domains specified in the user's preferences. Only change your analogy domain if the user explicitly requests a different one.
 
@@ -192,28 +169,13 @@ Above all, prioritize clarity and helpfulness in your responses, adapting to the
    * @returns {Object} - Processed response
    */
   processResponse(responseText) {
-    try {
-      // Try to parse the response as JSON
-      const jsonResponse = JSON.parse(responseText);
-      return {
-        explanation: jsonResponse.explanation || '',
-        analogy: jsonResponse.analogy || '',
-        contextual_notes: jsonResponse.contextual_notes || '',
-        resources: jsonResponse.resources || []
-      };
-    } catch (error) {
-      // If parsing fails, try to extract parts using regex
-      const explanationMatch = responseText.match(/explanation["\s:]+([^"]+)/i);
-      const analogyMatch = responseText.match(/analogy["\s:]+([^"]+)/i);
-      const contextualNotesMatch = responseText.match(/contextual_notes["\s:]+([^"]+)/i);
-      
-      return {
-        explanation: explanationMatch ? explanationMatch[1].trim() : responseText,
-        analogy: analogyMatch ? analogyMatch[1].trim() : '',
-        contextual_notes: contextualNotesMatch ? contextualNotesMatch[1].trim() : '',
-        resources: []
-      };
-    }
+    // Always treat responses as conversational - no JSON parsing
+    return {
+      explanation: responseText.trim(),
+      analogy: '',
+      contextual_notes: '',
+      resources: []
+    };
   }
 
   /**

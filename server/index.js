@@ -17,96 +17,28 @@ import setupClusterRoutes from './api/clusterRoutes.js';
  */
 function parseResponse(responseText) {
   try {
-    // First, check if the response looks like JSON (starts with '{' after trimming)
+    // Always treat responses as natural conversation
     const trimmedResponse = responseText.trim();
-    const looksLikeJson = trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}');
     
-    // If it looks like JSON, try to parse it as structured content
-    if (looksLikeJson) {
-      try {
-        const parsedJson = JSON.parse(trimmedResponse);
-        
-        // Basic validation
-        if (!parsedJson || typeof parsedJson !== 'object') {
-          throw new Error('Parsed response is not a valid object');
-        }
-        
-        // Extract information from the JSON structure
-        const introduction = parsedJson.introduction || '';
-        const explanation = parsedJson.concept_explanation || '';
-        const analogy = parsedJson.analogy?.text || '';
-        const analogyTitle = parsedJson.analogy?.title || '';
-        const example = parsedJson.example?.text || '';
-        const exampleTitle = parsedJson.example?.title || '';
-        const keyTakeaways = Array.isArray(parsedJson.key_takeaways) ? parsedJson.key_takeaways : [];
-        const resources = Array.isArray(parsedJson.resources) ? parsedJson.resources : [];
-        
-        // Format key takeaways as a string if they exist
-        const recap = keyTakeaways.length > 0 ? 
-          keyTakeaways.join('\n- ') : '';
-        
-        // Return the structured response
-        return {
-          suggested_title: '',
-          is_structured: true,
-          introduction: introduction,
-          explanation: explanation,
-          analogy: analogy,
-          analogy_title: analogyTitle,
-          example: example,
-          example_title: exampleTitle,
-          additional_sources: resources,
-          recap: recap,
-          key_takeaways: keyTakeaways
-        };
-      } catch (jsonError) {
-        console.error('Error parsing JSON response:', jsonError);
-        // Fall through to the conversational text handling
-      }
-    }
-    
-    // Handle as conversational text if it's not valid JSON or doesn't look like JSON
-    console.log('Handling as conversational response');
-    
-    // Check if the response contains paragraphs
-    const paragraphs = trimmedResponse.split(/\n\s*\n/).filter(p => p.trim().length > 0);
-    
-    if (paragraphs.length > 1) {
-      // If we have multiple paragraphs, use the first as introduction and the rest as explanation
-      return {
-        suggested_title: '',
-        is_structured: false,
-        introduction: paragraphs[0],
-        explanation: paragraphs.slice(1).join('\n\n'),
-        analogy: '',
-        analogy_title: '',
-        example: '',
-        example_title: '',
-        additional_sources: [],
-        recap: '',
-        key_takeaways: []
-      };
-    } else {
-      // For a simple response, just use the entire text as explanation
-      return {
-        suggested_title: '',
-        is_structured: false,
-        introduction: '',
-        explanation: trimmedResponse,
-        analogy: '',
-        analogy_title: '',
-        example: '',
-        example_title: '',
-        additional_sources: [],
-        recap: '',
-        key_takeaways: []
-      };
-    }
+    // Return conversational format - no forced structure
+    return {
+      suggested_title: '',
+      is_structured: false,
+      introduction: '',
+      explanation: trimmedResponse, // Use entire response as natural conversation
+      analogy: '',
+      analogy_title: '',
+      example: '',
+      example_title: '',
+      additional_sources: [],
+      recap: '',
+      key_takeaways: []
+    };
   } catch (error) {
-    console.error('Error in overall response parsing:', error);
+    console.error('Error in response parsing:', error);
     console.log('Raw response:', responseText);
     
-    // Final fallback
+    // Fallback - still conversational
     return {
       suggested_title: '',
       is_structured: false,
@@ -593,64 +525,14 @@ IMPORTANT: Based on topic analysis (${crowdWisdomTopic}) and successful past int
 - You should still use your own knowledge and expertise to craft the best response.
 ` : ''}
 
-IMPORTANT: Respond in a structured, intuitive format to make complex concepts easier to understand.
-
-For INITIAL COMPLEX EXPLANATIONS about topics, use a structured JSON format with these keys:
-- "introduction": (String) A brief, engaging opening that introduces the topic in 1-2 sentences.
-- "concept_explanation": (String) The core explanation of the topic. Break this into smaller paragraphs for readability.
-- "analogy": (Object | null) An object with "title" (String) and "text" (String) for the analogy, or null if no analogy is suitable.
-- "example": (Object | null) An object with "title" (String) and "text" (String), or null.
-- "key_takeaways": (Array<String> | null) A list of 3-5 key points to remember, or null.
-- "resources": (Array<Object> | null) List of resource objects {title, url, description}, or null.
-
-Example JSON structure for complex explanations:
-{
-  "introduction": "Let's dive into the 'divide and conquer' strategy!",
-  "concept_explanation": "It's a powerful algorithmic technique where complex problems are broken down into simpler, manageable parts.\\n\\nEach part is solved independently, and then these solutions are combined to solve the original problem.",
-  "analogy": {
-    "title": "Soccer Team Training",
-    "text": "Think of it like coaching a large soccer team. Instead of trying to train all 22 players at once (which would be chaotic), you divide them into groups based on their roles: strikers, midfielders, defenders, and goalkeepers. Each group focuses on their specific skills separately (the 'conquer' step). Finally, you bring everyone together for a practice match, combining all their improved skills."
-  },
-  "example": {
-    "title": "Merge Sort Algorithm",
-    "text": "A classic example is the Merge Sort algorithm. It works by: 1) Dividing the array in half repeatedly until you have single elements, 2) Sorting and merging these smaller arrays back together, 3) Continuing until the entire array is sorted."
-  },
-  "key_takeaways": [
-    "Break complex problems into smaller, manageable parts",
-    "Solve each smaller part independently",
-    "Combine the solutions to solve the original problem",
-    "This approach often leads to more efficient solutions"
-  ],
-  "resources": [
-    {
-      "title": "Divide and Conquer Algorithms",
-      "url": "https://example.com/algorithms",
-      "description": "A comprehensive guide to common divide and conquer algorithms"
-    }
-  ]
-}
-
-For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural, conversational style without the structured JSON format. Your response should be direct and helpful, just like you're having a normal conversation with the user. For example:
-
-User: "I didn't understand that part about binary search."
-Your response: "Let me clarify the binary search concept. It works by repeatedly dividing the search area in half. Imagine looking for a word in a dictionary - you open to the middle, see if your word would come before or after that page, then only look in that half, repeating until you find the word. This is much faster than checking every page from the beginning."
-
-User: "Can you explain it more simply?"
-Your response: "Sure! Binary search is like a guessing game where you guess a number between 1-100, and after each guess, you're told if the answer is higher or lower. You always guess in the middle of the possible range, cutting the possibilities in half each time. This makes it very efficient."
-
-Ensure your entire output is properly formatted. For complex topics, break down your explanation into smaller chunks with proper paragraph breaks. Use simple language where possible and gradually introduce technical terms as needed.
-
-CRITICAL - AVOID REPETITION: 
-1. Do NOT repeat the same concept across different sections
-2. Each section should add new information or perspective
-3. Check your response for redundancy before submitting
+Respond directly to the user's question with clear, helpful explanations. Use natural paragraph breaks to organize your thoughts and be thorough in your explanations. When helpful, include examples and analogies naturally within your response.
 
 ${isRegeneration && feedback?.analogyTopic ? 
-  `When using analogies, make sure to incorporate the user's requested domain: ${feedback.analogyTopic}` : 
+  `When using analogies, incorporate the user's requested domain: ${feedback.analogyTopic}` : 
   effectivePreferences?.preferred_analogy_domains?.length ? 
-    `Always use analogies from these domains unless instructed otherwise: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}` : 
+    `When helpful, use analogies from these domains: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}` : 
     effectivePreferences?.interests?.length ? 
-      `Always use analogies related to the user's interests unless instructed otherwise: ${effectivePreferences?.interests?.join(', ')}` :
+      `When helpful, use analogies related to the user's interests: ${effectivePreferences?.interests?.join(', ')}` :
       ``}`
     };
     
@@ -678,10 +560,10 @@ ${isRegeneration && feedback?.analogyTopic ?
 
     // Call OpenAI API with enhanced context
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",  // Use GPT-4 for more comprehensive responses
+      model: "gpt-4o",  // Use GPT-4o for more comprehensive responses
       messages: historyMessages,
-      temperature: 0.7,
-      max_tokens: 4000,  // Increased token limit for longer responses
+      temperature: 0.8,  // Slightly higher for more natural conversation
+      max_tokens: 6000,  // Increased significantly for comprehensive ChatGPT-style responses
       presence_penalty: 0.1,  // Slight penalty to avoid repetition
       frequency_penalty: 0.1  // Slight penalty to encourage diversity
     });
@@ -788,7 +670,7 @@ INSTRUCTIONS:
 TOPIC:`;
 
       const topicCompletion = await openai.chat.completions.create({
-        model: "gpt-4",
+        model: "gpt-4o",
         messages: [{ role: "user", content: topicClassificationPrompt }],
         temperature: 0.1,
         max_tokens: 50
@@ -2271,6 +2153,75 @@ app.post('/api/topics', async (req, res) => {
 
 setupQuizRoutes(app, supabase, openai);
 setupClusterRoutes(app, supabase);
+
+// Add a route to fix existing structured templates
+app.post('/api/admin/fix-structured-templates', async (req, res) => {
+  try {
+    const { adminKey } = req.body;
+    // Simple security check - in production, use proper authentication
+    if (adminKey !== 'fix-structured-templates') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Unauthorized - incorrect admin key' 
+      });
+    }
+
+    console.log('Fixing existing structured templates...');
+    
+    // Update templates to use conversational format
+    const { data: updateResult, error: updateError } = await supabase
+      .from('prompt_templates')
+      .select('id, template_text')
+      .like('template_text', '%"is_structured":true%');
+    
+    if (updateError) {
+      console.error('Error finding structured templates:', updateError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to find structured templates',
+        error: updateError.message
+      });
+    }
+    
+    let updatedCount = 0;
+    
+    if (updateResult && updateResult.length > 0) {
+      for (const template of updateResult) {
+        try {
+          const updatedText = template.template_text
+            .replace('"is_structured":true', '"is_structured":false')
+            .replace('"is_structured": true', '"is_structured": false');
+          
+          const { error: individualUpdateError } = await supabase
+            .from('prompt_templates')
+            .update({ template_text: updatedText })
+            .eq('id', template.id);
+          
+          if (individualUpdateError) {
+            console.error(`Error updating template ${template.id}:`, individualUpdateError);
+          } else {
+            updatedCount++;
+          }
+        } catch (templateError) {
+          console.error(`Error processing template ${template.id}:`, templateError);
+        }
+      }
+    }
+    
+    console.log(`Fixed ${updatedCount} structured templates`);
+    res.json({
+      success: true,
+      message: `Successfully fixed ${updatedCount} structured templates to use conversational format`,
+      updatedCount
+    });
+  } catch (error) {
+    console.error('Error in fix structured templates route:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 // Start the server
 app.listen(PORT, () => {
