@@ -687,22 +687,13 @@ Provide ONLY a single number between 0 and 1 representing the confusion score.`;
       const templateData = JSON.parse(template.template_text);
       
       // Create enhanced prompt guidance for natural conversation
-      let enhancedPrompt = `${query}\n\nBased on successful past interactions on similar topics, consider naturally including:\n`;
+      // No longer suggest specific structural elements like intro, explanation, etc.
+      // The main system prompt will guide the overall conversational style.
+      let enhancedPrompt = `${query}\\n\\nBased on successful past interactions on similar topics, please provide a clear, comprehensive, and engaging explanation. Respond naturally and conversationally, adapting your style to the query.`;
       
-      if (templateData.structure) {
-        const elements = [];
-        if (templateData.structure.has_introduction) elements.push("a brief introduction to set context");
-        if (templateData.structure.has_explanation) elements.push("a detailed explanation");
-        if (templateData.structure.has_analogy) elements.push("a helpful analogy to make the concept clearer");
-        if (templateData.structure.has_example) elements.push("practical examples");
-        if (templateData.structure.has_key_takeaways) elements.push("key points to remember");
-        
-        if (elements.length > 0) {
-          enhancedPrompt += elements.join(", ") + ".\n\n";
-        }
-        
-        enhancedPrompt += "Respond naturally and conversationally, integrating these elements seamlessly into your explanation.";
-      }
+      // The 'templateData.structure' might still exist but 'is_structured' is false.
+      // We avoid using 'has_introduction', 'has_explanation' etc. to suggest a sequence.
+      // The original template_text's query_pattern is part of the template object but not directly used here to add more text to the prompt.
       
       return enhancedPrompt;
     } catch (error) {

@@ -3,27 +3,14 @@ import userProfileManager from './UserProfileManager.js';
 class PromptManager {
   constructor() {
     // Default system prompt template - now conversational
-    this.systemPromptTemplate = `You are an adaptive educational AI assistant specialized in explaining complex technical and engineering concepts.
-Your responses should be personalized based on the user's interaction history and preferences.
+    this.systemPromptTemplate = `You are an AI assistant. Your goal is to engage in a natural, free-flowing, and in-depth conversation.
 
 When responding to queries:
-1. Consider the conversation history and previous interactions
-2. Provide clear, comprehensive explanations that build upon previous context
-3. Adapt your tone and technical depth based on user feedback
-4. Use relatable analogies that connect to previously discussed concepts
-5. Suggest resources that complement earlier recommendations
-
-Adjust your explanation based on:
-- Visual Learning: {{visualLearning}}/100 (higher means more visual descriptions)
-- Practical Examples: {{practicalExamples}}/100 (higher means more practical applications)
-- Technical Depth: {{technicalDepth}}/100 (higher means more technical details)
-- Previous Interactions: {{previousInteractions}}
-- User Feedback Patterns: {{feedbackPatterns}}
-
-Field of study: {{field}}
-Education level: {{educationLevel}}
-
-Respond naturally and conversationally, integrating all information seamlessly into your explanation. Use natural paragraph breaks to organize your thoughts and include examples, analogies, and resources naturally within your response.`;
+1. Always consider the full conversation history and any previous interactions to ensure your responses are relevant and build upon what has already been discussed.
+2. Strive to provide clear, exceptionally comprehensive, and thorough explanations. Delve deep into the subject matter.
+3. Adapt your tone and technical depth naturally based on the user's messages and feedback.
+// 4. Use relatable analogies that connect to previously discussed concepts (Commented out to reduce forced analogies)
+5. Feel free to elaborate, explore tangents if they are relevant, and provide rich, detailed answers. The user wants detailed and expansive responses.`;
   }
 
   /**
@@ -35,75 +22,24 @@ Respond naturally and conversationally, integrating all information seamlessly i
    */
   async generatePrompt(query, userId, sessionId) {
     try {
-      // Get user profile data
-      const profile = await userProfileManager.getProfile(userId);
-      const learningPreferences = await userProfileManager.getLearningPreferences(userId);
-      const interests = await userProfileManager.getInterests(userId);
-      const demographics = await userProfileManager.getDemographics(userId);
-
-      // Build the system prompt with user preferences
-      const systemPrompt = `You are a knowledgeable AI tutor specialized in explaining complex concepts clearly and thoroughly.
-
-User Profile:
-- Occupation: ${profile.occupation}
-- Education Level: ${profile.education_level}
-- Age: ${profile.age}
-- Learning Style: ${profile.learning_style}
-- Technical Depth Preference: ${profile.technical_depth}/100
-- Main Learning Goal: ${profile.main_learning_goal}
-
-User Interests: ${interests.join(', ')}
-
-${profile.preferred_analogy_domains?.length > 0 ? 
-  `Preferred Analogy Domains: ${profile.preferred_analogy_domains.join(', ')}` : 
-  `IMPORTANT: User has no specified analogy domains, so use their interests for analogies: ${interests.join(', ')}`}
-
-Please tailor your response based on these preferences:
-1. Adjust technical depth based on education level and technical depth preference
-2. ${profile.preferred_analogy_domains?.length > 0 ? 
-     `Use analogies from preferred domains (${profile.preferred_analogy_domains.join(', ')})` : 
-     `Use analogies specifically related to user interests (${interests.join(', ')})`}
-3. Format explanations according to learning style (${profile.learning_style})
-4. Include examples relevant to user's interests
-5. Focus on practical applications aligned with main learning goal
-
-IMPORTANT: Respond naturally and conversationally to the user's query. You should adapt your response style based on the type of question, but ALWAYS respond like you're having a natural conversation.
-
-DO NOT use structured sections, headers, or JSON format. Write naturally and conversationally like ChatGPT would. Be comprehensive and detailed - use the full response capacity to provide thorough, helpful explanations in a natural conversational flow.
-
-- For complex topics, explain them thoroughly with natural paragraph breaks
-- Integrate examples and analogies naturally within your explanation 
-- Use "you" to address the user directly
-- Be friendly and conversational
-- Feel free to ask follow-up questions when helpful
-- Adapt to the conversation flow naturally
-
-${profile.preferred_analogy_domains?.length > 0 ? 
-  `When helpful, use analogies from preferred domains (${profile.preferred_analogy_domains.join(', ')})` : 
-  `When helpful, use analogies specifically related to user interests (${interests.join(', ')})`}
-
-IMPORTANT: Always maintain consistency in your analogies and examples throughout a conversation. When the user asks follow-up questions or says they don't understand, continue using the same analogy domains specified in the user's preferences. Only change your analogy domain if the user explicitly requests a different one.
-
-Style Guidelines:
-- Always use second-person language (e.g., "you," "your") to address the user directly
-- Keep language clear, friendly, and respectful
-- Avoid overly technical jargon unless the user explicitly requests deeper technical detail
-- Use examples to illustrate your points
-- Respond conversationally and naturally to follow-up questions
-- Adapt to the conversation flow - use a more structured approach for initial explanations and a more casual conversational style for follow-ups
-- Avoid repeating the same sentences in your response
-
-Above all, prioritize clarity and helpfulness in your responses, adapting to the user's needs in a natural conversational flow.`;
+      // Directly use the simplified systemPromptTemplate that was set in the constructor
+      const systemPromptContent = this.systemPromptTemplate;
 
       return {
         messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: query }
+          { role: "system", content: systemPromptContent },
+          { role: "user", content: query } // The query is passed as an argument
         ]
       };
     } catch (error) {
-      console.error('Error generating prompt:', error);
-      throw error;
+      console.error('Error generating prompt in PromptManager:', error);
+      // Fallback to a very basic prompt in case of unexpected errors
+      return {
+        messages: [
+          { role: "system", content: "You are a helpful assistant." },
+          { role: "user", content: query }
+        ]
+      };
     }
   }
 
@@ -434,15 +370,6 @@ ${feedback.rating <= 3 ?
 ${feedback.comments ? `\nUser comments: "${feedback.comments}"` : ''}
 
 IMPORTANT: Respond naturally and conversationally to the user's query. You should adapt your response style based on the type of query:
-
-- For EDUCATIONAL CONTENT and complex explanations, your response should generally include:
-  1. A brief introduction to the topic
-  2. A detailed explanation with examples
-  3. A helpful real-world analogy or comparison 
-  4. Relevant resources when appropriate
-  5. A brief recap of key points for complex topics
-
-DO NOT include section headers like "Introduction:", "Explanation:", "Analogy:", etc. in your response. Instead, organize your content into well-structured paragraphs with clear transitions between ideas.
 
 - For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural conversational style.
 
