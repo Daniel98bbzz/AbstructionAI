@@ -17,96 +17,28 @@ import setupClusterRoutes from './api/clusterRoutes.js';
  */
 function parseResponse(responseText) {
   try {
-    // First, check if the response looks like JSON (starts with '{' after trimming)
+    // Always treat responses as natural conversation
     const trimmedResponse = responseText.trim();
-    const looksLikeJson = trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}');
     
-    // If it looks like JSON, try to parse it as structured content
-    if (looksLikeJson) {
-      try {
-        const parsedJson = JSON.parse(trimmedResponse);
-        
-        // Basic validation
-        if (!parsedJson || typeof parsedJson !== 'object') {
-          throw new Error('Parsed response is not a valid object');
-        }
-        
-        // Extract information from the JSON structure
-        const introduction = parsedJson.introduction || '';
-        const explanation = parsedJson.concept_explanation || '';
-        const analogy = parsedJson.analogy?.text || '';
-        const analogyTitle = parsedJson.analogy?.title || '';
-        const example = parsedJson.example?.text || '';
-        const exampleTitle = parsedJson.example?.title || '';
-        const keyTakeaways = Array.isArray(parsedJson.key_takeaways) ? parsedJson.key_takeaways : [];
-        const resources = Array.isArray(parsedJson.resources) ? parsedJson.resources : [];
-        
-        // Format key takeaways as a string if they exist
-        const recap = keyTakeaways.length > 0 ? 
-          keyTakeaways.join('\n- ') : '';
-        
-        // Return the structured response
-        return {
-          suggested_title: '',
-          is_structured: true,
-          introduction: introduction,
-          explanation: explanation,
-          analogy: analogy,
-          analogy_title: analogyTitle,
-          example: example,
-          example_title: exampleTitle,
-          additional_sources: resources,
-          recap: recap,
-          key_takeaways: keyTakeaways
-        };
-      } catch (jsonError) {
-        console.error('Error parsing JSON response:', jsonError);
-        // Fall through to the conversational text handling
-      }
-    }
-    
-    // Handle as conversational text if it's not valid JSON or doesn't look like JSON
-    console.log('Handling as conversational response');
-    
-    // Check if the response contains paragraphs
-    const paragraphs = trimmedResponse.split(/\n\s*\n/).filter(p => p.trim().length > 0);
-    
-    if (paragraphs.length > 1) {
-      // If we have multiple paragraphs, use the first as introduction and the rest as explanation
-      return {
-        suggested_title: '',
-        is_structured: false,
-        introduction: paragraphs[0],
-        explanation: paragraphs.slice(1).join('\n\n'),
-        analogy: '',
-        analogy_title: '',
-        example: '',
-        example_title: '',
-        additional_sources: [],
-        recap: '',
-        key_takeaways: []
-      };
-    } else {
-      // For a simple response, just use the entire text as explanation
-      return {
-        suggested_title: '',
-        is_structured: false,
-        introduction: '',
-        explanation: trimmedResponse,
-        analogy: '',
-        analogy_title: '',
-        example: '',
-        example_title: '',
-        additional_sources: [],
-        recap: '',
-        key_takeaways: []
-      };
-    }
+    // Return conversational format - no forced structure
+    return {
+      suggested_title: '',
+      is_structured: false,
+      introduction: '',
+      explanation: trimmedResponse, // Use entire response as natural conversation
+      analogy: '',
+      analogy_title: '',
+      example: '',
+      example_title: '',
+      additional_sources: [],
+      recap: '',
+      key_takeaways: []
+    };
   } catch (error) {
-    console.error('Error in overall response parsing:', error);
+    console.error('Error in response parsing:', error);
     console.log('Raw response:', responseText);
     
-    // Final fallback
+    // Fallback - still conversational
     return {
       suggested_title: '',
       is_structured: false,
@@ -173,7 +105,7 @@ import ResponseClusterManager from './managers/ResponseClusterManager.js';
 
 // Initialize managers
 const userManager = new UserManager();
-// const promptManager = new PromptManager();  // Comment out this line
+const promptManager = PromptManager;
 const sessionManager = new SessionManager();
 const feedbackProcessor = new FeedbackProcessor();
 const supervisor = new Supervisor();
@@ -191,341 +123,36 @@ app.post('/api/query', async (req, res) => {
       hasFeedback: !!feedback,
       abTestGroup: abTestGroup || 'default'
     });
-
-    // Add debug logging for session tracking
-    if (sessionId) {
-      console.log(`[SESSION DEBUG] Processing query for session: ${sessionId}`);
-      
-      // Check if session exists in database
-      if (supabase) {
-        try {
-          const { data, error } = await supabase
-            .from('sessions')
-            .select('id, status, created_at')
-            .eq('id', sessionId)
-            .single();
-          
-          if (error) {
-            console.error(`[SESSION DEBUG] Error checking session: ${error.message}`);
-          } else if (data) {
-            console.log(`[SESSION DEBUG] Found session in database: ${data.id}, created: ${data.created_at}, status: ${data.status}`);
-            
-            // Check for existing interactions
-            const { data: interactions, error: interactionsError } = await supabase
-              .from('interactions')
-              .select('id, query, type')
-              .eq('session_id', sessionId)
-              .order('created_at', { ascending: false })
-              .limit(5);
-            
-            if (interactionsError) {
-              console.error(`[SESSION DEBUG] Error checking interactions: ${interactionsError.message}`);
-            } else if (interactions && interactions.length > 0) {
-              console.log(`[SESSION DEBUG] Found ${interactions.length} previous interactions:`);
-              interactions.forEach((i, idx) => {
-                console.log(`[SESSION DEBUG] Interaction ${idx+1}: ${i.type} - ${i.query?.substring(0, 30)}...`);
-              });
-            } else {
-              console.log(`[SESSION DEBUG] No previous interactions found for session: ${sessionId}`);
-            }
-          } else {
-            console.log(`[SESSION DEBUG] Session not found in database: ${sessionId}. Will create new.`);
-          }
-        } catch (e) {
-          console.error(`[SESSION DEBUG] Exception checking session: ${e.message}`);
-        }
-      }
-    } else {
-      console.log('[SESSION DEBUG] No session ID provided with query request');
-    }
     
-    // Identify the user
-    const userId = req.user?.id || req.body.userId;  // Try to get the user ID from the request body as fallback
-    let userProfile = null;
-    
-    // IMPORTANT DEBUG LOG
-    console.log('Attempting to fetch user profile for ID:', userId);
-    
-    // Check memory cache first (fastest)
-    if (userId && global.userProfiles && global.userProfiles[userId]) {
-      userProfile = global.userProfiles[userId];
-      console.log('✅ Using user profile from memory cache');
-      
-      // Ensure arrays are properly formatted
-      userProfile.interests = ensureArray(userProfile.interests);
-      userProfile.preferred_analogy_domains = ensureArray(userProfile.preferred_analogy_domains);
-      
-      console.log('User profile from memory cache has arrays:', {
-        interests: userProfile.interests,
-        preferred_analogy_domains: userProfile.preferred_analogy_domains
-      });
-      
-      // Reload in background to keep memory cache fresh
-      setTimeout(async () => {
-        try {
-          console.log('Background refresh of profile for user:', userId);
-          const { data, error } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', userId)
-            .single();
-            
-          if (!error && data) {
-            // Process the data to ensure arrays are properly formatted
-            const freshProfile = {
-              ...data,
-              interests: Array.isArray(data.interests) ? 
-                data.interests : 
-                (typeof data.interests === 'string' ? 
-                  JSON.parse(data.interests) : 
-                  ['Video Games', 'Art']),
-              preferred_analogy_domains: Array.isArray(data.preferred_analogy_domains) ? 
-                data.preferred_analogy_domains : 
-                (typeof data.preferred_analogy_domains === 'string' ? 
-                  JSON.parse(data.preferred_analogy_domains) : 
-                  ['Gaming', 'Cooking'])
-            };
-            
-            // Update the memory cache
-            global.userProfiles[userId] = freshProfile;
-            console.log('Background refresh completed - updated memory cache with fresh data');
-            console.log('Updated preferences:', {
-              interests: freshProfile.interests,
-              preferred_analogy_domains: freshProfile.preferred_analogy_domains
-            });
-          }
-        } catch (refreshError) {
-          console.error('Error in background profile refresh:', refreshError);
-        }
-      }, 0);
-    }
-    // Fetch user profile if authenticated and not in memory cache
-    else if (userId) {
-      try {
-        // First try with UserProfileManager
-        try {
-          userProfile = await UserProfileManager.getProfile(userId);
-          console.log('User profile loaded from manager:', !!userProfile);
-          
-          // Store in memory cache for future requests
-          if (userProfile) {
-            global.userProfiles = global.userProfiles || {};
-            global.userProfiles[userId] = userProfile;
-            console.log('Stored profile in memory cache');
-          }
-        } catch (managerError) {
-          console.error('Error using UserProfileManager:', managerError);
-        }
-        
-        // Fallback to direct query if UserProfileManager fails
-        if (!userProfile) {
-        const { data, error } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-          
-        if (!error && data) {
-          userProfile = data;
-            console.log('Using user profile from direct query');
-          } else if (error) {
-            console.error('Error in direct query for user profile:', error);
-            
-            // If the error is that no rows were found, create a default profile
-            if (error.code === 'PGRST116') {
-              console.log('No profile found - attempting to create default profile');
-              
-              try {
-                // Create a default profile with dummy data for testing
-                const { data: newProfile, error: createError } = await supabase
-                  .from('user_profiles')
-                  .insert([{
-                    id: userId,
-                    username: 'user_' + userId.substring(0, 8),
-                    occupation: 'Student',
-                    age: 25,
-                    education_level: 'Undergraduate',
-                    interests: ['Video Games', 'Art'],
-                    learning_style: 'Visual',
-                    technical_depth: 50,
-                    preferred_analogy_domains: ['Gaming', 'Cooking'],
-                    main_learning_goal: 'Personal Interest'
-                  }])
-                  .select();
-                  
-                if (createError) {
-                  console.error('Failed to create default profile:', createError);
-                } else {
-                  console.log('Created default profile successfully');
-                  userProfile = newProfile[0];
-                }
-              } catch (createProfileError) {
-                console.error('Error creating default profile:', createProfileError);
-              }
-            }
-          }
-        }
-        
-        if (userProfile) {
-          console.log('User profile loaded successfully. Preferences:', {
-            interests: userProfile.interests || [],
-            preferred_analogy_domains: userProfile.preferred_analogy_domains || []
-          });
-          
-          // Fix JSON string issue - parse strings to arrays if needed
-          if (userProfile.interests && typeof userProfile.interests === 'string') {
-            try {
-              userProfile.interests = JSON.parse(userProfile.interests);
-            } catch (e) {
-              console.error('Error parsing interests JSON:', e);
-              userProfile.interests = ['Video Games', 'Art']; // Default fallback
-            }
-          }
-          
-          if (userProfile.preferred_analogy_domains && typeof userProfile.preferred_analogy_domains === 'string') {
-            try {
-              userProfile.preferred_analogy_domains = JSON.parse(userProfile.preferred_analogy_domains);
-            } catch (e) {
-              console.error('Error parsing preferred_analogy_domains JSON:', e);
-              userProfile.preferred_analogy_domains = ['Gaming', 'Cooking']; // Default fallback
-            }
-          }
-          
-          // Ensure these are always arrays
-          if (!Array.isArray(userProfile.interests)) {
-            userProfile.interests = ['Video Games', 'Art']; // Default fallback
-          }
-          
-          if (!Array.isArray(userProfile.preferred_analogy_domains)) {
-            userProfile.preferred_analogy_domains = ['Gaming', 'Cooking']; // Default fallback
-          }
-        } else {
-          console.error('No user profile found for ID:', userId);
-        }
-      } catch (profileError) {
-        console.error('Error fetching user profile:', profileError);
-      }
-    } else {
-      console.log('No user ID available, skipping profile lookup');
-    }
-    
-    if (isRegeneration) {
-      console.log('Processing regeneration request with feedback:', {
-        originalResponseId: originalResponseId || 'unknown',
-        feedbackRating: feedback?.rating,
-        specificInstructions: feedback?.specificInstructions || [],
-        analogyTopic: feedback?.analogyTopic || 'not specified',
-        forceAnalogy: feedback?.forceAnalogy || false
-      });
-      
-      // Log more detailed feedback info to help with debugging
-      if (feedback?.analogyTopic) {
-        console.log(`User explicitly requested a ${feedback.analogyTopic}-themed analogy. This will be enforced in the response.`);
-      }
-      
-      if (feedback?.specificInstructions && feedback.specificInstructions.length > 0) {
-        console.log('Specific instructions from feedback:', feedback.specificInstructions);
-      }
-    }
+    const userId = req.user?.id || req.body.userId;
     
     if (!query) {
       return res.status(400).json({ error: 'Query is required' });
     }
     
-    // Get or create session
     let sessionData;
     if (sessionId) {
-      console.log(`Looking for existing session ${sessionId}`);
       sessionData = await sessionManager.getSession(sessionId);
       if (!sessionData) {
-        console.log(`Session ${sessionId} not found, will create new`);
-        // Instead of failing, create a new session if the requested one doesn't exist
         const tempUserId = userId || `anon_${Date.now()}`;
         sessionData = await sessionManager.createSession(tempUserId, preferences);
-        console.log(`Created new session ${sessionData.id} for user ${tempUserId}`);
       }
     } else {
-      // Create anonymous session if no user is authenticated
       const tempUserId = userId || `anon_${Date.now()}`;
-      console.log(`No session provided, creating new session for user ${tempUserId}`);
       sessionData = await sessionManager.createSession(tempUserId, preferences);
-      console.log(`Created new session ${sessionData.id}`);
     }
-    
-    // Get conversation summary and history for context
-    const conversationSummary = sessionManager.getConversationSummary(sessionData.id);
-    
-    // Prepare conversation history messages with better context handling
-    const historyMessages = [];
-    
-    // Add conversation context about the current conversation with user profile data
-    console.log('=== PREFERENCES DEBUG START ===');
-    console.log('Raw request preferences:', preferences);
-    console.log('Raw user profile:', userProfile);
-    
-    // Ensure we're using project preferences when available
-    const effectivePreferences = preferences ? 
-      {
-        // Merge project preferences with user profile, using user profile as fallback
-        interests: preferences.interests?.length ? preferences.interests : userProfile?.interests || [],
-        preferred_analogy_domains: preferences.preferred_analogy_domains?.length ? 
-          preferences.preferred_analogy_domains : userProfile?.preferred_analogy_domains || [],
-        learning_style: preferences.learning_style || userProfile?.learning_style || 'Visual',
-        technical_depth: preferences.technical_depth || userProfile?.technical_depth || 50,
-        education_level: preferences.education_level || userProfile?.education_level || 'Not specified',
-        main_learning_goal: preferences.main_learning_goal || userProfile?.main_learning_goal || 'Not specified'
-      } : userProfile;
-    
-    // Detailed debug logging for preferences
-    console.log('=== PREFERENCES ANALYSIS ===');
-    console.log('Preference Source:', preferences ? 'PROJECT' : 'GLOBAL PROFILE');
-    console.log('Effective Preferences:', {
-      interests: effectivePreferences?.interests || [],
-      preferred_analogy_domains: effectivePreferences?.preferred_analogy_domains || [],
-      learning_style: effectivePreferences?.learning_style || 'Not specified',
-      technical_depth: effectivePreferences?.technical_depth || 'Not specified',
-      education_level: effectivePreferences?.education_level || 'Not specified',
-      main_learning_goal: effectivePreferences?.main_learning_goal || 'Not specified'
-    });
-    
-    // Log the actual values being used in the prompt
-    console.log('=== PROMPT VALUES ===');
-    console.log('Interests being used:', effectivePreferences?.interests?.join(', ') || 'None');
-    console.log('Analogy domains being used:', effectivePreferences?.preferred_analogy_domains?.join(', ') || 'None');
-    console.log('Learning style being used:', effectivePreferences?.learning_style || 'Not specified');
-    console.log('Technical depth being used:', effectivePreferences?.technical_depth || 'Not specified');
-    console.log('=== PREFERENCES DEBUG END ===');
-    
-    // NEW: Apply Crowd Wisdom enhancement if user context is limited
+
     let enhancedQuery = query;
     let usedTemplate = null;
     let crowdWisdomTopic = null;
     let selectionMethod = 'none';
-    
-    // Check if user has limited context (less than 2 interactions)
     const hasLimitedContext = !sessionData.interactions || sessionData.interactions.length < 2;
-    
+
     if (hasLimitedContext && !isRegeneration) {
       try {
-        console.log('[Crowd Wisdom] User has limited context, applying crowd wisdom enhancement');
-        
-        // Determine which algorithm to use based on A/B test group or random assignment
-        let useCompositeScore = true; // Default to new method
-        
-        if (abTestGroup) {
-          // Use explicitly provided test group
-          useCompositeScore = abTestGroup === 'composite' || abTestGroup === 'new';
-          console.log(`[Crowd Wisdom] Using explicitly provided A/B test group: ${abTestGroup}`);
-        } else {
-          // Randomly assign for A/B testing if not specified 
-          // 70% new method, 30% old method during transition period
-          useCompositeScore = Math.random() < 0.7;
-          console.log(`[Crowd Wisdom] Randomly assigned to ${useCompositeScore ? 'composite' : 'efficacy'} score group`);
-        }
-        
-        // Slightly higher exploration rate for composite score to gather more data
+        console.log('[Crowd Wisdom] User has limited context, applying crowd wisdom enhancement to user query');
+        let useCompositeScore = abTestGroup ? (abTestGroup === 'composite' || abTestGroup === 'new') : (Math.random() < 0.7);
         const explorationRate = useCompositeScore ? 0.15 : 0.1;
-        
         const crowdWisdomResult = await supervisor.processQueryWithCrowdWisdom(
           query, 
           sessionData.id, 
@@ -534,134 +161,36 @@ app.post('/api/query', async (req, res) => {
           useCompositeScore,
           explorationRate
         );
-        
         enhancedQuery = crowdWisdomResult.enhancedQuery;
         usedTemplate = crowdWisdomResult.template;
         crowdWisdomTopic = crowdWisdomResult.topic;
         selectionMethod = crowdWisdomResult.selectionMethod;
-        
         if (usedTemplate) {
-          console.log(`[Crowd Wisdom] Enhanced query with template ID: ${usedTemplate.id} using ${selectionMethod}`);
+          console.log(`[Crowd Wisdom] Enhanced user query with template ID: ${usedTemplate.id} using ${selectionMethod}`);
         }
       } catch (crowdWisdomError) {
-        console.error('[Crowd Wisdom] Error enhancing query:', crowdWisdomError);
-        // Fallback to original query if enhancement fails
+        console.error('[Crowd Wisdom] Error enhancing user query:', crowdWisdomError);
         enhancedQuery = query;
       }
     }
-    
-    const systemContext = {
-      role: "system",
-      content: `You are a knowledgeable AI tutor specialized in explaining complex concepts clearly and thoroughly.
 
-${conversationSummary.lastExplanation 
-  ? `Previous topic: ${conversationSummary.currentTopic}
-Last explanation: ${conversationSummary.lastExplanation}`
-  : "This is the start of the conversation."}
-${conversationSummary.lastAnalogy
-  ? `\nLast analogy: ${conversationSummary.lastAnalogy}`
-  : ""}
+    // Initialize historyMessages array ONCE here
+    const historyMessages = []; 
 
-${effectivePreferences ? `
-User Profile (${preferences ? 'Project-Specific' : 'Global'} Preferences):
-- Education Level: ${effectivePreferences.education_level || 'Not specified'}
-- Learning Style: ${effectivePreferences.learning_style || 'Not specified'}
-- Technical Background: ${effectivePreferences.technical_background || effectivePreferences.technical_depth || 'Not specified'}
-- Main Learning Goal: ${effectivePreferences.learning_goal || effectivePreferences.main_learning_goal || 'Not specified'}
-- Preferred Analogy Domains: ${effectivePreferences.preferred_analogy_domains?.join(', ') || 'None specified'}
-- Interests: ${effectivePreferences.interests?.join(', ') || 'None specified'}
-` : ''}
+    // Generate the simplified prompt using PromptManager
+    const promptManagerMessages = (await promptManager.generatePrompt(enhancedQuery)).messages;
+    const systemContext = promptManagerMessages.find(m => m.role === 'system');
+    const userQueryForHistory = promptManagerMessages.find(m => m.role === 'user');
 
-${isRegeneration && feedback ? `
-IMPORTANT: This is a request to improve a previous answer based on user feedback.
-
-User Feedback:
-- Overall Rating: ${feedback.rating || 'Not specified'}/5
-- Was explanation clear? ${feedback.explanationClear || 'Not specified'}
-- Was explanation detail level appropriate? ${feedback.explanationDetail || 'Not specified'}
-- Was analogy helpful? ${feedback.analogyHelpful || 'Not specified'}
-${feedback.analogyPreference ? `- Preferred analogy domain: ${feedback.analogyTopic || feedback.analogyPreference}` : ''}
-${feedback.comments ? `- Additional comments: ${feedback.comments}` : ''}
-
-Specific Instructions:
-${feedback.specificInstructions?.map(instruction => `- ${instruction}`).join('\n') || 'None provided'}
-` : ''}
-
-${usedTemplate ? `
-IMPORTANT: Based on topic analysis (${crowdWisdomTopic}) and successful past interactions, consider structuring your response according to the following guidance:
-- This guidance is based on patterns from highly-rated responses on similar topics.
-- You should still use your own knowledge and expertise to craft the best response.
-` : ''}
-
-IMPORTANT: Respond in a structured, intuitive format to make complex concepts easier to understand.
-
-For INITIAL COMPLEX EXPLANATIONS about topics, use a structured JSON format with these keys:
-- "introduction": (String) A brief, engaging opening that introduces the topic in 1-2 sentences.
-- "concept_explanation": (String) The core explanation of the topic. Break this into smaller paragraphs for readability.
-- "analogy": (Object | null) An object with "title" (String) and "text" (String) for the analogy, or null if no analogy is suitable.
-- "example": (Object | null) An object with "title" (String) and "text" (String), or null.
-- "key_takeaways": (Array<String> | null) A list of 3-5 key points to remember, or null.
-- "resources": (Array<Object> | null) List of resource objects {title, url, description}, or null.
-
-Example JSON structure for complex explanations:
-{
-  "introduction": "Let's dive into the 'divide and conquer' strategy!",
-  "concept_explanation": "It's a powerful algorithmic technique where complex problems are broken down into simpler, manageable parts.\\n\\nEach part is solved independently, and then these solutions are combined to solve the original problem.",
-  "analogy": {
-    "title": "Soccer Team Training",
-    "text": "Think of it like coaching a large soccer team. Instead of trying to train all 22 players at once (which would be chaotic), you divide them into groups based on their roles: strikers, midfielders, defenders, and goalkeepers. Each group focuses on their specific skills separately (the 'conquer' step). Finally, you bring everyone together for a practice match, combining all their improved skills."
-  },
-  "example": {
-    "title": "Merge Sort Algorithm",
-    "text": "A classic example is the Merge Sort algorithm. It works by: 1) Dividing the array in half repeatedly until you have single elements, 2) Sorting and merging these smaller arrays back together, 3) Continuing until the entire array is sorted."
-  },
-  "key_takeaways": [
-    "Break complex problems into smaller, manageable parts",
-    "Solve each smaller part independently",
-    "Combine the solutions to solve the original problem",
-    "This approach often leads to more efficient solutions"
-  ],
-  "resources": [
-    {
-      "title": "Divide and Conquer Algorithms",
-      "url": "https://example.com/algorithms",
-      "description": "A comprehensive guide to common divide and conquer algorithms"
+    if (systemContext) {
+      historyMessages.push(systemContext);
     }
-  ]
-}
 
-For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural, conversational style without the structured JSON format. Your response should be direct and helpful, just like you're having a normal conversation with the user. For example:
-
-User: "I didn't understand that part about binary search."
-Your response: "Let me clarify the binary search concept. It works by repeatedly dividing the search area in half. Imagine looking for a word in a dictionary - you open to the middle, see if your word would come before or after that page, then only look in that half, repeating until you find the word. This is much faster than checking every page from the beginning."
-
-User: "Can you explain it more simply?"
-Your response: "Sure! Binary search is like a guessing game where you guess a number between 1-100, and after each guess, you're told if the answer is higher or lower. You always guess in the middle of the possible range, cutting the possibilities in half each time. This makes it very efficient."
-
-Ensure your entire output is properly formatted. For complex topics, break down your explanation into smaller chunks with proper paragraph breaks. Use simple language where possible and gradually introduce technical terms as needed.
-
-CRITICAL - AVOID REPETITION: 
-1. Do NOT repeat the same concept across different sections
-2. Each section should add new information or perspective
-3. Check your response for redundancy before submitting
-
-${isRegeneration && feedback?.analogyTopic ? 
-  `When using analogies, make sure to incorporate the user's requested domain: ${feedback.analogyTopic}` : 
-  effectivePreferences?.preferred_analogy_domains?.length ? 
-    `Always use analogies from these domains unless instructed otherwise: ${effectivePreferences?.preferred_analogy_domains?.join(', ')}` : 
-    effectivePreferences?.interests?.length ? 
-      `Always use analogies related to the user's interests unless instructed otherwise: ${effectivePreferences?.interests?.join(', ')}` :
-      ``}`
-    };
-    
-    historyMessages.push(systemContext);
-
-    // Add recent conversation history (last 5 interactions)
+    // Add recent conversation history
     if (sessionData.interactions && sessionData.interactions.length > 0) {
       const recentInteractions = sessionData.interactions
         .filter(interaction => interaction.type === 'query')
         .slice(-5);
-
       for (const interaction of recentInteractions) {
         historyMessages.push(
           { role: "user", content: interaction.query },
@@ -673,17 +202,19 @@ ${isRegeneration && feedback?.analogyTopic ?
       }
     }
 
-    // Add current query - use enhanced query if Crowd Wisdom was applied
-    historyMessages.push({ role: "user", content: enhancedQuery });
+    // Add current user query
+    if (userQueryForHistory) {
+      historyMessages.push(userQueryForHistory);
+    }
 
-    // Call OpenAI API with enhanced context
+    // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",  // Use GPT-4 for more comprehensive responses
+      model: "gpt-4o",
       messages: historyMessages,
-      temperature: 0.7,
-      max_tokens: 4000,  // Increased token limit for longer responses
-      presence_penalty: 0.1,  // Slight penalty to avoid repetition
-      frequency_penalty: 0.1  // Slight penalty to encourage diversity
+      temperature: 0.8, 
+      max_tokens: 6000, 
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1
     });
     
     // Process the response
@@ -788,7 +319,7 @@ INSTRUCTIONS:
 TOPIC:`;
 
       const topicCompletion = await openai.chat.completions.create({
-        model: "gpt-4",
+        model: "gpt-4o",
         messages: [{ role: "user", content: topicClassificationPrompt }],
         temperature: 0.1,
         max_tokens: 50
@@ -2271,6 +1802,75 @@ app.post('/api/topics', async (req, res) => {
 
 setupQuizRoutes(app, supabase, openai);
 setupClusterRoutes(app, supabase);
+
+// Add a route to fix existing structured templates
+app.post('/api/admin/fix-structured-templates', async (req, res) => {
+  try {
+    const { adminKey } = req.body;
+    // Simple security check - in production, use proper authentication
+    if (adminKey !== 'fix-structured-templates') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Unauthorized - incorrect admin key' 
+      });
+    }
+
+    console.log('Fixing existing structured templates...');
+    
+    // Update templates to use conversational format
+    const { data: updateResult, error: updateError } = await supabase
+      .from('prompt_templates')
+      .select('id, template_text')
+      .like('template_text', '%"is_structured":true%');
+    
+    if (updateError) {
+      console.error('Error finding structured templates:', updateError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to find structured templates',
+        error: updateError.message
+      });
+    }
+    
+    let updatedCount = 0;
+    
+    if (updateResult && updateResult.length > 0) {
+      for (const template of updateResult) {
+        try {
+          const updatedText = template.template_text
+            .replace('"is_structured":true', '"is_structured":false')
+            .replace('"is_structured": true', '"is_structured": false');
+          
+          const { error: individualUpdateError } = await supabase
+            .from('prompt_templates')
+            .update({ template_text: updatedText })
+            .eq('id', template.id);
+          
+          if (individualUpdateError) {
+            console.error(`Error updating template ${template.id}:`, individualUpdateError);
+          } else {
+            updatedCount++;
+          }
+        } catch (templateError) {
+          console.error(`Error processing template ${template.id}:`, templateError);
+        }
+      }
+    }
+    
+    console.log(`Fixed ${updatedCount} structured templates`);
+    res.json({
+      success: true,
+      message: `Successfully fixed ${updatedCount} structured templates to use conversational format`,
+      updatedCount
+    });
+  } catch (error) {
+    console.error('Error in fix structured templates route:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 // Start the server
 app.listen(PORT, () => {

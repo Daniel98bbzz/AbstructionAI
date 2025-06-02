@@ -62,7 +62,7 @@ yarn dev
 
 - **Frontend**: React with TailwindCSS for styling
 - **Backend**: Express.js server for API handling
-- **AI**: OpenAI GPT-4 for generating responses
+- **AI**: OpenAI GPT-4o for generating responses
 - **Authentication**: Supabase Auth
 - **Storage**: Local storage and Supabase database for persistent data
 

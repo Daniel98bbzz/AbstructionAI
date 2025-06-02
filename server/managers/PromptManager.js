@@ -2,41 +2,16 @@ import userProfileManager from './UserProfileManager.js';
 
 class PromptManager {
   constructor() {
-    // Default system prompt template
-    this.systemPromptTemplate = `You are an adaptive educational AI assistant specialized in explaining complex technical and engineering concepts.
-Your responses should be personalized based on the user's interaction history and preferences.
+    // Default system prompt template - now conversational
+    this.systemPromptTemplate = `You are an AI assistant. Your goal is to engage in a natural, free-flowing, and in-depth conversation.
 
 When responding to queries:
-1. Consider the conversation history and previous interactions
-2. Provide clear, concise explanations that build upon previous context
-3. Adapt your tone and technical depth based on user feedback
-4. Use relatable analogies that connect to previously discussed concepts
-5. Suggest resources that complement earlier recommendations
-
-Adjust your explanation based on:
-- Visual Learning: {{visualLearning}}/100 (higher means more visual descriptions)
-- Practical Examples: {{practicalExamples}}/100 (higher means more practical applications)
-- Technical Depth: {{technicalDepth}}/100 (higher means more technical details)
-- Previous Interactions: {{previousInteractions}}
-- User Feedback Patterns: {{feedbackPatterns}}
-
-Field of study: {{field}}
-Education level: {{educationLevel}}
-
-Format your response as JSON with the following structure:
-{
-  "explanation": "Your context-aware explanation here",
-  "analogy": "Your real-world analogy here, referencing previous concepts when relevant",
-  "contextual_notes": "How this relates to previous discussions",
-  "resources": [
-    {
-      "title": "Resource title",
-      "url": "Resource URL",
-      "description": "Brief description of the resource",
-      "relevance": "How this relates to the current and previous topics"
-    }
-  ]
-}`;
+1. Always consider the full conversation history and any previous interactions to ensure your responses are relevant and build upon what has already been discussed.
+2. Strive to provide clear, exceptionally comprehensive, and thorough explanations. Delve deep into the subject matter.
+3. Adapt your tone and technical depth naturally based on the user's messages and feedback.
+// 4. Use relatable analogies that connect to previously discussed concepts (Commented out to reduce forced analogies)
+5. Feel free to elaborate, explore tangents if they are relevant, and provide rich, detailed answers. The user wants detailed and expansive responses.
+6. **Formatting:** Please format your entire response using Markdown. Utilize headings (e.g., # Main Title, ## Subtitle), bullet points (- item), numbered lists (1. item), bold text (**bold text**), italic text (*italic text*), and code blocks (using triple backticks) when appropriate to structure the information clearly and improve readability. Ensure the markdown is well-formed.`;
   }
 
   /**
@@ -48,85 +23,24 @@ Format your response as JSON with the following structure:
    */
   async generatePrompt(query, userId, sessionId) {
     try {
-      // Get user profile data
-      const profile = await userProfileManager.getProfile(userId);
-      const learningPreferences = await userProfileManager.getLearningPreferences(userId);
-      const interests = await userProfileManager.getInterests(userId);
-      const demographics = await userProfileManager.getDemographics(userId);
-
-      // Build the system prompt with user preferences
-      const systemPrompt = `You are a knowledgeable AI tutor specialized in explaining complex concepts clearly and thoroughly.
-
-User Profile:
-- Occupation: ${profile.occupation}
-- Education Level: ${profile.education_level}
-- Age: ${profile.age}
-- Learning Style: ${profile.learning_style}
-- Technical Depth Preference: ${profile.technical_depth}/100
-- Main Learning Goal: ${profile.main_learning_goal}
-
-User Interests: ${interests.join(', ')}
-
-${profile.preferred_analogy_domains?.length > 0 ? 
-  `Preferred Analogy Domains: ${profile.preferred_analogy_domains.join(', ')}` : 
-  `IMPORTANT: User has no specified analogy domains, so use their interests for analogies: ${interests.join(', ')}`}
-
-Please tailor your response based on these preferences:
-1. Adjust technical depth based on education level and technical depth preference
-2. ${profile.preferred_analogy_domains?.length > 0 ? 
-     `Use analogies from preferred domains (${profile.preferred_analogy_domains.join(', ')})` : 
-     `Use analogies specifically related to user interests (${interests.join(', ')})`}
-3. Format explanations according to learning style (${profile.learning_style})
-4. Include examples relevant to user's interests
-5. Focus on practical applications aligned with main learning goal
-
-IMPORTANT: Respond naturally and conversationally to the user's query. You should adapt your response style based on the type of question:
-
-- For EDUCATIONAL CONTENT and complex explanations, your response should generally include:
-  1. A brief introduction to the topic
-  2. A detailed explanation with examples
-  3. A helpful real-world analogy or comparison
-  4. Relevant resources when appropriate
-  5. A brief recap of key points for complex topics
-
-DO NOT include section headers like "Introduction:", "Explanation:", "Analogy:", etc. in your response. Instead, organize your content into well-structured paragraphs with clear transitions between ideas.
-
-- For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural conversational style.
-
-Always adapt to the user's preferred communication style. If they ask for a brief answer, be concise. If they want detailed information, be thorough.
-
-Use proper paragraph breaks to organize your response and make it aesthetically pleasing and easy to read. Use whitespace effectively to separate ideas.
-
-CRITICAL - AVOID REPETITION: 
-1. Do NOT repeat yourself in your responses
-2. Do NOT start sentences with the same phrases (like "I'm sorry" or "Let me explain")
-3. NEVER repeat the same sentence or very similar sentences twice
-4. Before submitting your response, check it for duplicate sentences and remove them
-5. Avoid starting responses with apologies or standard phrases
-6. If you catch yourself writing the same phrase twice, delete one instance
-
-IMPORTANT: Always maintain consistency in your analogies and examples throughout a conversation. When the user asks follow-up questions or says they don't understand, continue using the same analogy domains specified in the user's preferences. Only change your analogy domain if the user explicitly requests a different one.
-
-Style Guidelines:
-- Always use second-person language (e.g., "you," "your") to address the user directly
-- Keep language clear, friendly, and respectful
-- Avoid overly technical jargon unless the user explicitly requests deeper technical detail
-- Use examples to illustrate your points
-- Respond conversationally and naturally to follow-up questions
-- Adapt to the conversation flow - use a more structured approach for initial explanations and a more casual conversational style for follow-ups
-- Avoid repeating the same sentences in your response
-
-Above all, prioritize clarity and helpfulness in your responses, adapting to the user's needs in a natural conversational flow.`;
+      // Directly use the simplified systemPromptTemplate that was set in the constructor
+      const systemPromptContent = this.systemPromptTemplate;
 
       return {
         messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: query }
+          { role: "system", content: systemPromptContent },
+          { role: "user", content: query } // The query is passed as an argument
         ]
       };
     } catch (error) {
-      console.error('Error generating prompt:', error);
-      throw error;
+      console.error('Error generating prompt in PromptManager:', error);
+      // Fallback to a very basic prompt in case of unexpected errors
+      return {
+        messages: [
+          { role: "system", content: "You are a helpful assistant." },
+          { role: "user", content: query }
+        ]
+      };
     }
   }
 
@@ -192,28 +106,13 @@ Above all, prioritize clarity and helpfulness in your responses, adapting to the
    * @returns {Object} - Processed response
    */
   processResponse(responseText) {
-    try {
-      // Try to parse the response as JSON
-      const jsonResponse = JSON.parse(responseText);
-      return {
-        explanation: jsonResponse.explanation || '',
-        analogy: jsonResponse.analogy || '',
-        contextual_notes: jsonResponse.contextual_notes || '',
-        resources: jsonResponse.resources || []
-      };
-    } catch (error) {
-      // If parsing fails, try to extract parts using regex
-      const explanationMatch = responseText.match(/explanation["\s:]+([^"]+)/i);
-      const analogyMatch = responseText.match(/analogy["\s:]+([^"]+)/i);
-      const contextualNotesMatch = responseText.match(/contextual_notes["\s:]+([^"]+)/i);
-      
-      return {
-        explanation: explanationMatch ? explanationMatch[1].trim() : responseText,
-        analogy: analogyMatch ? analogyMatch[1].trim() : '',
-        contextual_notes: contextualNotesMatch ? contextualNotesMatch[1].trim() : '',
-        resources: []
-      };
-    }
+    // Always treat responses as conversational - no JSON parsing
+    return {
+      explanation: responseText.trim(),
+      analogy: '',
+      contextual_notes: '',
+      resources: []
+    };
   }
 
   /**
@@ -472,15 +371,6 @@ ${feedback.rating <= 3 ?
 ${feedback.comments ? `\nUser comments: "${feedback.comments}"` : ''}
 
 IMPORTANT: Respond naturally and conversationally to the user's query. You should adapt your response style based on the type of query:
-
-- For EDUCATIONAL CONTENT and complex explanations, your response should generally include:
-  1. A brief introduction to the topic
-  2. A detailed explanation with examples
-  3. A helpful real-world analogy or comparison 
-  4. Relevant resources when appropriate
-  5. A brief recap of key points for complex topics
-
-DO NOT include section headers like "Introduction:", "Explanation:", "Analogy:", etc. in your response. Instead, organize your content into well-structured paragraphs with clear transitions between ideas.
 
 - For FOLLOW-UP QUESTIONS, CLARIFICATIONS, or SIMPLE QUERIES, respond in a natural conversational style.
 

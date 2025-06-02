@@ -60,7 +60,7 @@ export default function setupQuizRoutes(app, supabase, openai) {
       
       // Call OpenAI API to generate quiz
       const completion = await openai.chat.completions.create({
-        model: "gpt-4",
+        model: "gpt-4o",
         messages: [
           quizGenerationMessage,
           { role: "user", content: `Create a quiz about: ${query}` }

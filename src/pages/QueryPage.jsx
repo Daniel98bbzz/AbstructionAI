@@ -10,6 +10,9 @@ import { generateQuizQuestions as generateQuizAPI } from '../api/quizApi';
 import { toast } from 'react-hot-toast';
 import ProjectPreferencesModal from '../components/ProjectPreferencesModal';
 import { processUserMessage, calculateScore } from '../utils/secretFeedbackClassifier';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 function QueryPage() {
   const [quizMode, setQuizMode] = useState(false);
@@ -597,22 +600,12 @@ function QueryPage() {
         sessionId: response.sessionId || conversationSessionId
       });
       
-      // Create a message object, properly handling both structured and conversational responses
+      // Create a message object, treating all responses as conversational
       const aiMessage = {
         id: response.id || Date.now().toString(),
         content: response.explanation || response,
         role: 'assistant',
         timestamp: Date.now(),
-        // Include structured fields if they exist
-        is_structured: response.is_structured || false,
-        introduction: response.introduction || null,
-        analogy: response.analogy || null,
-        analogy_title: response.analogy_title || null,
-        example: response.example || null,
-        example_title: response.example_title || null,
-        resources: response.resources || response.additional_sources || null,
-        recap: response.recap || null,
-        key_takeaways: response.key_takeaways || null,
         // Store preferences used for this response to maintain consistency
         preferences: queryPreferences
       };
@@ -789,22 +782,12 @@ function QueryPage() {
                                
       const regeneratedMessage = {
         id: regeneratedResponseId,
-        type: 'assistant',
-        // Only preserve the original explanation if ONLY the analogy feedback was given
-        content: isOnlyAnalogyFeedback ? originalMessage.content : response.explanation,
-        is_structured: response.is_structured || false,
-        introduction: response.introduction || null,
-        analogy: response.analogy || null,
-        analogy_title: response.analogy_title || null,
-        example: response.example || null,
-        example_title: response.example_title || null,
-        resources: response.resources || response.additional_sources || null,
-        recap: response.recap || null,
-        key_takeaways: response.key_takeaways || null,
+        content: response.explanation || response,
+        role: 'assistant',
+        timestamp: Date.now(),
         // Store the preferences used for this regenerated response
         preferences: queryPreferences,
-        isRegenerated: true,
-        timestamp: new Date().toISOString()
+        isRegenerated: true
       };
 
       console.log('Adding regenerated message to conversation');
@@ -1261,14 +1244,14 @@ examplePlaceholder();`
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Chat container */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-4">
           {messages.map((message, index) => (
             <div key={message.id || index} className={`message ${message.role}`}>
               <div
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-3xl rounded-lg p-4 ${
+                  className={`w-full rounded-lg p-4 lg:p-6 ${
                     message.role === 'user'
                       ? 'bg-primary-600 text-white'
                       : message.role === 'error'
@@ -1282,131 +1265,35 @@ examplePlaceholder();`
                 >
                   {message.role === 'assistant' ? (
                     <div className="space-y-4">
-                      {message.isRegenerated && (
-                        <div className="text-sm text-green-600 font-medium mb-2">
-                          Improved answer based on your feedback:
-                        </div>
-                      )}
-                      
-                      {/* Determine if this is a structured response or a conversational one */}
-                      {message.is_structured ? (
-                        /* Structured response with enhanced visual presentation */
-                        <div className="space-y-6">
-                          {/* Introduction - Large engaging font */}
-                          {message.introduction && (
-                            <div className="prose max-w-none">
-                              <h3 className="text-xl font-medium text-gray-900">{message.introduction}</h3>
-                            </div>
-                          )}
-                          
-                          {/* Main explanation - Well-formatted with proper spacing */}
-                          {message.content && message.content !== message.introduction && (
-                            <div className="prose max-w-none bg-white rounded-lg">
-                              {message.content.split('\n\n').map((paragraph, idx) => (
-                                paragraph.trim() ? (
-                                  <p key={idx} className="mb-3 text-base">{paragraph.trim()}</p>
-                                ) : null
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* Example - if present, show in a highlighted box */}
-                          {message.example && (
-                            <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
-                              <h4 className="font-medium text-green-800 mb-2">{message.example_title || "Example"}</h4>
-                              <div className="text-green-700">
-                                {message.example.split('\n').map((line, idx) => (
-                                  <p key={idx} className="mb-2">{line}</p>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Analogy - in a distinct styled box */}
-                          {message.analogy && (
-                            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
-                              <h4 className="font-medium text-blue-800 mb-2">{message.analogy_title || "Analogy"}</h4>
-                              <div className="text-blue-700">
-                                {message.analogy.split('\n').map((line, idx) => (
-                                  <p key={idx} className="mb-2">{line}</p>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Key Takeaways - Formatted as bullet points */}
-                          {message.key_takeaways && message.key_takeaways.length > 0 && (
-                            <div className="bg-yellow-50 p-4 rounded-lg">
-                              <h4 className="font-medium text-yellow-800 mb-2">Key Takeaways</h4>
-                              <ul className="list-disc pl-5 space-y-1 text-yellow-700">
-                                {message.key_takeaways.map((point, idx) => (
-                                  <li key={idx} className="mb-1">{point}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          
-                          {/* Recap (for backward compatibility) */}
-                          {message.recap && !message.key_takeaways && (
-                            <div className="bg-yellow-50 p-4 rounded-lg">
-                              <h4 className="font-medium text-yellow-800 mb-2">Key Points</h4>
-                              <div className="text-yellow-700">
-                                {message.recap.startsWith('-') ? 
-                                  <ul className="list-disc pl-5 space-y-1">
-                                    {message.recap.split('\n-').map((point, idx) => (
-                                      point.trim() ? <li key={idx} className="mb-1">{point.trim()}</li> : null
-                                    ))}
-                                  </ul>
-                                  :
-                                  <p>{message.recap}</p>
-                                }
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Resources section */}
-                          {((message.resources && message.resources.length > 0) || 
-                            (message.additional_sources && message.additional_sources.length > 0)) && (
-                            <div className="mt-4">
-                              <h4 className="font-medium text-gray-900 mb-2">Resources:</h4>
-                              <ul className="list-disc pl-5 space-y-1">
-                                {(message.resources || message.additional_sources || []).map((resource, idx) => (
-                                  <li key={idx}>
-                                    <a
-                                      href={resource.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary-600 hover:text-primary-500"
-                                    >
-                                      {resource.title}
-                                    </a>
-                                    {resource.description && (
-                                      <p className="text-sm text-gray-500">{resource.description}</p>
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        /* Conversational response - clean, readable formatting but less structured */
-                        <div className="prose max-w-none">
-                          {/* If there's an introduction, display it with emphasis */}
-                          {message.introduction && (
-                            <p className="font-medium text-lg mb-3">{message.introduction}</p>
-                          )}
-                          
-                          {/* Show the main content with proper paragraph breaks */}
-                          {message.content && message.content !== message.introduction && 
-                            message.content.split('\n\n').map((paragraph, idx) => (
-                              paragraph.trim() ? (
-                                <p key={idx} className="mb-4 text-base">{paragraph.trim()}</p>
-                              ) : null
-                            ))
-                          }
-                        </div>
-                      )}
+                      {/* Always display responses conversationally like ChatGPT */}
+                      <div className="prose prose-lg max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-700 prose-p:leading-relaxed prose-strong:text-gray-900 prose-ul:my-4 prose-ol:my-4 prose-li:my-1 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-pre:bg-gray-900 prose-pre:text-white">
+                        {message.content && (
+                          <ReactMarkdown
+                            components={{
+                              code({node, inline, className, children, ...props}) {
+                                const match = /language-(\w+)/.exec(className || '');
+                                return !inline && match ? (
+                                  <SyntaxHighlighter
+                                    style={tomorrow}
+                                    language={match[1]}
+                                    PreTag="div"
+                                    className="rounded-md"
+                                    {...props}
+                                  >
+                                    {String(children).replace(/\n$/, '')}
+                                  </SyntaxHighlighter>
+                                ) : (
+                                  <code className={className} {...props}>
+                                    {children}
+                                  </code>
+                                );
+                              }
+                            }}
+                          >
+                            {message.content}
+                          </ReactMarkdown>
+                        )}
+                      </div>
                     </div>
                   ) : message.role === 'thinking' ? (
                     <div className="flex items-center space-x-2">
@@ -1515,8 +1402,8 @@ examplePlaceholder();`
         </div>
 
         {/* Input container */}
-        <div className="border-t bg-white p-4">
-          <div className="max-w-4xl mx-auto">
+        <div className="border-t bg-white p-4 lg:p-6">
+          <div className="w-full px-2">
             <form onSubmit={handleSubmit} className="flex space-x-4">
               <div className="flex-1">
                 <textarea

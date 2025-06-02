@@ -570,7 +570,7 @@ Respond ONLY with this number.`;
 
       // Call OpenAI API for evaluation
       const completion = await openai.chat.completions.create({
-        model: "gpt-4" in openai.chat.completions ? "gpt-4" : "gpt-3.5-turbo",
+        model: "gpt-4o" in openai.chat.completions ? "gpt-4o" : "gpt-3.5-turbo",
         messages: [{ role: "user", content: evaluationPrompt }],
         temperature: 0.3,
         max_tokens: 5
@@ -651,7 +651,7 @@ Provide ONLY a single number between 0 and 1 representing the confusion score.`;
 
       // Call OpenAI API for evaluation
       const completion = await openai.chat.completions.create({
-        model: "gpt-4" in openai.chat.completions ? "gpt-4" : "gpt-3.5-turbo",
+        model: "gpt-4o" in openai.chat.completions ? "gpt-4o" : "gpt-3.5-turbo",
         messages: [{ role: "user", content: evaluationPrompt }],
         temperature: 0.3,
         max_tokens: 5
@@ -686,25 +686,14 @@ Provide ONLY a single number between 0 and 1 representing the confusion score.`;
       // Parse the template structure
       const templateData = JSON.parse(template.template_text);
       
-      // Create enhanced prompt guidance
-      let enhancedPrompt = `${query}\n\nAdditional guidance based on successful past interactions:\n`;
+      // Create enhanced prompt guidance for natural conversation
+      // No longer suggest specific structural elements like intro, explanation, etc.
+      // The main system prompt will guide the overall conversational style.
+      let enhancedPrompt = `${query}\\n\\nBased on successful past interactions on similar topics, please provide a clear, comprehensive, and engaging explanation. Respond naturally and conversationally, adapting your style to the query.`;
       
-      if (templateData.structure) {
-        enhancedPrompt += "Please structure your response with ";
-        
-        const elements = [];
-        if (templateData.structure.has_introduction) elements.push("an introduction");
-        if (templateData.structure.has_explanation) elements.push("a detailed explanation");
-        if (templateData.structure.has_analogy) elements.push("a relevant analogy");
-        if (templateData.structure.has_example) elements.push("practical examples");
-        if (templateData.structure.has_key_takeaways) elements.push("key takeaways");
-        
-        enhancedPrompt += elements.join(", ") + ".";
-        
-        if (templateData.structure.is_structured) {
-          enhancedPrompt += " Please use a well-structured JSON format for your response.";
-        }
-      }
+      // The 'templateData.structure' might still exist but 'is_structured' is false.
+      // We avoid using 'has_introduction', 'has_explanation' etc. to suggest a sequence.
+      // The original template_text's query_pattern is part of the template object but not directly used here to add more text to the prompt.
       
       return enhancedPrompt;
     } catch (error) {
