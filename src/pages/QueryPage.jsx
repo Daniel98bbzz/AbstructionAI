@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery } from '../contexts/QueryContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import ConversationHistory from '../components/ConversationHistory';
 import FeedbackForm from '../components/FeedbackForm';
 import { supabase } from '../lib/supabaseClient';
@@ -15,6 +15,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 function QueryPage() {
+  const location = useLocation();
   const [quizMode, setQuizMode] = useState(false);
   const [quizQuestions, setQuizQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -31,6 +32,10 @@ function QueryPage() {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
+
+  // Template recommendation state
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [showTemplateInfo, setShowTemplateInfo] = useState(false);
 
   const { user } = useAuth();
   const [query, setQuery] = useState('');
@@ -190,6 +195,68 @@ function QueryPage() {
       }
     }
   }, [user?.id]);
+
+  // Handle template selection from recommendations
+  useEffect(() => {
+    // Check for template from navigation state (when navigating from recommendations)
+    if (location.state?.selectedTemplate) {
+      setSelectedTemplate(location.state.selectedTemplate);
+      setShowTemplateInfo(true);
+      
+      // Optionally pre-fill the query based on template
+      if (location.state.selectedTemplate.suggestedApproach) {
+        setQuery(location.state.selectedTemplate.suggestedApproach);
+      }
+      
+      // Clear from navigation state to prevent re-applying on refresh
+      window.history.replaceState({}, document.title);
+    }
+    
+    // Check for template from localStorage (persistent selection)
+    else {
+      const storedTemplate = localStorage.getItem('selectedTemplate');
+      if (storedTemplate) {
+        try {
+          const templateData = JSON.parse(storedTemplate);
+          setSelectedTemplate(templateData);
+          setShowTemplateInfo(true);
+          
+          // Pre-fill query if it's empty
+          if (!query && templateData.suggestedApproach) {
+            setQuery(templateData.suggestedApproach);
+          }
+          
+          // Clear from localStorage after applying
+          localStorage.removeItem('selectedTemplate');
+        } catch (error) {
+          console.error('Error parsing stored template:', error);
+          localStorage.removeItem('selectedTemplate');
+        }
+      }
+    }
+  }, [location.state, query]);
+
+  // Function to apply a template
+  const applyTemplate = (template) => {
+    setSelectedTemplate(template);
+    setShowTemplateInfo(true);
+    
+    // Pre-fill or suggest query based on template
+    if (template.suggestedApproach) {
+      setQuery(template.suggestedApproach);
+    } else if (template.topic) {
+      setQuery(`Tell me about ${template.topic.replace(/_/g, ' ')}`);
+    }
+    
+    toast.success(`Applied ${template.topic.replace(/_/g, ' ')} template`);
+  };
+
+  // Function to clear template selection
+  const clearTemplate = () => {
+    setSelectedTemplate(null);
+    setShowTemplateInfo(false);
+    toast.success('Template cleared');
+  };
 
   // Migrate existing conversations to a default project if needed
   useEffect(() => {
@@ -1404,6 +1471,46 @@ examplePlaceholder();`
         {/* Input container */}
         <div className="border-t bg-white p-4 lg:p-6">
           <div className="w-full px-2">
+            {/* Template Info Banner */}
+            {selectedTemplate && showTemplateInfo && (
+              <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <svg className="h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <h3 className="text-sm font-semibold text-blue-900">
+                        Using Template: {selectedTemplate.topic?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </h3>
+                      {selectedTemplate.finalScore && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {Math.round(selectedTemplate.finalScore * 100)}% match
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-blue-700 mb-2">
+                      {selectedTemplate.recommendationReason || selectedTemplate.suggestedApproach || 'Recommended based on your learning pattern'}
+                    </p>
+                    {selectedTemplate.templateId && (
+                      <p className="text-xs text-blue-600">
+                        Template ID: {selectedTemplate.templateId}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={clearTemplate}
+                    className="ml-3 text-blue-400 hover:text-blue-600 transition-colors"
+                    title="Clear template"
+                  >
+                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="flex space-x-4">
               <div className="flex-1">
                 <textarea

@@ -1872,6 +1872,188 @@ app.post('/api/admin/fix-structured-templates', async (req, res) => {
   }
 });
 
+// Get user's recommendation insights
+app.get('/api/users/:userId/recommendation-insights', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    console.log(`[Recommendation Insights API] Getting insights for user ${userId}`);
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    // Create supervisor instance
+    const supervisor = new Supervisor();
+
+    // Get user data components
+    const [userCluster, userTopics, userSentiment] = await Promise.all([
+      supervisor.getUserCluster(userId),
+      supervisor.getUserMostActiveTopics(userId, 10),
+      supervisor.getUserSentimentStats(userId)
+    ]);
+
+    // Calculate cluster statistics if user has a cluster
+    let clusterStats = null;
+    if (userCluster && userCluster.memberIds) {
+      clusterStats = {
+        cluster_id: userCluster.clusterId,
+        similarity: userCluster.similarity,
+        member_count: userCluster.memberIds.length,
+        user_preferences: userCluster.preferences
+      };
+    }
+
+    res.json({
+      success: true,
+      user_id: userId,
+      cluster_info: clusterStats,
+      active_topics: userTopics,
+      sentiment_stats: userSentiment,
+      insights: {
+        has_cluster: !!userCluster,
+        topic_diversity: userTopics.length,
+        sentiment_trend: userSentiment.positivityRatio > 0.6 ? 'positive' : 
+                        userSentiment.positivityRatio < 0.4 ? 'negative' : 'neutral'
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting recommendation insights:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+// Get template recommendations for a user
+app.get('/api/users/:userId/template-recommendations', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { topic, max_recommendations, include_score_breakdown } = req.query;
+
+    console.log(`[Enhanced Recommendations API] Getting recommendations for user ${userId}`);
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    // Create supervisor instance
+    const supervisor = new Supervisor();
+
+    // Configure options
+    const options = {
+      maxRecommendations: max_recommendations ? parseInt(max_recommendations) : 10,
+      includeScoreBreakdown: include_score_breakdown === 'true'
+    };
+
+    // Get recommendations
+    const recommendations = await supervisor.getTemplateRecommendationsForUser(
+      userId,
+      topic || null,
+      options
+    );
+
+    console.log(`[Enhanced Recommendations API] Returning ${recommendations.length} recommendations`);
+
+    res.json({
+      success: true,
+      recommendations,
+      user_id: userId,
+      topic: topic || null,
+      total_count: recommendations.length
+    });
+
+  } catch (error) {
+    console.error('Error getting template recommendations:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+// Enhanced recommendations with custom weights
+app.post('/api/users/:userId/template-recommendations', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { 
+      topic, 
+      max_recommendations = 10, 
+      include_score_breakdown = false,
+      weights = {
+        clusterPopularity: 0.4,
+        topicRelevance: 0.35,
+        sentimentWeight: 0.25
+      }
+    } = req.body;
+
+    console.log(`[Enhanced Recommendations API] Getting custom recommendations for user ${userId}`);
+    console.log(`[Enhanced Recommendations API] Using weights:`, weights);
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    // Validate weights
+    const totalWeight = Object.values(weights).reduce((sum, weight) => sum + weight, 0);
+    if (Math.abs(totalWeight - 1.0) > 0.01) {
+      return res.status(400).json({
+        success: false,
+        message: 'Weights must sum to 1.0'
+      });
+    }
+
+    // Create supervisor instance
+    const supervisor = new Supervisor();
+
+    // Configure options with custom weights
+    const options = {
+      maxRecommendations: max_recommendations,
+      includeScoreBreakdown: include_score_breakdown,
+      weights
+    };
+
+    // Get recommendations
+    const recommendations = await supervisor.getTemplateRecommendationsForUser(
+      userId,
+      topic || null,
+      options
+    );
+
+    console.log(`[Enhanced Recommendations API] Returning ${recommendations.length} custom recommendations`);
+
+    res.json({
+      success: true,
+      recommendations,
+      user_id: userId,
+      topic: topic || null,
+      weights,
+      total_count: recommendations.length
+    });
+
+  } catch (error) {
+    console.error('Error getting custom template recommendations:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);

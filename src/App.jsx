@@ -16,6 +16,7 @@ import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import QueryPage from './pages/QueryPage';
 import QuizPage from './pages/QuizPage'; // Import the new quiz page
+import Recommendations from './pages/Recommendations'; // Import the new recommendations page
 import History from './pages/History';
 import NotFound from './pages/NotFound';
 import VerifyEmail from './pages/VerifyEmail';
@@ -90,6 +91,7 @@ function App() {
           <Route path="profile" element={<Profile />} />
           <Route path="query" element={<QueryPage />} />
           <Route path="quiz" element={<QuizPage />} /> {/* New quiz route */}
+          <Route path="recommendations" element={<Recommendations />} />
           <Route path="history" element={<History />} />
         </Route>
         

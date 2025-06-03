@@ -6,6 +6,7 @@ import QuizStats from '../components/QuizStats';
 import ClusterTopicSuggestions from '../components/ClusterTopicSuggestions';
 import ClusterQuizSuggestions from '../components/ClusterQuizSuggestions';
 import SecretFeedbackDashboard from '../components/SecretFeedbackDashboard';
+import RecommendationsWidget from '../components/RecommendationsWidget';
 
 
 function Dashboard() {
@@ -306,6 +307,21 @@ function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Template Recommendations */}
+      <div className="mb-8">
+        <RecommendationsWidget 
+          userId={user?.id}
+          maxRecommendations={3}
+          onTemplateSelected={(template) => {
+            // Store template data and navigate to query page
+            localStorage.setItem('selectedTemplate', JSON.stringify(template));
+            navigate('/query', { state: { selectedTemplate: template } });
+          }}
+          className="shadow-md"
+        />
+      </div>
+
       {/* Quiz Stats */}
       <div className="mb-8">
         <QuizStats />
@@ -415,6 +431,13 @@ function Dashboard() {
         <h2 className="text-xl font-semibold mb-4">Feedback Analytics</h2>
         <p className="text-gray-600 mb-4">Your interaction patterns and sentiment analysis</p>
         <SecretFeedbackDashboard />
+      </div>
+
+      {/* Recommendations Widget */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-xl font-semibold mb-4">Recommendations</h2>
+        <p className="text-gray-600 mb-4">Based on your learning history</p>
+        <RecommendationsWidget />
       </div>
     </div>
   );
