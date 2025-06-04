@@ -1,13 +1,7 @@
 // server/api/quizRoutes.js
 import { v4 as uuidv4 } from 'uuid';
-import { OpenAI } from 'openai';
 
-// Initialize OpenAI with your API key
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-export default function setupQuizRoutes(app, supabase) {
+export default function setupQuizRoutes(app, supabase, openai) {
   // Quiz generation endpoint
   app.post('/api/generate-quiz', async (req, res) => {
     try {
@@ -70,8 +64,22 @@ export default function setupQuizRoutes(app, supabase) {
       const responseText = completion.choices[0].message.content;
       
       try {
-        // Try to parse the response as JSON
-        const quizData = JSON.parse(responseText);
+        // Clean the response text by removing markdown code blocks if present
+        let cleanedResponse = responseText.trim();
+        
+        // Check if the response is wrapped in markdown code blocks
+        if (cleanedResponse.startsWith('```json')) {
+          // Remove ```json from the start and ``` from the end
+          cleanedResponse = cleanedResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (cleanedResponse.startsWith('```')) {
+          // Remove generic ``` blocks
+          cleanedResponse = cleanedResponse.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+        
+        console.log('Cleaned response for parsing:', cleanedResponse.substring(0, 200) + '...');
+        
+        // Try to parse the cleaned response as JSON
+        const quizData = JSON.parse(cleanedResponse);
         
         // Add a unique ID to the quiz
         const quizId = uuidv4();

@@ -246,39 +246,6 @@ function SecretFeedbackDashboard() {
               <div className="text-sm text-blue-700">Total</div>
             </div>
           </div>
-
-          {/* Recent Feedback */}
-          <div>
-            <h4 className="text-md font-medium text-gray-900 mb-3">Recent Messages</h4>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {recentFeedback.length > 0 ? (
-                recentFeedback.slice(0, 10).map((feedback) => (
-                  <div key={feedback.id} className="flex items-start justify-between p-2 bg-gray-50 rounded">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900 truncate">{feedback.message}</p>
-                      <div className="flex items-center space-x-2 text-xs text-gray-500">
-                        <span>{new Date(feedback.timestamp).toLocaleDateString()}</span>
-                        {feedback.conversation_id && (
-                          <span>• Conv: {formatConversationId(feedback.conversation_id)}</span>
-                        )}
-                      </div>
-                    </div>
-                    <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
-                      feedback.feedback_type === 'positive' 
-                        ? 'bg-green-100 text-green-800'
-                        : feedback.feedback_type === 'negative'
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {feedback.feedback_type}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-gray-500 italic">No feedback data available</p>
-              )}
-            </div>
-          </div>
         </>
       ) : (
         <>

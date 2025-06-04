@@ -310,11 +310,25 @@ USER QUERY: ${query}
 
 CONVERSATION CONTEXT: ${sections.explanation?.substring(0, 500) || ''}
 
-INSTRUCTIONS:
+CLASSIFICATION RULES:
 1. If the query fits one of the existing topics above, respond with EXACTLY that topic name
 2. If no existing topic fits well, create a new descriptive topic name (use underscores, lowercase)
-3. Respond with ONLY the topic name, nothing else
-4. Examples of good topic names: "linear_algebra", "organic_chemistry", "machine_learning", "calculus"
+3. NEVER respond with "no_specific_topic" - always find or create a meaningful topic
+4. For mathematical queries (formulas, equations, calculations, math concepts), use "mathematics"
+5. For programming/coding queries, use "computer_science" or "programming"
+6. For science queries, use the specific science field (physics, chemistry, biology)
+7. Only use "general" for truly non-academic queries like greetings, thanks, or casual conversation
+8. Be specific: prefer "linear_algebra" over "mathematics" if the query is specifically about linear algebra
+
+EXAMPLES:
+- "what is root formula in math" → mathematics
+- "explain calculus derivatives" → calculus  
+- "how do algorithms work" → algorithms
+- "thank you" → general
+- "hello" → general
+- "i don't understand" → general
+- "explain photosynthesis" → biology
+- "how to code in python" → programming
 
 TOPIC:`;
 
@@ -327,6 +341,12 @@ TOPIC:`;
       
       secretTopic = topicCompletion.choices[0].message.content.trim();
       console.log(`[Topic Classification] Classified topic: ${secretTopic}`);
+      
+      // 🚫 SAFEGUARD: Never allow "no_specific_topic" 
+      if (secretTopic === 'no_specific_topic' || secretTopic === 'no_topic' || secretTopic === 'none' || !secretTopic) {
+        secretTopic = 'general';
+        console.log(`[Topic Classification] Prevented invalid topic, using fallback: ${secretTopic}`);
+      }
       
       // If it's a new topic, add it to the topics table
       if (!topicsList.includes(secretTopic)) {
@@ -1872,8 +1892,1582 @@ app.post('/api/admin/fix-structured-templates', async (req, res) => {
   }
 });
 
+// Add new API endpoint after the existing topics endpoints
+
+app.get('/api/user-sessions/by-topic', async (req, res) => {
+  try {
+    const { topic, user_id, limit = 10, offset = 0 } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log(`[User Sessions by Topic] Fetching sessions for user ${user_id}, topic: ${topic || 'all'}`);
+    
+    // Build query to get sessions with their interactions
+    let sessionsQuery = supabase
+      .from('sessions')
+      .select(`
+        id,
+        created_at,
+        status,
+        secret_topic,
+        interactions!inner (
+          id,
+          created_at,
+          query,
+          response,
+          type
+        )
+      `)
+      .eq('user_id', user_id)
+      .eq('interactions.type', 'query')
+      .order('created_at', { ascending: false });
+    
+    // Filter by topic if specified
+    if (topic && topic !== 'all') {
+      sessionsQuery = sessionsQuery.eq('secret_topic', topic);
+    }
+    
+    // Apply pagination
+    sessionsQuery = sessionsQuery.range(offset, offset + limit - 1);
+    
+    const { data: sessions, error } = await sessionsQuery;
+    
+    if (error) throw error;
+    
+    // Transform data to match expected format
+    const transformedSessions = sessions.map(session => ({
+      id: session.interactions.id,
+      created_at: session.interactions.created_at,
+      query: session.interactions.query,
+      response: session.interactions.response,
+      type: session.interactions.type,
+      secret_topic: session.secret_topic,
+      session: {
+        id: session.id,
+        created_at: session.created_at,
+        status: session.status,
+        secret_topic: session.secret_topic
+      }
+    }));
+    
+    console.log(`[User Sessions by Topic] Returning ${transformedSessions.length} sessions`);
+    
+    res.json({ 
+      success: true, 
+      sessions: transformedSessions,
+      filter: { topic: topic || 'all', user_id, limit, offset },
+      total: transformedSessions.length
+    });
+  } catch (error) {
+    console.error('Error fetching user sessions by topic:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get user's topics summary
+app.get('/api/user-topics/summary', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log(`[User Topics Summary] Fetching topic summary for user ${user_id}`);
+    
+    // Get all user sessions with topics
+    const { data: sessions, error } = await supabase
+      .from('sessions')
+      .select('secret_topic, created_at')
+      .eq('user_id', user_id)
+      .not('secret_topic', 'is', null)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    // Count sessions by topic
+    const topicCounts = {};
+    const topicDates = {};
+    
+    sessions.forEach(session => {
+      const topic = session.secret_topic;
+      topicCounts[topic] = (topicCounts[topic] || 0) + 1;
+      
+      // Track the most recent date for each topic
+      if (!topicDates[topic] || new Date(session.created_at) > new Date(topicDates[topic])) {
+        topicDates[topic] = session.created_at;
+      }
+    });
+    
+    // Get topic details from topics table
+    const topicNames = Object.keys(topicCounts);
+    let topicDetails = [];
+    
+    if (topicNames.length > 0) {
+      const { data: topics, error: topicsError } = await supabase
+        .from('topics')
+        .select('name, description, usage_count')
+        .in('name', topicNames);
+      
+      if (!topicsError && topics) {
+        topicDetails = topics;
+      }
+    }
+    
+    // Combine data
+    const userTopics = topicNames.map(topicName => {
+      const topicDetail = topicDetails.find(t => t.name === topicName);
+      return {
+        name: topicName,
+        user_session_count: topicCounts[topicName],
+        last_used: topicDates[topicName],
+        description: topicDetail?.description || `Topic: ${topicName.replace(/_/g, ' ')}`,
+        global_usage_count: topicDetail?.usage_count || 0
+      };
+    }).sort((a, b) => b.user_session_count - a.user_session_count);
+    
+    console.log(`[User Topics Summary] Found ${userTopics.length} topics for user`);
+    
+    res.json({
+      success: true,
+      user_topics: userTopics,
+      total_sessions: sessions.length,
+      unique_topics: userTopics.length
+    });
+  } catch (error) {
+    console.error('Error fetching user topics summary:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get trending topics in user's cluster
+app.get('/api/user-topics/trending', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log(`[Trending Topics] Fetching trending topics for user ${user_id}`);
+    
+    // Get user's cluster
+    const { data: userProfile, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('cluster_id')
+      .eq('id', user_id)
+      .single();
+    
+    if (profileError || !userProfile?.cluster_id) {
+      console.log(`[Trending Topics] No cluster found for user ${user_id}`);
+      return res.json({ 
+        success: true, 
+        trending_topics: [],
+        cluster_id: null,
+        message: 'User not assigned to a cluster yet'
+      });
+    }
+    
+    const clusterId = userProfile.cluster_id;
+    console.log(`[Trending Topics] User ${user_id} belongs to cluster ${clusterId}`);
+    
+    // Get all users in the same cluster with their usernames
+    const { data: clusterUsers, error: usersError } = await supabase
+      .from('user_profiles')
+      .select('id, username')
+      .eq('cluster_id', clusterId);
+    
+    if (usersError) throw usersError;
+    
+    const clusterUserIds = clusterUsers.map(u => u.id);
+    console.log(`[Trending Topics] Found ${clusterUserIds.length} users in cluster`);
+    
+    // Create a user ID to username mapping
+    const userIdToUsername = {};
+    clusterUsers.forEach(user => {
+      userIdToUsername[user.id] = user.username;
+    });
+    
+    // Get recent sessions from cluster users (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const { data: clusterSessions, error: sessionsError } = await supabase
+      .from('sessions')
+      .select('secret_topic, created_at, user_id')
+      .in('user_id', clusterUserIds)
+      .not('secret_topic', 'is', null)
+      .gte('created_at', thirtyDaysAgo.toISOString())
+      .order('created_at', { ascending: false });
+    
+    if (sessionsError) throw sessionsError;
+    
+    // Count topic frequency and calculate trends
+    const topicCounts = {};
+    const topicUsers = {};
+    const topicUserDetails = {}; // Store user details for each topic
+    const now = Date.now();
+    
+    clusterSessions.forEach(session => {
+      const topic = session.secret_topic;
+      const sessionDate = new Date(session.created_at);
+      const daysAgo = (now - sessionDate.getTime()) / (1000 * 60 * 60 * 24);
+      
+      // Weight recent sessions more heavily
+      const weight = Math.max(0.1, 1 - (daysAgo / 30));
+      
+      topicCounts[topic] = (topicCounts[topic] || 0) + weight;
+      
+      // Track unique users per topic
+      if (!topicUsers[topic]) {
+        topicUsers[topic] = new Set();
+        topicUserDetails[topic] = [];
+      }
+      
+      if (!topicUsers[topic].has(session.user_id)) {
+        topicUsers[topic].add(session.user_id);
+        
+        // Add user details to the topic
+        topicUserDetails[topic].push({
+          user_id: session.user_id,
+          username: userIdToUsername[session.user_id] || `user_${session.user_id.substring(0, 8)}`,
+          latest_activity: session.created_at
+        });
+      }
+    });
+    
+    // Get topic details
+    const topicNames = Object.keys(topicCounts);
+    let topicDetails = [];
+    
+    if (topicNames.length > 0) {
+      const { data: topics, error: topicsError } = await supabase
+        .from('topics')
+        .select('name, description, usage_count')
+        .in('name', topicNames);
+      
+      if (!topicsError && topics) {
+        topicDetails = topics;
+      }
+    }
+    
+    // Create trending topics list
+    const trendingTopics = topicNames
+      .map(topicName => {
+        const topicDetail = topicDetails.find(t => t.name === topicName);
+        
+        // Sort users by their latest activity (most recent first)
+        const sortedUsers = topicUserDetails[topicName].sort((a, b) => 
+          new Date(b.latest_activity) - new Date(a.latest_activity)
+        );
+        
+        return {
+          name: topicName,
+          cluster_popularity: topicCounts[topicName],
+          unique_users: topicUsers[topicName].size,
+          description: topicDetail?.description || `Topic: ${topicName.replace(/_/g, ' ')}`,
+          global_usage_count: topicDetail?.usage_count || 0,
+          trend_score: topicCounts[topicName] * topicUsers[topicName].size,
+          learners: sortedUsers // Include learner details with usernames
+        };
+      })
+      .sort((a, b) => b.trend_score - a.trend_score)
+      .slice(0, 10); // Top 10 trending topics
+    
+    console.log(`[Trending Topics] Found ${trendingTopics.length} trending topics`);
+    
+    res.json({
+      success: true,
+      trending_topics: trendingTopics,
+      cluster_id: clusterId,
+      cluster_size: clusterUserIds.length,
+      time_period: '30 days'
+    });
+  } catch (error) {
+    console.error('Error fetching trending topics:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get suggested new topics for user
+app.get('/api/user-topics/suggestions', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log(`[Topic Suggestions] Generating suggestions for user ${user_id}`);
+    
+    // Get user's current topics
+    const { data: userSessions, error: sessionsError } = await supabase
+      .from('sessions')
+      .select('secret_topic')
+      .eq('user_id', user_id)
+      .not('secret_topic', 'is', null);
+    
+    if (sessionsError) throw sessionsError;
+    
+    const userTopics = new Set(userSessions.map(s => s.secret_topic));
+    console.log(`[Topic Suggestions] User has explored ${userTopics.size} topics`);
+    
+    // Get user's cluster for similar user recommendations
+    const { data: userProfile, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('cluster_id, interests, preferred_analogy_domains')
+      .eq('id', user_id)
+      .single();
+    
+    let clusterBasedSuggestions = [];
+    
+    if (!profileError && userProfile?.cluster_id) {
+      // Get topics popular in user's cluster that they haven't explored
+      const { data: clusterUsers, error: usersError } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('cluster_id', userProfile.cluster_id)
+        .neq('id', user_id); // Exclude current user
+      
+      if (!usersError && clusterUsers.length > 0) {
+        const clusterUserIds = clusterUsers.map(u => u.id);
+        
+        const { data: clusterSessions, error: clusterSessionsError } = await supabase
+          .from('sessions')
+          .select('secret_topic')
+          .in('user_id', clusterUserIds)
+          .not('secret_topic', 'is', null);
+        
+        if (!clusterSessionsError) {
+          const clusterTopicCounts = {};
+          clusterSessions.forEach(session => {
+            const topic = session.secret_topic;
+            if (!userTopics.has(topic)) { // Only topics user hasn't explored
+              clusterTopicCounts[topic] = (clusterTopicCounts[topic] || 0) + 1;
+            }
+          });
+          
+          clusterBasedSuggestions = Object.entries(clusterTopicCounts)
+            .map(([topic, count]) => ({ topic, popularity: count, source: 'cluster' }))
+            .sort((a, b) => b.popularity - a.popularity)
+            .slice(0, 5);
+        }
+      }
+    }
+    
+    // Get globally popular topics that user hasn't explored
+    const { data: allTopics, error: topicsError } = await supabase
+      .from('topics')
+      .select('name, usage_count, description')
+      .gt('usage_count', 0)
+      .order('usage_count', { ascending: false })
+      .limit(20);
+    
+    if (topicsError) throw topicsError;
+    
+    const globalSuggestions = allTopics
+      .filter(topic => !userTopics.has(topic.name))
+      .slice(0, 5)
+      .map(topic => ({
+        topic: topic.name,
+        popularity: topic.usage_count,
+        source: 'global',
+        description: topic.description
+      }));
+    
+    // Get interest-based suggestions (if user has profile)
+    let interestBasedSuggestions = [];
+    if (userProfile?.interests) {
+      const interests = Array.isArray(userProfile.interests) ? 
+        userProfile.interests : 
+        (typeof userProfile.interests === 'string' ? 
+          JSON.parse(userProfile.interests) : []);
+      
+      // Map interests to potential topics
+      const interestTopicMap = {
+        'Technology': ['machine_learning', 'artificial_intelligence', 'computer_science', 'programming'],
+        'Science': ['physics', 'chemistry', 'biology', 'astronomy'],
+        'Mathematics': ['calculus', 'linear_algebra', 'statistics', 'geometry'],
+        'Art': ['art_history', 'design_principles', 'color_theory', 'composition'],
+        'Music': ['music_theory', 'composition', 'acoustics', 'harmony'],
+        'Sports': ['biomechanics', 'sports_psychology', 'nutrition', 'physiology'],
+        'Gaming': ['game_theory', 'computer_graphics', 'algorithms', 'psychology'],
+        'Cooking': ['chemistry', 'nutrition', 'thermodynamics', 'food_science']
+      };
+      
+      const suggestedTopics = [];
+      interests.forEach(interest => {
+        if (interestTopicMap[interest]) {
+          interestTopicMap[interest].forEach(topic => {
+            if (!userTopics.has(topic) && !suggestedTopics.includes(topic)) {
+              suggestedTopics.push(topic);
+            }
+          });
+        }
+      });
+      
+      interestBasedSuggestions = suggestedTopics.slice(0, 3).map(topic => ({
+        topic,
+        source: 'interests',
+        description: `Based on your interest in ${interests.join(', ')}`
+      }));
+    }
+    
+    // Combine all suggestions
+    const allSuggestions = [
+      ...clusterBasedSuggestions.map(s => ({
+        name: s.topic,
+        source: s.source,
+        reason: `Popular among users with similar learning style (${s.popularity} sessions)`,
+        type: 'cluster_trending'
+      })),
+      ...globalSuggestions.map(s => ({
+        name: s.topic,
+        source: s.source,
+        reason: `Globally popular topic (${s.popularity} total sessions)`,
+        description: s.description,
+        type: 'global_popular'
+      })),
+      ...interestBasedSuggestions.map(s => ({
+        name: s.topic,
+        source: s.source,
+        reason: s.description,
+        type: 'interest_based'
+      }))
+    ];
+    
+    // Remove duplicates and limit results
+    const uniqueSuggestions = allSuggestions
+      .filter((suggestion, index, self) => 
+        index === self.findIndex(s => s.name === suggestion.name)
+      )
+      .slice(0, 8);
+    
+    console.log(`[Topic Suggestions] Generated ${uniqueSuggestions.length} suggestions`);
+    
+    res.json({
+      success: true,
+      suggestions: uniqueSuggestions,
+      user_topics_count: userTopics.size,
+      cluster_id: userProfile?.cluster_id || null
+    });
+  } catch (error) {
+    console.error('Error generating topic suggestions:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get topic feed (combines trending and suggestions)
+app.get('/api/user-topics/feed', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log(`[Topic Feed] Generating personalized feed for user ${user_id}`);
+    
+    // Get trending topics and suggestions in parallel
+    const [trendingResponse, suggestionsResponse] = await Promise.all([
+      // Call internal trending endpoint
+      new Promise((resolve) => {
+        const mockReq = { query: { user_id } };
+        const mockRes = {
+          json: (data) => resolve(data),
+          status: () => mockRes
+        };
+        // We'll call the trending endpoint logic directly here
+        resolve({ success: true, trending_topics: [] }); // Placeholder for now
+      }),
+      // Call internal suggestions endpoint  
+      new Promise((resolve) => {
+        const mockReq = { query: { user_id } };
+        const mockRes = {
+          json: (data) => resolve(data),
+          status: () => mockRes
+        };
+        // We'll call the suggestions endpoint logic directly here
+        resolve({ success: true, suggestions: [] }); // Placeholder for now
+      })
+    ]);
+    
+    // For now, let's make direct calls to get the data we need
+    // Get user's recent activity
+    const { data: recentSessions, error: recentError } = await supabase
+      .from('sessions')
+      .select('secret_topic, created_at')
+      .eq('user_id', user_id)
+      .not('secret_topic', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    
+    if (recentError) throw recentError;
+    
+    // Get user's cluster info
+    const { data: userProfile, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('cluster_id, interests')
+      .eq('id', user_id)
+      .single();
+    
+    const feed = {
+      recent_activity: recentSessions || [],
+      trending_topics: [], // Will be populated by actual trending call
+      suggestions: [], // Will be populated by actual suggestions call
+      cluster_id: userProfile?.cluster_id || null,
+      interests: userProfile?.interests || [],
+      generated_at: new Date().toISOString()
+    };
+    
+    console.log(`[Topic Feed] Generated feed with ${feed.recent_activity.length} recent activities`);
+    
+    res.json({
+      success: true,
+      feed,
+      user_id
+    });
+  } catch (error) {
+    console.error('Error generating topic feed:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log('✅ Cluster routes successfully initialized');
+});
+
+// ==================== TOPIC PROGRESS TRACKING (PHASE 3) ====================
+
+// Get user's progress across all topics
+app.get('/api/user-topics/progress', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log(`[Topic Progress] Fetching progress for user ${user_id}`);
+    
+    // Get all user sessions with topics
+    const { data: sessions, error: sessionsError } = await supabase
+      .from('sessions')
+      .select('secret_topic, created_at, id')
+      .eq('user_id', user_id)
+      .not('secret_topic', 'is', null)
+      .order('created_at', { ascending: false });
+    
+    if (sessionsError) {
+      console.error('[Topic Progress] Error fetching sessions:', sessionsError);
+      return res.status(500).json({ error: 'Failed to fetch user sessions' });
+    }
+    
+    // Get quiz scores for the user - FIXED: use quiz_results instead of quiz_sessions
+    const { data: quizzes, error: quizzesError } = await supabase
+      .from('quiz_results')
+      .select('score, created_at')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false });
+    
+    if (quizzesError) {
+      console.error('[Topic Progress] Error fetching quiz data:', quizzesError);
+      // Don't return error, just continue without quiz data
+    }
+    
+    // 🆕 Get user feedback data for progress enhancement
+    const { data: feedbackData, error: feedbackError } = await supabase
+      .from('feedback')
+      .select('rating, query_text, response_text, comments, created_at, session_id')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false });
+    
+    if (feedbackError) {
+      console.error('[Topic Progress] Error fetching feedback data:', feedbackError);
+      // Don't return error, just continue without feedback data
+    }
+    
+    // 🆕 Get component feedback data (temporarily disabled due to relationship issues)
+    const componentFeedback = [];
+    const componentError = null;
+    
+    // TODO: Fix component feedback relationship and re-enable
+    // const { data: componentFeedback, error: componentError } = await supabase
+    //   .from('template_component_feedback')
+    //   .select(`
+    //     analogy_rating,
+    //     explanation_rating,
+    //     clarity_rating,
+    //     relevance_rating,
+    //     template_usage_id,
+    //     template_usage!inner(session_id)
+    //   `)
+    //   .eq('template_usage.user_id', user_id);
+    
+    if (componentError) {
+      console.error('[Topic Progress] Error fetching component feedback:', componentError);
+    }
+    
+    // Calculate progress for each topic
+    const topicProgress = {};
+    const now = Date.now();
+    
+    // Process sessions
+    sessions.forEach(session => {
+      const topic = session.secret_topic;
+      const sessionDate = new Date(session.created_at);
+      const daysAgo = (now - sessionDate.getTime()) / (1000 * 60 * 60 * 24);
+      
+      if (!topicProgress[topic]) {
+        topicProgress[topic] = {
+          topic_name: topic,
+          session_count: 0,
+          quiz_scores: [],
+          feedback_scores: [], // 🆕 Added feedback tracking
+          component_ratings: [], // 🆕 Added component feedback tracking
+          recent_activity: null,
+          first_learned: session.created_at,
+          mastery_level: 0,
+          learning_hours: 0,
+          difficulty_progression: 'beginner',
+          feedback_quality: 0 // 🆕 Added feedback quality metric
+        };
+      }
+      
+      topicProgress[topic].session_count++;
+      topicProgress[topic].first_learned = session.created_at; // Will be earliest due to desc order
+      
+      if (!topicProgress[topic].recent_activity || sessionDate > new Date(topicProgress[topic].recent_activity)) {
+        topicProgress[topic].recent_activity = session.created_at;
+      }
+    });
+    
+    // Process quiz scores
+    if (quizzes && quizzes.length > 0) {
+      quizzes.forEach(quiz => {
+        // Since quiz_results doesn't have topic info, we'll associate with recent sessions
+        // For now, we'll calculate an overall quiz performance metric
+        const recentSessions = sessions.slice(0, 5); // Get 5 most recent sessions
+        
+        recentSessions.forEach(session => {
+          const topic = session.secret_topic;
+          if (topicProgress[topic]) {
+            topicProgress[topic].quiz_scores.push({
+              score: quiz.score, // This is already a percentage (0-100)
+              date: quiz.created_at
+            });
+          }
+        });
+      });
+    }
+    
+    // 🆕 Process feedback data with Secret Feedback Mechanism
+    if (feedbackData && feedbackData.length > 0) {
+      feedbackData.forEach(feedback => {
+        // Find which session this feedback belongs to (handle text vs UUID conversion)
+        const relatedSession = sessions.find(s => s.id.toString() === feedback.session_id || s.id === feedback.session_id);
+        if (relatedSession && relatedSession.secret_topic) {
+          const topic = relatedSession.secret_topic;
+          if (topicProgress[topic]) {
+            // 🎯 SECRET FEEDBACK MECHANISM: Analyze feedback content quality
+            const feedbackAnalysis = analyzeSecretFeedbackQuality(feedback);
+            
+            topicProgress[topic].feedback_scores.push({
+              rating: feedback.rating,
+              quality_score: feedbackAnalysis.qualityScore,
+              satisfaction_level: feedbackAnalysis.satisfactionLevel,
+              content_richness: feedbackAnalysis.contentRichness,
+              preference_alignment: feedbackAnalysis.preferenceAlignment,
+              date: feedback.created_at
+            });
+          }
+        }
+      });
+    }
+    
+    // 🆕 Process component feedback data with content analysis
+    if (componentFeedback && componentFeedback.length > 0) {
+      componentFeedback.forEach(component => {
+        // Find which session this component feedback belongs to
+        const sessionId = component.template_usage?.session_id;
+        const relatedSession = sessions.find(s => s.id === sessionId);
+        if (relatedSession && relatedSession.secret_topic) {
+          const topic = relatedSession.secret_topic;
+          if (topicProgress[topic]) {
+            // Analyze component effectiveness
+            const componentAnalysis = analyzeComponentEffectiveness(component);
+            
+            topicProgress[topic].component_ratings.push({
+              effectiveness_score: componentAnalysis.effectivenessScore,
+              components: {
+                analogy: component.analogy_rating,
+                explanation: component.explanation_rating,
+                clarity: component.clarity_rating,
+                relevance: component.relevance_rating
+              },
+              analysis: componentAnalysis
+            });
+          }
+        }
+      });
+    }
+    
+    // 🆕 Enhanced mastery level calculation with feedback integration
+    Object.keys(topicProgress).forEach(topic => {
+      const progress = topicProgress[topic];
+      
+      // Calculate average quiz score
+      const avgQuizScore = progress.quiz_scores.length > 0 
+        ? progress.quiz_scores.reduce((sum, quiz) => sum + quiz.score, 0) / progress.quiz_scores.length
+        : 0;
+      
+      // 🆕 Calculate SECRET FEEDBACK QUALITY SCORE based on content analysis
+      let feedbackQualityScore = 0;
+      
+      if (progress.feedback_scores.length > 0) {
+        // Calculate weighted feedback quality using Secret Feedback Mechanism
+        const totalQualityScore = progress.feedback_scores.reduce((sum, f) => {
+          // Weight components of feedback quality
+          const contentScore = f.content_richness || 0; // How detailed/informative is feedback
+          const satisfactionScore = f.satisfaction_level || 0; // User satisfaction derived from content
+          const alignmentScore = f.preference_alignment || 0; // How well response matched preferences
+          const baseQualityScore = f.quality_score || 0; // Overall analyzed quality
+          
+          // Combine scores with weights
+          return sum + (contentScore * 0.3 + satisfactionScore * 0.3 + alignmentScore * 0.2 + baseQualityScore * 0.2);
+        }, 0);
+        
+        feedbackQualityScore = totalQualityScore / progress.feedback_scores.length;
+      }
+      
+      // Add component feedback analysis if available
+      if (progress.component_ratings.length > 0) {
+        const componentEffectivenessAvg = progress.component_ratings.reduce((sum, c) => {
+          return sum + (c.effectiveness_score || 0);
+        }, 0) / progress.component_ratings.length;
+        
+        // Combine general feedback with component feedback (weighted average)
+        if (feedbackQualityScore > 0) {
+          feedbackQualityScore = (feedbackQualityScore * 0.7) + (componentEffectivenessAvg * 0.3);
+        } else {
+          feedbackQualityScore = componentEffectivenessAvg;
+        }
+      }
+      
+      progress.feedback_quality = Math.round(feedbackQualityScore);
+      
+      // Estimate learning hours (rough calculation: 1 session = 0.5 hours)
+      progress.learning_hours = progress.session_count * 0.5;
+      
+      // 🆕 Enhanced mastery level calculation (0-100)
+      // NEW WEIGHTS: Session Count (30%), Quiz Performance (30%), Feedback Quality (25%), Learning Hours (15%)
+      const sessionScore = Math.min(progress.session_count * 3.75, 30); // Max 30 points for sessions (8 sessions = max)
+      const quizScore = avgQuizScore * 0.3; // Quiz performance weighted 30%
+      const feedbackScore = feedbackQualityScore * 0.25; // Feedback quality weighted 25%
+      const hoursScore = Math.min(progress.learning_hours * 1.5, 15); // Max 15 points for hours (10 hours = max)
+      
+      progress.mastery_level = Math.round(sessionScore + quizScore + feedbackScore + hoursScore);
+      
+      // Determine difficulty progression
+      if (progress.mastery_level >= 80) {
+        progress.difficulty_progression = 'expert';
+      } else if (progress.mastery_level >= 60) {
+        progress.difficulty_progression = 'advanced';
+      } else if (progress.mastery_level >= 30) {
+        progress.difficulty_progression = 'intermediate';
+      } else {
+        progress.difficulty_progression = 'beginner';
+      }
+      
+      // Calculate average quiz score for display
+      progress.avg_quiz_score = Math.round(avgQuizScore);
+      
+      // 🆕 Add SECRET FEEDBACK MECHANISM metrics for display
+      progress.avg_feedback_quality_score = progress.feedback_scores.length > 0
+        ? Math.round(progress.feedback_scores.reduce((sum, f) => sum + (f.quality_score || 0), 0) / progress.feedback_scores.length)
+        : 0;
+      
+      progress.avg_satisfaction_level = progress.feedback_scores.length > 0
+        ? Math.round(progress.feedback_scores.reduce((sum, f) => sum + (f.satisfaction_level || 0), 0) / progress.feedback_scores.length)
+        : 0;
+      
+      progress.avg_content_richness = progress.feedback_scores.length > 0
+        ? Math.round(progress.feedback_scores.reduce((sum, f) => sum + (f.content_richness || 0), 0) / progress.feedback_scores.length)
+        : 0;
+      
+      progress.avg_preference_alignment = progress.feedback_scores.length > 0
+        ? Math.round(progress.feedback_scores.reduce((sum, f) => sum + (f.preference_alignment || 0), 0) / progress.feedback_scores.length)
+        : 0;
+      
+      progress.feedback_count = progress.feedback_scores.length + progress.component_ratings.length;
+    });
+    
+    console.log(`[Topic Progress] Generated progress for ${Object.keys(topicProgress).length} topics with feedback integration`);
+    
+    res.json({
+      success: true,
+      progress: Object.values(topicProgress).sort((a, b) => b.mastery_level - a.mastery_level),
+      summary: {
+        total_topics: Object.keys(topicProgress).length,
+        total_sessions: sessions.length,
+        total_quizzes: quizzes ? quizzes.length : 0,
+        total_feedback: feedbackData ? feedbackData.length : 0,
+        total_component_feedback: componentFeedback ? componentFeedback.length : 0,
+        avg_mastery: Object.values(topicProgress).reduce((sum, p) => sum + p.mastery_level, 0) / Object.keys(topicProgress).length || 0,
+        avg_feedback_quality: Object.values(topicProgress).reduce((sum, p) => sum + p.feedback_quality, 0) / Object.keys(topicProgress).length || 0
+      },
+      feedback_integration: {
+        enabled: true,
+        weights: {
+          sessions: '30%',
+          quizzes: '30%',
+          feedback: '25%',
+          hours: '15%'
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Topic Progress] Unexpected error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get learning path recommendations
+app.get('/api/learning-paths/recommendations', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log(`[Learning Paths] Generating recommendations for user ${user_id}`);
+    
+    // Get user's current progress
+    const progressResponse = await fetch(`http://localhost:3001/api/user-topics/progress?user_id=${user_id}`);
+    const progressData = await progressResponse.json();
+    
+    if (!progressData.success) {
+      return res.status(500).json({ error: 'Failed to fetch user progress' });
+    }
+    
+    const userProgress = progressData.progress;
+    const exploredTopics = userProgress.map(p => p.topic_name);
+    
+    // Define topic prerequisites and learning paths
+    const topicPrerequisites = {
+      'advanced_machine_learning': ['machine_learning', 'statistics', 'linear_algebra'],
+      'deep_learning': ['machine_learning', 'neural_networks', 'linear_algebra'],
+      'natural_language_processing': ['machine_learning', 'linguistics', 'python'],
+      'computer_vision': ['machine_learning', 'image_processing', 'linear_algebra'],
+      'data_science': ['statistics', 'python', 'data_analysis'],
+      'advanced_statistics': ['statistics', 'probability', 'mathematics'],
+      'quantum_computing': ['linear_algebra', 'physics', 'computer_science'],
+      'blockchain': ['cryptography', 'computer_science', 'distributed_systems'],
+      'cloud_computing': ['computer_networks', 'distributed_systems', 'virtualization'],
+      'cybersecurity': ['computer_networks', 'cryptography', 'operating_systems']
+    };
+    
+    const recommendations = [];
+    
+    // 1. Next Level Recommendations - based on mastery level
+    userProgress.forEach(progress => {
+      if (progress.mastery_level >= 70) {
+        // Find advanced topics that have this as prerequisite
+        Object.keys(topicPrerequisites).forEach(advancedTopic => {
+          if (topicPrerequisites[advancedTopic].includes(progress.topic_name) && 
+              !exploredTopics.includes(advancedTopic)) {
+            
+            // Check if all prerequisites are met
+            const hasAllPrereqs = topicPrerequisites[advancedTopic].every(prereq => {
+              const prereqProgress = userProgress.find(p => p.topic_name === prereq);
+              return prereqProgress && prereqProgress.mastery_level >= 60;
+            });
+            
+            if (hasAllPrereqs) {
+              recommendations.push({
+                topic: advancedTopic,
+                type: 'advancement',
+                reason: `Ready for advanced level - you've mastered ${progress.topic_name}`,
+                difficulty: 'advanced',
+                prerequisites_met: true,
+                confidence: 0.9
+              });
+            }
+          }
+        });
+      }
+    });
+    
+    // 2. Foundation Strengthening - identify weak areas
+    userProgress.forEach(progress => {
+      if (progress.mastery_level < 50 && progress.session_count >= 3) {
+        recommendations.push({
+          topic: progress.topic_name,
+          type: 'strengthen',
+          reason: `Strengthen foundation - ${progress.mastery_level}% mastery`,
+          difficulty: progress.difficulty_progression,
+          prerequisites_met: true,
+          confidence: 0.8
+        });
+      }
+    });
+    
+    // 3. Complementary Topics - related fields
+    const complementaryTopics = {
+      'machine_learning': ['statistics', 'data_visualization', 'python'],
+      'statistics': ['probability', 'data_analysis', 'research_methods'],
+      'python': ['algorithms', 'data_structures', 'software_engineering'],
+      'mathematics': ['linear_algebra', 'calculus', 'discrete_mathematics'],
+      'computer_science': ['algorithms', 'data_structures', 'operating_systems']
+    };
+    
+    userProgress.forEach(progress => {
+      if (progress.mastery_level >= 60) {
+        const complements = complementaryTopics[progress.topic_name] || [];
+        complements.forEach(complement => {
+          if (!exploredTopics.includes(complement)) {
+            recommendations.push({
+              topic: complement,
+              type: 'complement',
+              reason: `Complements your knowledge in ${progress.topic_name}`,
+              difficulty: 'intermediate',
+              prerequisites_met: true,
+              confidence: 0.7
+            });
+          }
+        });
+      }
+    });
+    
+    // 4. Trending in Cluster - get popular topics user hasn't tried
+    try {
+      const trendingResponse = await fetch(`http://localhost:3001/api/user-topics/trending?user_id=${user_id}`);
+      const trendingData = await trendingResponse.json();
+      
+      if (trendingData.success && trendingData.trending_topics) {
+        trendingData.trending_topics.forEach(trending => {
+          if (!exploredTopics.includes(trending.name)) {
+            recommendations.push({
+              topic: trending.name,
+              type: 'trending',
+              reason: `Trending in your learning cluster (${trending.unique_users} learners)`,
+              difficulty: 'unknown',
+              prerequisites_met: true,
+              confidence: 0.6
+            });
+          }
+        });
+      }
+    } catch (error) {
+      console.log('[Learning Paths] Could not fetch trending topics');
+    }
+    
+    // Remove duplicates and sort by confidence
+    const uniqueRecommendations = recommendations
+      .filter((rec, index, self) => 
+        index === self.findIndex(r => r.topic === rec.topic)
+      )
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 8); // Top 8 recommendations
+    
+    console.log(`[Learning Paths] Generated ${uniqueRecommendations.length} recommendations`);
+    
+    res.json({
+      success: true,
+      recommendations: uniqueRecommendations,
+      user_summary: {
+        topics_explored: exploredTopics.length,
+        avg_mastery: progressData.summary.avg_mastery,
+        ready_for_advanced: userProgress.filter(p => p.mastery_level >= 70).length
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Learning Paths] Unexpected error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get achievements for a user
+app.get('/api/user-achievements', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log(`[Achievements] Calculating achievements for user ${user_id}`);
+    
+    // Get user progress
+    const progressResponse = await fetch(`http://localhost:3001/api/user-topics/progress?user_id=${user_id}`);
+    const progressData = await progressResponse.json();
+    
+    if (!progressData.success) {
+      return res.status(500).json({ error: 'Failed to fetch user progress' });
+    }
+    
+    const achievements = [];
+    const userProgress = progressData.progress;
+    
+    // Define achievement criteria
+    const achievementCriteria = [
+      {
+        id: 'first_topic',
+        name: 'First Steps',
+        description: 'Explored your first topic',
+        icon: '🌱',
+        condition: () => userProgress.length >= 1
+      },
+      {
+        id: 'explorer',
+        name: 'Explorer',
+        description: 'Explored 5 different topics',
+        icon: '🗺️',
+        condition: () => userProgress.length >= 5
+      },
+      {
+        id: 'scholar',
+        name: 'Scholar',
+        description: 'Explored 10 different topics',
+        icon: '🎓',
+        condition: () => userProgress.length >= 10
+      },
+      {
+        id: 'first_mastery',
+        name: 'First Mastery',
+        description: 'Achieved 80% mastery in a topic',
+        icon: '⭐',
+        condition: () => userProgress.some(p => p.mastery_level >= 80)
+      },
+      {
+        id: 'expert',
+        name: 'Expert',
+        description: 'Achieved expert level in 3 topics',
+        icon: '🏆',
+        condition: () => userProgress.filter(p => p.mastery_level >= 80).length >= 3
+      },
+      {
+        id: 'dedicated_learner',
+        name: 'Dedicated Learner',
+        description: 'Completed 20 learning sessions',
+        icon: '💪',
+        condition: () => progressData.summary.total_sessions >= 20
+      },
+      {
+        id: 'quiz_master',
+        name: 'Quiz Master',
+        description: 'Scored 90%+ on 5 quizzes',
+        icon: '🧠',
+        condition: () => {
+          let highScoreCount = 0;
+          userProgress.forEach(p => {
+            highScoreCount += p.quiz_scores.filter(q => q.score >= 90).length;
+          });
+          return highScoreCount >= 5;
+        }
+      },
+      {
+        id: 'consistent_learner',
+        name: 'Consistent Learner',
+        description: 'Learned something every day for a week',
+        icon: '📅',
+        condition: () => {
+          // Simple approximation based on recent activity
+          const recentSessions = userProgress.filter(p => {
+            const daysSince = (Date.now() - new Date(p.recent_activity)) / (1000 * 60 * 60 * 24);
+            return daysSince <= 7;
+          });
+          return recentSessions.length >= 5;
+        }
+      },
+      // 🆕 FEEDBACK-BASED ACHIEVEMENTS
+      {
+        id: 'helpful_critic',
+        name: 'Helpful Critic',
+        description: 'Provided feedback on 10 responses',
+        icon: '🔍',
+        condition: () => (progressData.summary.total_feedback + progressData.summary.total_component_feedback) >= 10
+      },
+      {
+        id: 'quality_seeker',
+        name: 'Quality Seeker',
+        description: 'Maintained 4+ star average feedback rating',
+        icon: '⭐',
+        condition: () => {
+          const totalFeedbackScore = userProgress.reduce((sum, p) => sum + p.feedback_quality, 0);
+          const avgFeedbackQuality = totalFeedbackScore / userProgress.length;
+          return avgFeedbackQuality >= 75; // 75% = 4+ stars (4/5 * 100 = 80%, but we're generous)
+        }
+      },
+      {
+        id: 'feedback_master',
+        name: 'Feedback Master',
+        description: 'Achieved 90%+ feedback quality in a topic',
+        icon: '🎯',
+        condition: () => userProgress.some(p => p.feedback_quality >= 90)
+      },
+      {
+        id: 'engagement_champion',
+        name: 'Engagement Champion',
+        description: 'Provided detailed component feedback 5+ times',
+        icon: '🏅',
+        condition: () => {
+          let componentFeedbackCount = 0;
+          userProgress.forEach(p => {
+            componentFeedbackCount += p.component_ratings ? p.component_ratings.length : 0;
+          });
+          return componentFeedbackCount >= 5;
+        }
+      },
+      {
+        id: 'perfect_reviewer',
+        name: 'Perfect Reviewer',
+        description: 'Gave 5-star ratings on 3+ responses',
+        icon: '🌟',
+        condition: () => {
+          let perfectRatings = 0;
+          userProgress.forEach(p => {
+            perfectRatings += p.feedback_scores ? p.feedback_scores.filter(f => f.rating === 5).length : 0;
+            perfectRatings += p.component_ratings ? p.component_ratings.filter(c => c.rating >= 4.5).length : 0;
+          });
+          return perfectRatings >= 3;
+        }
+      }
+    ];
+    
+    // Check which achievements are earned
+    achievementCriteria.forEach(criteria => {
+      if (criteria.condition()) {
+        achievements.push({
+          id: criteria.id,
+          name: criteria.name,
+          description: criteria.description,
+          icon: criteria.icon,
+          earned: true,
+          earned_date: new Date().toISOString() // Simplified - would track actual date in real system
+        });
+      }
+    });
+    
+    console.log(`[Achievements] User has earned ${achievements.length} achievements`);
+    
+    res.json({
+      success: true,
+      achievements,
+      total_earned: achievements.length,
+      total_possible: achievementCriteria.length
+    });
+    
+  } catch (error) {
+    console.error('[Achievements] Unexpected error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// SECRET FEEDBACK MECHANISM: Helper methods for content-based feedback analysis
+
+/**
+ * Analyze feedback quality based on content using Secret Feedback Mechanism
+ * @param {Object} feedback - Feedback data with comments and rating
+ * @returns {Object} - Quality analysis
+ */
+function analyzeSecretFeedbackQuality(feedback) {
+  const comments = feedback.comments || '';
+  const rating = feedback.rating || 3;
+  
+  // Content richness: How detailed and informative is the feedback?
+  const contentRichness = analyzeContentRichness(comments);
+  
+  // Satisfaction level: Derived from sentiment and rating consistency
+  const satisfactionLevel = analyzeSatisfactionLevel(comments, rating);
+  
+  // Preference alignment: How well did the response match user preferences?
+  const preferenceAlignment = analyzePreferenceAlignment(comments);
+  
+  // Overall quality score combining all factors
+  const qualityScore = (contentRichness * 0.4 + satisfactionLevel * 0.4 + preferenceAlignment * 0.2);
+  
+  return {
+    qualityScore: Math.round(qualityScore),
+    satisfactionLevel: Math.round(satisfactionLevel),
+    contentRichness: Math.round(contentRichness),
+    preferenceAlignment: Math.round(preferenceAlignment)
+  };
+}
+
+/**
+ * Analyze component effectiveness based on ratings and context
+ * @param {Object} component - Component feedback data
+ * @returns {Object} - Effectiveness analysis
+ */
+function analyzeComponentEffectiveness(component) {
+  const ratings = [
+    component.analogy_rating,
+    component.explanation_rating,
+    component.clarity_rating,
+    component.relevance_rating
+  ].filter(r => r !== null);
+  
+  if (ratings.length === 0) {
+    return { effectivenessScore: 0 };
+  }
+  
+  // Calculate weighted effectiveness score
+  const avgRating = ratings.reduce((sum, r) => sum + r, 0) / ratings.length;
+  const effectivenessScore = ((avgRating - 1) / 4) * 100; // Convert 1-5 to 0-100
+  
+  return {
+    effectivenessScore: Math.round(effectivenessScore),
+    componentCount: ratings.length,
+    averageComponentRating: Math.round(avgRating * 10) / 10
+  };
+}
+
+/**
+ * Analyze content richness of feedback
+ * @param {string} comments - Feedback comments
+ * @returns {number} - Content richness score (0-100)
+ */
+function analyzeContentRichness(comments) {
+  if (!comments) return 0;
+  
+  const wordCount = comments.split(/\s+/).length;
+  const sentenceCount = comments.split(/[.!?]+/).length;
+  
+  // Check for specific feedback indicators
+  const hasSpecifics = /specific|example|instance|particular/.test(comments.toLowerCase());
+  const hasSuggestions = /suggest|recommend|should|could|would/.test(comments.toLowerCase());
+  const hasDetails = /because|since|due to|reason|explain/.test(comments.toLowerCase());
+  
+  let richness = 0;
+  
+  // Word count contribution (0-30 points)
+  richness += Math.min(wordCount * 2, 30);
+  
+  // Quality indicators (0-70 points)
+  if (hasSpecifics) richness += 20;
+  if (hasSuggestions) richness += 25;
+  if (hasDetails) richness += 25;
+  
+  return Math.min(richness, 100);
+}
+
+/**
+ * Analyze satisfaction level from feedback content and rating consistency
+ * @param {string} comments - Feedback comments
+ * @param {number} rating - Numerical rating
+ * @returns {number} - Satisfaction score (0-100)
+ */
+function analyzeSatisfactionLevel(comments, rating) {
+  if (!comments) return (rating - 1) * 25; // Fallback to rating-based score
+  
+  // Positive sentiment indicators
+  const positiveWords = ['good', 'great', 'excellent', 'helpful', 'clear', 'useful', 'perfect', 'love', 'amazing'];
+  const negativeWords = ['bad', 'poor', 'confusing', 'unclear', 'useless', 'terrible', 'hate', 'wrong', 'difficult'];
+  
+  const lowerComments = comments.toLowerCase();
+  const positiveCount = positiveWords.filter(word => lowerComments.includes(word)).length;
+  const negativeCount = negativeWords.filter(word => lowerComments.includes(word)).length;
+  
+  // Sentiment score
+  const sentimentScore = (positiveCount - negativeCount) * 10 + 50; // Base 50, adjust by sentiment
+  
+  // Rating consistency
+  const ratingScore = (rating - 1) * 25; // Convert 1-5 to 0-100
+  
+  // Combine sentiment and rating with weights
+  const satisfactionScore = (sentimentScore * 0.6) + (ratingScore * 0.4);
+  
+  return Math.max(0, Math.min(100, satisfactionScore));
+}
+
+/**
+ * Analyze how well the response aligned with user preferences
+ * @param {string} comments - Feedback comments
+ * @returns {number} - Preference alignment score (0-100)
+ */
+function analyzePreferenceAlignment(comments) {
+  if (!comments) return 50; // Neutral score if no comments
+  
+  const lowerComments = comments.toLowerCase();
+  
+  // Preference indicators
+  const alignmentIndicators = {
+    positive: ['exactly what', 'just what', 'perfect for', 'just right', 'what I needed'],
+    negative: ['not what', "didn't want", 'too complex', 'too simple', 'not helpful']
+  };
+  
+  let score = 50; // Start with neutral
+  
+  // Check for positive alignment
+  alignmentIndicators.positive.forEach(indicator => {
+    if (lowerComments.includes(indicator)) {
+      score += 15;
+    }
+  });
+  
+  // Check for negative alignment
+  alignmentIndicators.negative.forEach(indicator => {
+    if (lowerComments.includes(indicator)) {
+      score -= 15;
+    }
+  });
+  
+  return Math.max(0, Math.min(100, score));
+}
+
+// Analytics Routes
+app.get('/api/analytics/topics/popularity', async (req, res) => {
+  try {
+    console.log('[Analytics] Fetching topic popularity across all users');
+    
+    const { data: topicCounts, error } = await supabase
+      .from('sessions')
+      .select('secret_topic')
+      .not('secret_topic', 'eq', null)
+      .not('secret_topic', 'eq', 'no_specific_topic');
+    
+    if (error) throw error;
+    
+    // Count occurrences of each topic
+    const topicStats = {};
+    topicCounts.forEach(session => {
+      const topic = session.secret_topic;
+      topicStats[topic] = (topicStats[topic] || 0) + 1;
+    });
+    
+    // Convert to array and sort by popularity
+    const popularTopics = Object.entries(topicStats)
+      .map(([topic, count]) => ({
+        topic_name: topic,
+        session_count: count,
+        percentage: ((count / topicCounts.length) * 100).toFixed(2)
+      }))
+      .sort((a, b) => b.session_count - a.session_count);
+    
+    console.log(`[Analytics] Found ${popularTopics.length} topics with ${topicCounts.length} total sessions`);
+    
+    res.json({
+      success: true,
+      popular_topics: popularTopics,
+      total_sessions: topicCounts.length,
+      unique_topics: popularTopics.length
+    });
+  } catch (error) {
+    console.error('[Analytics] Error fetching topic popularity:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/analytics/topics/timeline', async (req, res) => {
+  try {
+    const { timeframe = '7d' } = req.query;
+    console.log(`[Analytics] Fetching topic timeline for ${timeframe}`);
+    
+    // Calculate date range based on timeframe
+    const now = new Date();
+    const daysBack = timeframe === '30d' ? 30 : timeframe === '7d' ? 7 : 1;
+    const startDate = new Date(now.getTime() - (daysBack * 24 * 60 * 60 * 1000));
+    
+    const { data: sessions, error } = await supabase
+      .from('sessions')
+      .select('secret_topic, created_at')
+      .gte('created_at', startDate.toISOString())
+      .not('secret_topic', 'eq', null)
+      .not('secret_topic', 'eq', 'no_specific_topic')
+      .order('created_at');
+    
+    if (error) throw error;
+    
+    // Group by date and topic
+    const timelineData = {};
+    sessions.forEach(session => {
+      const date = session.created_at.split('T')[0]; // Get YYYY-MM-DD
+      const topic = session.secret_topic;
+      
+      if (!timelineData[date]) {
+        timelineData[date] = {};
+      }
+      timelineData[date][topic] = (timelineData[date][topic] || 0) + 1;
+    });
+    
+    console.log(`[Analytics] Generated timeline data for ${Object.keys(timelineData).length} dates`);
+    
+    res.json({
+      success: true,
+      timeline_data: timelineData,
+      timeframe,
+      total_sessions: sessions.length
+    });
+  } catch (error) {
+    console.error('[Analytics] Error fetching topic timeline:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/analytics/users/engagement', async (req, res) => {
+  try {
+    console.log('[Analytics] Fetching user engagement analytics');
+    
+    // Get user session counts
+    const { data: userStats, error: userError } = await supabase
+      .from('sessions')
+      .select('user_id')
+      .not('secret_topic', 'eq', null);
+    
+    if (userError) throw userError;
+    
+    // Count sessions per user
+    const userEngagement = {};
+    userStats.forEach(session => {
+      const userId = session.user_id;
+      userEngagement[userId] = (userEngagement[userId] || 0) + 1;
+    });
+    
+    // Create engagement distribution
+    const engagementLevels = {
+      'Very Active (10+ sessions)': 0,
+      'Active (5-9 sessions)': 0,
+      'Moderate (2-4 sessions)': 0,
+      'New (1 session)': 0
+    };
+    
+    Object.values(userEngagement).forEach(sessionCount => {
+      if (sessionCount >= 10) {
+        engagementLevels['Very Active (10+ sessions)']++;
+      } else if (sessionCount >= 5) {
+        engagementLevels['Active (5-9 sessions)']++;
+      } else if (sessionCount >= 2) {
+        engagementLevels['Moderate (2-4 sessions)']++;
+      } else {
+        engagementLevels['New (1 session)']++;
+      }
+    });
+    
+    console.log(`[Analytics] Analyzed ${Object.keys(userEngagement).length} users`);
+    
+    res.json({
+      success: true,
+      engagement_distribution: engagementLevels,
+      total_users: Object.keys(userEngagement).length,
+      total_sessions: userStats.length,
+      avg_sessions_per_user: (userStats.length / Object.keys(userEngagement).length).toFixed(2)
+    });
+  } catch (error) {
+    console.error('[Analytics] Error fetching user engagement:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/analytics/topics/trends', async (req, res) => {
+  try {
+    console.log('[Analytics] Fetching topic growth trends');
+    
+    // Get sessions from last 30 days
+    const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+    const fifteenDaysAgo = new Date(Date.now() - (15 * 24 * 60 * 60 * 1000));
+    
+    const { data: recentSessions, error: recentError } = await supabase
+      .from('sessions')
+      .select('secret_topic, created_at')
+      .gte('created_at', fifteenDaysAgo.toISOString())
+      .not('secret_topic', 'eq', null);
+    
+    const { data: olderSessions, error: olderError } = await supabase
+      .from('sessions')
+      .select('secret_topic, created_at')
+      .gte('created_at', thirtyDaysAgo.toISOString())
+      .lt('created_at', fifteenDaysAgo.toISOString())
+      .not('secret_topic', 'eq', null);
+    
+    if (recentError || olderError) throw recentError || olderError;
+    
+    // Count topics in each period
+    const recentCounts = {};
+    const olderCounts = {};
+    
+    recentSessions.forEach(session => {
+      const topic = session.secret_topic;
+      recentCounts[topic] = (recentCounts[topic] || 0) + 1;
+    });
+    
+    olderSessions.forEach(session => {
+      const topic = session.secret_topic;
+      olderCounts[topic] = (olderCounts[topic] || 0) + 1;
+    });
+    
+    // Calculate trends
+    const allTopics = new Set([...Object.keys(recentCounts), ...Object.keys(olderCounts)]);
+    const trends = Array.from(allTopics).map(topic => {
+      const recent = recentCounts[topic] || 0;
+      const older = olderCounts[topic] || 0;
+      const change = older > 0 ? ((recent - older) / older * 100).toFixed(1) : 'New';
+      
+      return {
+        topic_name: topic,
+        recent_sessions: recent,
+        previous_sessions: older,
+        growth_percentage: change,
+        trend: recent > older ? 'up' : recent < older ? 'down' : 'stable'
+      };
+    }).sort((a, b) => b.recent_sessions - a.recent_sessions);
+    
+    console.log(`[Analytics] Calculated trends for ${trends.length} topics`);
+    
+    res.json({
+      success: true,
+      trends,
+      period: 'Last 15 days vs Previous 15 days'
+    });
+  } catch (error) {
+    console.error('[Analytics] Error fetching topic trends:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/analytics/clusters/distribution', async (req, res) => {
+  try {
+    console.log('[Analytics] Fetching cluster distribution analytics');
+    
+    const { data: profiles, error } = await supabase
+      .from('user_profiles')
+      .select('cluster_id')
+      .not('cluster_id', 'eq', null);
+    
+    if (error) throw error;
+    
+    // Count users per cluster
+    const clusterCounts = {};
+    profiles.forEach(profile => {
+      const clusterId = profile.cluster_id;
+      clusterCounts[clusterId] = (clusterCounts[clusterId] || 0) + 1;
+    });
+    
+    // Convert to array and add cluster stats
+    const clusterStats = Object.entries(clusterCounts).map(([clusterId, userCount]) => ({
+      cluster_id: clusterId,
+      user_count: userCount,
+      percentage: ((userCount / profiles.length) * 100).toFixed(2)
+    })).sort((a, b) => b.user_count - a.user_count);
+    
+    console.log(`[Analytics] Found ${clusterStats.length} clusters with ${profiles.length} total users`);
+    
+    res.json({
+      success: true,
+      cluster_distribution: clusterStats,
+      total_users: profiles.length,
+      total_clusters: clusterStats.length,
+      avg_users_per_cluster: (profiles.length / clusterStats.length).toFixed(2)
+    });
+  } catch (error) {
+    console.error('[Analytics] Error fetching cluster distribution:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });

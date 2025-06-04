@@ -3,36 +3,126 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '../contexts/QueryContext';
 
 function History() {
-  const { getQueryHistory, getSessionDetails, loading } = useQuery();
+  const { 
+    getQueryHistory, 
+    getSessionDetails, 
+    getSessionsByTopic, 
+    getUserTopicsSummary, 
+    getAllTopics,
+    loading 
+  } = useQuery();
+  
   const [queries, setQueries] = useState([]);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedSession, setSelectedSession] = useState(null);
   const [loadingSession, setLoadingSession] = useState(false);
+  
+  // Topic filtering state
+  const [selectedTopic, setSelectedTopic] = useState('all');
+  const [userTopics, setUserTopics] = useState([]);
+  const [allTopics, setAllTopics] = useState([]);
+  const [topicStats, setTopicStats] = useState({ user_topics: [], total_sessions: 0, unique_topics: 0 });
+  const [loadingTopics, setLoadingTopics] = useState(false);
+  
   const limit = 10;
 
   useEffect(() => {
-    loadQueries();
+    loadInitialData();
   }, []);
 
-  const loadQueries = async () => {
+  const loadInitialData = async () => {
+    try {
+      setLoadingTopics(true);
+      
+      // Load topics data in parallel
+      const [topicsData, userTopicsData, allTopicsData] = await Promise.all([
+        getUserTopicsSummary(),
+        getUserTopicsSummary(),
+        getAllTopics()
+      ]);
+      
+      setTopicStats(userTopicsData);
+      setUserTopics(userTopicsData.user_topics || []);
+      setAllTopics(allTopicsData || []);
+      
+      // Load initial queries (all topics)
+      loadQueries(true);
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+    } finally {
+      setLoadingTopics(false);
+    }
+  };
+
+  const loadQueries = async (reset = false) => {
     try {
       setLoadingMore(true);
-      const offset = page * limit;
-      const history = await getQueryHistory(limit, offset);
+      const offset = reset ? 0 : page * limit;
+      
+      let history;
+      if (selectedTopic === 'all') {
+        history = await getQueryHistory(limit, offset);
+      } else {
+        history = await getSessionsByTopic(selectedTopic, limit, offset);
+      }
       
       // Convert to array if it's not already
       const historyArray = Array.isArray(history) ? history : [];
       
       if (historyArray.length < limit) {
         setHasMore(false);
+      } else {
+        setHasMore(true);
       }
       
-      setQueries(prev => [...prev, ...historyArray]);
-      setPage(prev => prev + 1);
+      if (reset) {
+        setQueries(historyArray);
+        setPage(1);
+      } else {
+        setQueries(prev => [...prev, ...historyArray]);
+        setPage(prev => prev + 1);
+      }
     } catch (error) {
       console.error('Error loading query history:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const handleTopicChange = (topic) => {
+    setSelectedTopic(topic);
+    setPage(0);
+    setHasMore(true);
+    // Load queries with the new topic filter
+    loadQueriesForTopic(topic);
+  };
+
+  const loadQueriesForTopic = async (topic) => {
+    try {
+      setLoadingMore(true);
+      
+      let history;
+      if (topic === 'all') {
+        history = await getQueryHistory(limit, 0);
+      } else {
+        history = await getSessionsByTopic(topic, limit, 0);
+      }
+      
+      // Convert to array if it's not already
+      const historyArray = Array.isArray(history) ? history : [];
+      
+      if (historyArray.length < limit) {
+        setHasMore(false);
+      } else {
+        setHasMore(true);
+      }
+      
+      setQueries(historyArray);
+      setPage(1);
+    } catch (error) {
+      console.error('Error loading query history for topic:', error);
     } finally {
       setLoadingMore(false);
     }
@@ -61,6 +151,34 @@ function History() {
     });
   };
 
+  const formatTopicName = (topicName) => {
+    if (!topicName) return 'No Topic';
+    return topicName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
+
+  const getTopicBadgeColor = (topicName) => {
+    // Generate consistent colors based on topic name
+    const colors = [
+      'bg-blue-100 text-blue-800',
+      'bg-green-100 text-green-800', 
+      'bg-purple-100 text-purple-800',
+      'bg-yellow-100 text-yellow-800',
+      'bg-red-100 text-red-800',
+      'bg-indigo-100 text-indigo-800',
+      'bg-pink-100 text-pink-800',
+      'bg-gray-100 text-gray-800'
+    ];
+    
+    if (!topicName) return 'bg-gray-100 text-gray-800';
+    
+    // Simple hash function to get consistent color
+    let hash = 0;
+    for (let i = 0; i < topicName.length; i++) {
+      hash = topicName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       {selectedSession ? (
@@ -73,6 +191,11 @@ function History() {
               <p className="mt-1 max-w-2xl text-sm text-gray-500">
                 {formatDate(selectedSession.created_at)}
               </p>
+              {selectedSession.secret_topic && (
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-2 ${getTopicBadgeColor(selectedSession.secret_topic)}`}>
+                  {formatTopicName(selectedSession.secret_topic)}
+                </span>
+              )}
             </div>
             <button
               onClick={() => setSelectedSession(null)}
@@ -197,6 +320,83 @@ function History() {
             <p className="mt-1 max-w-2xl text-sm text-gray-500">
               Review your past learning sessions
             </p>
+            
+            {/* Topic Statistics Summary */}
+            {topicStats.unique_topics > 0 && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                <h3 className="text-sm font-medium text-gray-900 mb-2">Your Learning Overview</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-primary-600">{topicStats.total_sessions}</div>
+                    <div className="text-sm text-gray-500">Total Sessions</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{topicStats.unique_topics}</div>
+                    <div className="text-sm text-gray-500">Topics Explored</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {topicStats.unique_topics > 0 ? Math.round(topicStats.total_sessions / topicStats.unique_topics) : 0}
+                    </div>
+                    <div className="text-sm text-gray-500">Avg Sessions/Topic</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Topic Filter Section */}
+          <div className="border-t border-gray-200 px-4 py-4 sm:px-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
+              <div className="flex items-center space-x-4">
+                <label htmlFor="topic-filter" className="text-sm font-medium text-gray-700">
+                  Filter by Topic:
+                </label>
+                <select
+                  id="topic-filter"
+                  value={selectedTopic}
+                  onChange={(e) => handleTopicChange(e.target.value)}
+                  className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  disabled={loadingTopics}
+                >
+                  <option value="all">All Topics ({topicStats.total_sessions})</option>
+                  {userTopics.map((topic) => (
+                    <option key={topic.name} value={topic.name}>
+                      {formatTopicName(topic.name)} ({topic.user_session_count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Topic quick filters for most used topics */}
+              {userTopics.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleTopicChange('all')}
+                    className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                      selectedTopic === 'all' 
+                        ? 'bg-primary-100 text-primary-800 border-primary-200' 
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    All
+                  </button>
+                  {userTopics.slice(0, 4).map((topic) => (
+                    <button
+                      key={topic.name}
+                      onClick={() => handleTopicChange(topic.name)}
+                      className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                        selectedTopic === topic.name 
+                          ? 'bg-primary-100 text-primary-800 border-primary-200' 
+                          : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {formatTopicName(topic.name)} ({topic.user_session_count})
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           
           <div className="border-t border-gray-200">
@@ -205,13 +405,28 @@ function History() {
                 {queries.map((query, index) => (
                   <li key={index} className="px-4 py-5 sm:px-6 hover:bg-gray-50">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-medium text-primary-600 truncate">
-                        {query.query}
-                      </h3>
-                      <div className="ml-2 flex-shrink-0 flex">
-                        <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                          {formatDate(query.created_at)}
-                        </p>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-medium text-primary-600 truncate">
+                          {query.query}
+                        </h3>
+                        <div className="mt-1 flex items-center space-x-2">
+                          <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                            {formatDate(query.created_at)}
+                          </p>
+                          {(query.secret_topic || query.session?.secret_topic) && (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTopicBadgeColor(query.secret_topic || query.session?.secret_topic)}`}>
+                              {formatTopicName(query.secret_topic || query.session?.secret_topic)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="ml-2 flex-shrink-0">
+                        <button
+                          onClick={() => loadSessionDetails(query.session.id)}
+                          className="text-primary-600 hover:text-primary-900 text-sm font-medium"
+                        >
+                          View Details
+                        </button>
                       </div>
                     </div>
                     
@@ -246,26 +461,24 @@ function History() {
                           <span className="text-sm text-gray-500">No rating provided</span>
                         )}
                       </div>
-                      
-                      <button
-                        onClick={() => loadSessionDetails(query.session.id)}
-                        className="text-primary-600 hover:text-primary-900 text-sm font-medium"
-                      >
-                        View Details
-                      </button>
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
               <div className="px-4 py-5 sm:px-6 text-center">
-                {loading ? (
+                {loading || loadingMore ? (
                   <div className="flex justify-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-600"></div>
                   </div>
                 ) : (
                   <div>
-                    <p className="text-gray-500">No queries found in your history.</p>
+                    <p className="text-gray-500">
+                      {selectedTopic === 'all' 
+                        ? 'No queries found in your history.' 
+                        : `No queries found for topic "${formatTopicName(selectedTopic)}".`
+                      }
+                    </p>
                     <div className="mt-4">
                       <Link to="/query" className="btn btn-primary">
                         Submit a Query
@@ -279,7 +492,7 @@ function History() {
             {hasMore && queries.length > 0 && (
               <div className="px-4 py-4 sm:px-6 border-t border-gray-200">
                 <button
-                  onClick={loadQueries}
+                  onClick={() => loadQueries()}
                   disabled={loadingMore}
                   className="w-full btn btn-outline"
                 >
