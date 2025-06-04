@@ -22,6 +22,7 @@ import VerifyEmail from './pages/VerifyEmail';
 import FeedbackList from './pages/admin/FeedbackList';
 import FeedbacksPage from './pages/FeedbacksPage';
 import FeedbackDetailPage from './pages/FeedbackDetailPage';
+import ProgressDashboard from './components/ProgressDashboard';
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -91,6 +92,7 @@ function App() {
           <Route path="query" element={<QueryPage />} />
           <Route path="quiz" element={<QuizPage />} /> {/* New quiz route */}
           <Route path="history" element={<History />} />
+          <Route path="progress" element={<ProgressDashboard />} />
         </Route>
         
         {/* Admin routes */}

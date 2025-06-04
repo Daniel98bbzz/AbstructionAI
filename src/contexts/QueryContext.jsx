@@ -751,6 +751,227 @@ export function QueryProvider({ children }) {
     }
   };
 
+  // Get user sessions filtered by topic
+  const getSessionsByTopic = async (topic = 'all', limit = 10, offset = 0) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      if (!user) {
+        return [];
+      }
+      
+      try {
+        const response = await axios.get(`${API_URL}/api/user-sessions/by-topic`, {
+          params: {
+            user_id: user.id,
+            topic: topic,
+            limit: limit,
+            offset: offset
+          }
+        });
+        
+        if (response.data.success) {
+          return response.data.sessions || [];
+        } else {
+          throw new Error(response.data.error || 'Failed to fetch sessions by topic');
+        }
+      } catch (err) {
+        console.error('Error getting sessions by topic:', err);
+        throw err;
+      }
+    } catch (err) {
+      console.error('Error getting sessions by topic:', err);
+      setError('Failed to load sessions by topic. Please try again.');
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get user's topics summary
+  const getUserTopicsSummary = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      if (!user) {
+        return { user_topics: [], total_sessions: 0, unique_topics: 0 };
+      }
+      
+      try {
+        const response = await axios.get(`${API_URL}/api/user-topics/summary`, {
+          params: {
+            user_id: user.id
+          }
+        });
+        
+        if (response.data.success) {
+          return response.data;
+        } else {
+          throw new Error(response.data.error || 'Failed to fetch user topics summary');
+        }
+      } catch (err) {
+        console.error('Error getting user topics summary:', err);
+        throw err;
+      }
+    } catch (err) {
+      console.error('Error getting user topics summary:', err);
+      setError('Failed to load user topics summary. Please try again.');
+      return { user_topics: [], total_sessions: 0, unique_topics: 0 };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get all available topics
+  const getAllTopics = async () => {
+    try {
+      if (!user) {
+        return [];
+      }
+      
+      try {
+        const response = await axios.get(`${API_URL}/api/topics`);
+        
+        if (response.data.success) {
+          return response.data.topics || [];
+        } else {
+          throw new Error(response.data.error || 'Failed to fetch topics');
+        }
+      } catch (err) {
+        console.error('Error getting all topics:', err);
+        throw err;
+      }
+    } catch (err) {
+      console.error('Error getting all topics:', err);
+      setError('Failed to load topics. Please try again.');
+      return [];
+    }
+  };
+
+  // Get trending topics in user's cluster
+  const getTrendingTopics = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      if (!user) {
+        return { trending_topics: [], cluster_id: null, cluster_size: 0 };
+      }
+      
+      try {
+        const response = await axios.get(`${API_URL}/api/user-topics/trending`, {
+          params: {
+            user_id: user.id
+          }
+        });
+        
+        if (response.data.success) {
+          return response.data;
+        } else {
+          throw new Error(response.data.error || 'Failed to fetch trending topics');
+        }
+      } catch (err) {
+        console.error('Error getting trending topics:', err);
+        throw err;
+      }
+    } catch (err) {
+      console.error('Error getting trending topics:', err);
+      setError('Failed to load trending topics. Please try again.');
+      return { trending_topics: [], cluster_id: null, cluster_size: 0 };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get topic suggestions for user
+  const getTopicSuggestions = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      if (!user) {
+        return { suggestions: [], user_topics_count: 0, cluster_id: null };
+      }
+      
+      try {
+        const response = await axios.get(`${API_URL}/api/user-topics/suggestions`, {
+          params: {
+            user_id: user.id
+          }
+        });
+        
+        if (response.data.success) {
+          return response.data;
+        } else {
+          throw new Error(response.data.error || 'Failed to fetch topic suggestions');
+        }
+      } catch (err) {
+        console.error('Error getting topic suggestions:', err);
+        throw err;
+      }
+    } catch (err) {
+      console.error('Error getting topic suggestions:', err);
+      setError('Failed to load topic suggestions. Please try again.');
+      return { suggestions: [], user_topics_count: 0, cluster_id: null };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Get personalized topic feed
+  const getTopicFeed = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      if (!user) {
+        return { feed: { recent_activity: [], trending_topics: [], suggestions: [] } };
+      }
+      
+      try {
+        // Get trending topics and suggestions in parallel
+        const [trendingData, suggestionsData] = await Promise.all([
+          getTrendingTopics(),
+          getTopicSuggestions()
+        ]);
+        
+        const response = await axios.get(`${API_URL}/api/user-topics/feed`, {
+          params: {
+            user_id: user.id
+          }
+        });
+        
+        if (response.data.success) {
+          // Enhance the feed with the actual trending and suggestions data
+          const enhancedFeed = {
+            ...response.data.feed,
+            trending_topics: trendingData.trending_topics || [],
+            suggestions: suggestionsData.suggestions || [],
+            cluster_size: trendingData.cluster_size || 0
+          };
+          
+          return {
+            ...response.data,
+            feed: enhancedFeed
+          };
+        } else {
+          throw new Error(response.data.error || 'Failed to fetch topic feed');
+        }
+      } catch (err) {
+        console.error('Error getting topic feed:', err);
+        throw err;
+      }
+    } catch (err) {
+      console.error('Error getting topic feed:', err);
+      setError('Failed to load topic feed. Please try again.');
+      return { feed: { recent_activity: [], trending_topics: [], suggestions: [] } };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Start a new learning session
   const startNewSession = async (preferences = {}) => {
     try {
@@ -827,6 +1048,92 @@ export function QueryProvider({ children }) {
     }
   };
 
+  // ==================== PHASE 3: PROGRESS TRACKING ====================
+  
+  // Get user's progress across all topics
+  const getUserProgress = async () => {
+    try {
+      if (!user) {
+        console.error('No user found');
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const userId = user.id;
+
+      const response = await fetch(`/api/user-topics/progress?user_id=${userId}`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching user progress:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Get learning path recommendations
+  const getLearningPathRecommendations = async () => {
+    try {
+      if (!user) {
+        console.error('No user found');
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const userId = user.id;
+
+      const response = await fetch(`/api/learning-paths/recommendations?user_id=${userId}`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching learning path recommendations:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Get user achievements
+  const getUserAchievements = async () => {
+    try {
+      if (!user) {
+        console.error('No user found');
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const userId = user.id;
+
+      const response = await fetch(`/api/user-achievements?user_id=${userId}`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching user achievements:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
   const value = {
     loading,
     error,
@@ -840,7 +1147,18 @@ export function QueryProvider({ children }) {
     getSessionDetails,
     startNewSession,
     getMessageHistory,
-    clearChat
+    clearChat,
+    getSessionsByTopic,
+    getUserTopicsSummary,
+    getAllTopics,
+    getTrendingTopics,
+    getTopicSuggestions,
+    getTopicFeed,
+    
+    // Phase 3: Progress Tracking
+    getUserProgress,
+    getLearningPathRecommendations,
+    getUserAchievements,
   };
 
   return (

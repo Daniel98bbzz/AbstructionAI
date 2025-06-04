@@ -2,21 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery } from '../contexts/QueryContext';
-import QuizStats from '../components/QuizStats';
-import ClusterTopicSuggestions from '../components/ClusterTopicSuggestions';
 import ClusterQuizSuggestions from '../components/ClusterQuizSuggestions';
 import SecretFeedbackDashboard from '../components/SecretFeedbackDashboard';
+import AnalyticsDashboard from '../components/AnalyticsDashboard';
+import TopicFeed from '../components/TopicFeed';
 
 
 function Dashboard() {
   const { user } = useAuth();
   const { getQueryHistory, loading } = useQuery();
   const [recentQueries, setRecentQueries] = useState([]);
-  const [pendingFeedback, setPendingFeedback] = useState([]);
   const [stats, setStats] = useState({
     totalQueries: 0,
-    averageRating: 0,
-    topCategories: []
+    averageRating: 0
   });
   const navigate = useNavigate();
 
@@ -45,44 +43,10 @@ function Dashboard() {
           
           const averageRating = ratingCount > 0 ? (totalRating / ratingCount).toFixed(1) : 0;
           
-          // Extract keywords for categories
-          const keywords = new Map();
-          historyArray.forEach(query => {
-            const words = query.query.toLowerCase().split(/\W+/);
-            words.forEach(word => {
-              if (word.length > 4) {
-                keywords.set(word, (keywords.get(word) || 0) + 1);
-              }
-            });
-          });
-          
-          // Sort keywords by frequency
-          const sortedKeywords = [...keywords.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
-            .map(entry => entry[0]);
-          
-          // Capitalize first letter of each keyword
-          const topCategories = sortedKeywords.map(
-            word => word.charAt(0).toUpperCase() + word.slice(1)
-          );
-          
           setStats({
             totalQueries,
-            averageRating: averageRating || 0,
-            topCategories: topCategories.length > 0 ? topCategories : ['Algorithms', 'Quantum Physics', 'Machine Learning']
+            averageRating: averageRating || 0
           });
-          
-          // Load stored feedback from localStorage
-          try {
-            const storedFeedback = localStorage.getItem('user_feedback');
-            if (storedFeedback) {
-              const parsedFeedback = JSON.parse(storedFeedback);
-              setPendingFeedback(parsedFeedback);
-            }
-          } catch (e) {
-            console.warn('Error loading stored feedback:', e);
-          }
         }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -249,85 +213,6 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Recent Queries */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
-        <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
-          <div>
-            <h3 className="text-lg leading-6 font-medium text-gray-900">
-              Recent Queries
-            </h3>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              Your most recent learning sessions
-            </p>
-          </div>
-          <Link to="/history" className="text-primary-600 hover:text-primary-500 text-sm font-medium">
-            View all
-          </Link>
-        </div>
-        <div className="border-t border-gray-200">
-          {loading ? (
-            <div className="p-6 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-600 mx-auto"></div>
-              <p className="mt-2 text-gray-500">Loading recent queries...</p>
-            </div>
-          ) : recentQueries.length > 0 ? (
-            <ul className="divide-y divide-gray-200">
-              {recentQueries.map((query, index) => (
-                <li key={index} className="px-4 py-4 sm:px-6 hover:bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-primary-600 truncate">
-                      {query.query}
-                    </p>
-                    <div className="ml-2 flex-shrink-0 flex">
-                      <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                        {formatDate(query.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-2 sm:flex sm:justify-between">
-                    <div className="sm:flex">
-                      <p className="flex items-center text-sm text-gray-500">
-                        {query.response?.explanation?.substring(0, 100)}...
-                      </p>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="p-6 text-center">
-              <p className="text-gray-500">No queries yet. Start learning by submitting a query!</p>
-              <div className="mt-4">
-                <Link to="/query" className="btn btn-primary">
-                  Submit Your First Query
-                </Link>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      {/* Quiz Stats */}
-      <div className="mb-8">
-        <QuizStats />
-      </div>
-
-      {/* Cluster Topic Suggestions */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
-        <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
-          <div>
-            <h3 className="text-lg leading-6 font-medium text-gray-900">
-              What Others Are Learning
-            </h3>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              Recent topics from users with similar learning preferences
-            </p>
-          </div>
-        </div>
-        <div className="border-t border-gray-200">
-          <ClusterTopicSuggestions />
-        </div>
-      </div>
-
       {/* Cluster Quiz Suggestions */}
       <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
         <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
@@ -345,70 +230,39 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Your Learning Categories */}
+      {/* Discover Section */}
       <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
-        <div className="px-4 py-5 border-b border-gray-200 sm:px-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">
-            Your Learning Categories
-          </h3>
-        </div>
-        <div className="px-4 py-5 sm:p-6">
-          <div className="flex flex-wrap gap-3">
-            {stats.topCategories.map((category, index) => (
-              <span
-                key={index}
-                className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary-100 text-primary-800"
-              >
-                {category}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-      
-      {/* Stored Feedback */}
-      {pendingFeedback.length > 0 && (
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
-          <div className="px-4 py-5 border-b border-gray-200 sm:px-6">
+        <div className="px-4 py-5 sm:px-6">
+          <div>
             <h3 className="text-lg leading-6 font-medium text-gray-900">
-              Saved Feedback ({pendingFeedback.length})
+              Discover Learning Topics
             </h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Your feedback is stored locally while server issues are being fixed
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">
+              Explore trending topics and personalized recommendations from your learning community
             </p>
           </div>
-          <ul className="divide-y divide-gray-200">
-            {pendingFeedback.slice(0, 3).map((feedback, index) => (
-              <li key={index} className="px-4 py-4 sm:px-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div className="ml-3">
-                      <p className="text-sm font-medium text-gray-900">
-                        Rating: {feedback.rating}/5
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {new Date(feedback.timestamp).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                {feedback.comments && (
-                  <div className="mt-2 text-sm text-gray-700">
-                    "{feedback.comments}"
-                  </div>
-                )}
-              </li>
-            ))}
-            {pendingFeedback.length > 3 && (
-              <li className="px-4 py-2 sm:px-6 text-center">
-                <p className="text-sm text-gray-500">
-                  + {pendingFeedback.length - 3} more feedback items stored
-                </p>
-              </li>
-            )}
-          </ul>
         </div>
-      )}
+        <div className="border-t border-gray-200">
+          <TopicFeed />
+        </div>
+      </div>
+
+      {/* Analytics Section */}
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+        <div className="px-4 py-5 sm:px-6">
+          <div>
+            <h3 className="text-lg leading-6 font-medium text-gray-900">
+              System Analytics
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">
+              Insights into topic popularity, user engagement, and learning trends across the platform
+            </p>
+          </div>
+        </div>
+        <div className="border-t border-gray-200 p-6">
+          <AnalyticsDashboard />
+        </div>
+      </div>
 
       {/* Secret Feedback Analytics Card */}
       <div className="bg-white rounded-lg shadow-md p-6">

@@ -8,7 +8,7 @@ import axios from 'axios';
  */
 export async function generateQuizQuestions(query, options = {}) {
   try {
-    const response = await axios.post(`/api/generate-quiz`, {
+    const response = await axios.post(`http://localhost:3001/api/generate-quiz`, {
       query,
       difficulty: options.difficultyLevel || 'medium',
       userId: options.userId,

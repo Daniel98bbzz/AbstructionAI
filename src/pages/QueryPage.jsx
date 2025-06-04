@@ -880,7 +880,6 @@ function QueryPage() {
   // Update the generateQuizQuestions function
   const generateQuizQuestions = async (topic) => {
     try {
-      setLoading(true);
       setIsGeneratingContent(true);
       
       // Get the active project's preferences
@@ -892,10 +891,18 @@ function QueryPage() {
         preferred_analogy_domains: []
       };
       
-      // Generate quiz using project-specific preferences
-      const questions = await generateQuizAPI(topic, quizPreferences);
+      // Format options correctly for the API
+      const quizOptions = {
+        difficultyLevel: 'medium',
+        userId: user?.id,
+        content: messages.find(msg => msg.role === 'assistant')?.content || '',
+        preferences: quizPreferences
+      };
       
-      setQuizQuestions(questions);
+      // Generate quiz using project-specific preferences
+      const quizData = await generateQuizAPI(topic, quizOptions);
+      
+      setQuizQuestions(quizData.questions || quizData);
       setCurrentQuestionIndex(0);
       setQuizMode(true);
       setSelectedAnswer(null);
@@ -909,7 +916,6 @@ function QueryPage() {
       console.error('Error generating quiz:', error);
       toast.error('Failed to generate quiz questions');
     } finally {
-      setLoading(false);
       setIsGeneratingContent(false);
     }
   };
