@@ -430,6 +430,191 @@ TOPIC:`;
       crowd_wisdom: response.crowd_wisdom
     };
 
+    // 🆕 GENERATE EXAMPLES AND ABSTRACT SIMULTANEOUSLY WITH MAIN RESPONSE
+    console.log('[Tab Content Generation] Starting simultaneous generation of Examples and Abstract content');
+    
+    try {
+      // Get user preferences for better content generation
+      let userPreferences = preferences;
+      if (userId && !userPreferences) {
+        // Try to get user preferences from memory cache
+        global.userProfiles = global.userProfiles || {};
+        const userProfile = global.userProfiles[userId];
+        if (userProfile) {
+          userPreferences = {
+            preferred_analogy_domains: userProfile.preferred_analogy_domains || ['everyday life', 'cooking'],
+            interests: userProfile.interests || ['general'],
+            learning_style: userProfile.learning_style || 'visual',
+            technical_depth: userProfile.technical_depth || 50
+          };
+        }
+      }
+
+      // Generate Examples and Abstract content in parallel
+      const [examplesResult, abstractResult] = await Promise.allSettled([
+        // Generate Examples
+        (async () => {
+          const examplesPrompt = `Based on the following question and explanation, generate practical examples that help illustrate the concept. Make the examples concrete, diverse, and easy to understand.
+
+Original Question: ${query}
+
+Main Explanation: ${response.explanation.substring(0, 1000)}...
+
+Please provide 3-5 clear, practical examples that demonstrate this concept in action. Each example should:
+1. Be concrete and specific
+2. Show the concept being applied in real-world scenarios
+3. Be relatable and easy to understand
+4. Include brief explanations of how the concept applies
+
+${userPreferences?.preferred_analogy_domains?.length ? 
+  `User is particularly interested in: ${userPreferences.preferred_analogy_domains.join(', ')}. Try to include examples from these domains when relevant.` : 
+  ''}
+
+Format your response as clear, well-structured examples with headings and explanations.`;
+
+          const examplesCompletion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: examplesPrompt }],
+            temperature: 0.7,
+            max_tokens: 2000,
+            presence_penalty: 0.1,
+            frequency_penalty: 0.1
+          });
+          
+          return examplesCompletion.choices[0].message.content;
+        })(),
+        
+        // Generate Abstract content
+        (async () => {
+          // Determine analogy domains based on preferences
+          let analogyDomains = ['everyday life', 'nature', 'cooking', 'sports'];
+          if (userPreferences?.preferred_analogy_domains?.length) {
+            analogyDomains = userPreferences.preferred_analogy_domains;
+          } else if (userPreferences?.interests?.length) {
+            analogyDomains = userPreferences.interests;
+          }
+          
+          const abstractPrompt = `Based on the following question and explanation, create insightful analogies that help make this concept easier to understand. Focus on clear, relatable comparisons.
+
+Original Question: ${query}
+
+Main Explanation: ${response.explanation.substring(0, 1000)}...
+
+Please provide 2-3 detailed analogies that explain this concept using familiar comparisons. Each analogy should:
+1. Use familiar concepts from domains like: ${analogyDomains.join(', ')}
+2. Clearly map the key aspects of the original concept to the analogy
+3. Explain the similarities and how they help understand the concept
+4. Be engaging and memorable
+
+Format your response with clear analogies, each with:
+- A descriptive title
+- The analogy explanation
+- How it relates back to the original concept
+
+Make the analogies vivid and easy to visualize.`;
+
+          const abstractCompletion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: abstractPrompt }],
+            temperature: 0.8,
+            max_tokens: 2000,
+            presence_penalty: 0.1,
+            frequency_penalty: 0.1
+          });
+          
+          return abstractCompletion.choices[0].message.content;
+        })()
+      ]);
+
+      // Process results and save to database
+      let examplesContent = null;
+      let abstractContent = null;
+
+      if (examplesResult.status === 'fulfilled') {
+        examplesContent = examplesResult.value;
+        console.log('[Tab Content Generation] Examples generated successfully');
+      } else {
+        console.error('[Tab Content Generation] Examples generation failed:', examplesResult.reason);
+      }
+
+      if (abstractResult.status === 'fulfilled') {
+        abstractContent = abstractResult.value;
+        console.log('[Tab Content Generation] Abstract generated successfully');
+      } else {
+        console.error('[Tab Content Generation] Abstract generation failed:', abstractResult.reason);
+      }
+
+      // Save Examples and Abstract content to database
+      if (examplesContent && userId) {
+        try {
+          const { error: examplesError } = await supabase
+            .from('response_tab_content')
+            .insert({
+              message_id: responseId,
+              user_id: userId,
+              session_id: sessionData.id,
+              tab_type: 'examples',
+              content: examplesContent,
+              original_query: query,
+              main_content: response.explanation.substring(0, 1000),
+              preferences: userPreferences || {}
+            });
+
+          if (examplesError) {
+            console.error('[Tab Content Generation] Error saving examples to database:', examplesError);
+          } else {
+            console.log('[Tab Content Generation] Examples saved to database successfully');
+          }
+        } catch (dbError) {
+          console.error('[Tab Content Generation] Database error saving examples:', dbError);
+        }
+      }
+
+      if (abstractContent && userId) {
+        try {
+          const { error: abstractError } = await supabase
+            .from('response_tab_content')
+            .insert({
+              message_id: responseId,
+              user_id: userId,
+              session_id: sessionData.id,
+              tab_type: 'abstract',
+              content: abstractContent,
+              original_query: query,
+              main_content: response.explanation.substring(0, 1000),
+              preferences: userPreferences || {}
+            });
+
+          if (abstractError) {
+            console.error('[Tab Content Generation] Error saving abstract to database:', abstractError);
+          } else {
+            console.log('[Tab Content Generation] Abstract saved to database successfully');
+          }
+        } catch (dbError) {
+          console.error('[Tab Content Generation] Database error saving abstract:', dbError);
+        }
+      }
+
+      // Add generated content to the response for immediate availability
+      response.tab_content = {
+        examples: examplesContent,
+        abstract: abstractContent,
+        generated_simultaneously: true
+      };
+
+      console.log('[Tab Content Generation] Simultaneous generation completed');
+
+    } catch (tabGenerationError) {
+      console.error('[Tab Content Generation] Error in simultaneous generation:', tabGenerationError);
+      // Don't fail the main response, just log the error
+      response.tab_content = {
+        examples: null,
+        abstract: null,
+        generated_simultaneously: false,
+        error: 'Failed to generate additional content'
+      };
+    }
+
     // Add interaction to session
     await sessionManager.addInteraction(sessionData.id, {
       type: 'query',
@@ -998,49 +1183,36 @@ app.post('/api/update-memory-profile', async (req, res) => {
     
     // Get existing profile or create new one
     global.userProfiles = global.userProfiles || {};
-    const existingProfile = global.userProfiles[userId] || {
-      id: userId,
-      username: 'user_' + userId.substring(0, 8),
-      occupation: 'Student',
-      age: 25,
-      education_level: 'Undergraduate',
-      interests: ['Video Games', 'Art'],
-      learning_style: 'Visual',
-      technical_depth: 50,
-      preferred_analogy_domains: ['Gaming', 'Cooking'],
-      main_learning_goal: 'Personal Interest'
-    };
+    const existingProfile = global.userProfiles[userId] || {};
     
-    // Update with new values if provided
-    const updatedProfile = {
+    // Update the profile
+    global.userProfiles[userId] = {
       ...existingProfile,
-      occupation: occupation || existingProfile.occupation,
-      age: age || existingProfile.age,
-      education_level: education_level || existingProfile.education_level,
-      interests: interests || existingProfile.interests,
-      learning_style: learning_style || existingProfile.learning_style,
-      technical_depth: technical_depth || existingProfile.technical_depth,
-      preferred_analogy_domains: preferred_analogy_domains || existingProfile.preferred_analogy_domains,
-      main_learning_goal: main_learning_goal || existingProfile.main_learning_goal
+      id: userId,
+      interests: interests || existingProfile.interests || ['Video Games', 'Art'],
+      preferred_analogy_domains: preferred_analogy_domains || existingProfile.preferred_analogy_domains || ['Gaming', 'Cooking'],
+      occupation: occupation || existingProfile.occupation || 'Student',
+      age: age || existingProfile.age || 25,
+      education_level: education_level || existingProfile.education_level || 'Undergraduate',
+      learning_style: learning_style || existingProfile.learning_style || 'Visual',
+      technical_depth: technical_depth || existingProfile.technical_depth || 50,
+      main_learning_goal: main_learning_goal || existingProfile.main_learning_goal || 'Personal Interest'
     };
-    
-    // Store updated profile in memory
-    global.userProfiles[userId] = updatedProfile;
     
     console.log('Updated memory profile for user:', userId);
     console.log('New preferences:', {
-      interests: updatedProfile.interests,
-      preferred_analogy_domains: updatedProfile.preferred_analogy_domains
+      interests: global.userProfiles[userId].interests,
+      preferred_analogy_domains: global.userProfiles[userId].preferred_analogy_domains
     });
     
     res.json({
       success: true,
-      profile: updatedProfile
+      profile: global.userProfiles[userId]
     });
   } catch (error) {
-    console.error('Error updating memory profile:', error);
-    res.status(500).json({ 
-      success: false,
+    console.error('Update memory profile error:', error);
+    res.status(500).json({
+      success: false, 
       error: error.message
     });
   }
@@ -3469,5 +3641,312 @@ app.get('/api/analytics/clusters/distribution', async (req, res) => {
   } catch (error) {
     console.error('[Analytics] Error fetching cluster distribution:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API endpoint for generating Examples tab content - with database persistence
+app.post('/api/generate-examples', async (req, res) => {
+  try {
+    const { query, mainContent, sessionId, preferences, userId, messageId } = req.body;
+    
+    console.log('Received request to generate examples:', { 
+      query: query?.substring(0, 50) + '...', 
+      sessionId, 
+      userId: userId || 'anonymous',
+      messageId: messageId || 'no_message_id'
+    });
+    
+    if (!query || !mainContent) {
+      return res.status(400).json({ error: 'Query and main content are required' });
+    }
+
+    // First check if content already exists in database
+    if (messageId) {
+      try {
+        const { data: existingContent, error: fetchError } = await supabase
+          .from('response_tab_content')
+          .select('content')
+          .eq('message_id', messageId)
+          .eq('tab_type', 'examples')
+          .single();
+
+        if (existingContent && !fetchError) {
+          console.log('Returning existing examples content from database');
+          return res.json({ 
+            content: existingContent.content,
+            examples: existingContent.content,
+            timestamp: new Date().toISOString(),
+            from_cache: true
+          });
+        }
+      } catch (dbError) {
+        console.log('No existing content found, generating new examples');
+      }
+    }
+
+    console.log('Generating new examples content via OpenAI');
+    
+    // Create a prompt for generating examples
+    const examplesPrompt = `Based on the following question and explanation, generate practical examples that help illustrate the concept. Make the examples concrete, diverse, and easy to understand.
+
+Original Question: ${query}
+
+Main Explanation: ${mainContent.substring(0, 1000)}...
+
+Please provide 3-5 clear, practical examples that demonstrate this concept in action. Each example should:
+1. Be concrete and specific
+2. Show the concept being applied in real-world scenarios
+3. Be relatable and easy to understand
+4. Include brief explanations of how the concept applies
+
+${preferences?.preferred_analogy_domains?.length ? 
+  `User is particularly interested in: ${preferences.preferred_analogy_domains.join(', ')}. Try to include examples from these domains when relevant.` : 
+  ''}
+
+Format your response as clear, well-structured examples with headings and explanations.`;
+
+    // Call OpenAI API for examples
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: examplesPrompt }],
+      temperature: 0.7,
+      max_tokens: 2000,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1
+    });
+    
+    const examplesContent = completion.choices[0].message.content;
+
+    // Save to database for future use
+    if (messageId && userId) {
+      try {
+        const { error: saveError } = await supabase
+          .from('response_tab_content')
+          .insert({
+            message_id: messageId,
+            user_id: userId,
+            session_id: sessionId,
+            tab_type: 'examples',
+            content: examplesContent,
+            original_query: query,
+            main_content: mainContent.substring(0, 1000),
+            preferences: preferences || {}
+          });
+
+        if (saveError) {
+          console.error('Error saving examples content to database:', saveError);
+          // Continue anyway, just log the error
+        } else {
+          console.log('Successfully saved examples content to database');
+        }
+      } catch (dbError) {
+        console.error('Database error while saving examples:', dbError);
+      }
+    }
+    
+    // Log the interaction if we have a session
+    if (sessionId) {
+      await sessionManager.addInteraction(sessionId, {
+        type: 'examples_generation',
+        query,
+        examples: examplesContent,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.json({
+      content: examplesContent,
+      examples: examplesContent,
+      timestamp: new Date().toISOString(),
+      from_cache: false
+    });
+    
+  } catch (error) {
+    console.error('Error generating examples:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate examples', 
+      message: error.message 
+    });
+  }
+});
+
+// API endpoint for generating Abstract/Analogies tab content - with database persistence
+app.post('/api/generate-abstract', async (req, res) => {
+  try {
+    const { query, mainContent, sessionId, preferences, userId, messageId } = req.body;
+    
+    console.log('Received request to generate abstract:', { 
+      query: query?.substring(0, 50) + '...', 
+      sessionId, 
+      userId: userId || 'anonymous',
+      messageId: messageId || 'no_message_id'
+    });
+    
+    if (!query || !mainContent) {
+      return res.status(400).json({ error: 'Query and main content are required' });
+    }
+
+    // First check if content already exists in database
+    if (messageId) {
+      try {
+        const { data: existingContent, error: fetchError } = await supabase
+          .from('response_tab_content')
+          .select('content')
+          .eq('message_id', messageId)
+          .eq('tab_type', 'abstract')
+          .single();
+
+        if (existingContent && !fetchError) {
+          console.log('Returning existing abstract content from database');
+          return res.json({ 
+            content: existingContent.content,
+            abstract: existingContent.content,
+            timestamp: new Date().toISOString(),
+            from_cache: true
+          });
+        }
+      } catch (dbError) {
+        console.log('No existing content found, generating new abstract');
+      }
+    }
+
+    console.log('Generating new abstract content via OpenAI');
+    
+    // Determine analogy domains based on preferences
+    let analogyDomains = ['everyday life', 'nature', 'cooking', 'sports'];
+    if (preferences?.preferred_analogy_domains?.length) {
+      analogyDomains = preferences.preferred_analogy_domains;
+    } else if (preferences?.interests?.length) {
+      analogyDomains = preferences.interests;
+    }
+    
+    // Create a prompt for generating analogies
+    const analogiesPrompt = `Based on the following question and explanation, create insightful analogies that help make this concept easier to understand. Focus on clear, relatable comparisons.
+
+Original Question: ${query}
+
+Main Explanation: ${mainContent.substring(0, 1000)}...
+
+Please provide 2-3 detailed analogies that explain this concept using familiar comparisons. Each analogy should:
+1. Use familiar concepts from domains like: ${analogyDomains.join(', ')}
+2. Clearly map the key aspects of the original concept to the analogy
+3. Explain the similarities and how they help understand the concept
+4. Be engaging and memorable
+
+Format your response with clear analogies, each with:
+- A descriptive title
+- The analogy explanation
+- How it relates back to the original concept
+
+Make the analogies vivid and easy to visualize.`;
+
+    // Call OpenAI API for analogies
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: analogiesPrompt }],
+      temperature: 0.8,
+      max_tokens: 2000,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1
+    });
+    
+    const analogiesContent = completion.choices[0].message.content;
+
+    // Save to database for future use
+    if (messageId && userId) {
+      try {
+        const { error: saveError } = await supabase
+          .from('response_tab_content')
+          .insert({
+            message_id: messageId,
+            user_id: userId,
+            session_id: sessionId,
+            tab_type: 'abstract',
+            content: analogiesContent,
+            original_query: query,
+            main_content: mainContent.substring(0, 1000),
+            preferences: preferences || {}
+          });
+
+        if (saveError) {
+          console.error('Error saving abstract content to database:', saveError);
+          // Continue anyway, just log the error
+        } else {
+          console.log('Successfully saved abstract content to database');
+        }
+      } catch (dbError) {
+        console.error('Database error while saving abstract:', dbError);
+      }
+    }
+    
+    // Log the interaction if we have a session
+    if (sessionId) {
+      await sessionManager.addInteraction(sessionId, {
+        type: 'analogies_generation',
+        query,
+        analogies: analogiesContent,
+        analogy_domains: analogyDomains,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.json({
+      content: analogiesContent,
+      abstract: analogiesContent,
+      analogy_domains: analogyDomains,
+      timestamp: new Date().toISOString(),
+      from_cache: false
+    });
+    
+  } catch (error) {
+    console.error('Error generating abstract:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate abstract content', 
+      message: error.message 
+    });
+  }
+});
+
+// API endpoint to retrieve existing tab content
+app.get('/api/response-tab-content/:messageId/:tabType', async (req, res) => {
+  try {
+    const { messageId, tabType } = req.params;
+    
+    if (!messageId || !tabType) {
+      return res.status(400).json({ error: 'Message ID and tab type are required' });
+    }
+
+    if (!['examples', 'abstract'].includes(tabType)) {
+      return res.status(400).json({ error: 'Invalid tab type. Must be examples or abstract' });
+    }
+
+    const { data: content, error } = await supabase
+      .from('response_tab_content')
+      .select('content, created_at')
+      .eq('message_id', messageId)
+      .eq('tab_type', tabType)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No content found
+        return res.status(404).json({ error: 'Content not found' });
+      }
+      throw error;
+    }
+
+    res.json({
+      content: content.content,
+      created_at: content.created_at,
+      tab_type: tabType,
+      message_id: messageId
+    });
+
+  } catch (error) {
+    console.error('Error retrieving tab content:', error);
+    res.status(500).json({ 
+      error: 'Failed to retrieve content', 
+      message: error.message 
+    });
   }
 });
