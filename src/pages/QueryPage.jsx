@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import ConversationHistory from '../components/ConversationHistory';
 import FeedbackForm from '../components/FeedbackForm';
+import ResponseTabs from '../components/ResponseTabs';
 import { supabase } from '../lib/supabaseClient';
 import QueryToQuiz from '../components/QueryToQuiz';
 import { generateQuizQuestions as generateQuizAPI } from '../api/quizApi';
@@ -1271,35 +1272,15 @@ examplePlaceholder();`
                 >
                   {message.role === 'assistant' ? (
                     <div className="space-y-4">
-                      {/* Always display responses conversationally like ChatGPT */}
-                      <div className="prose prose-lg max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-700 prose-p:leading-relaxed prose-strong:text-gray-900 prose-ul:my-4 prose-ol:my-4 prose-li:my-1 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-pre:bg-gray-900 prose-pre:text-white">
-                        {message.content && (
-                          <ReactMarkdown
-                            components={{
-                              code({node, inline, className, children, ...props}) {
-                                const match = /language-(\w+)/.exec(className || '');
-                                return !inline && match ? (
-                                  <SyntaxHighlighter
-                                    style={tomorrow}
-                                    language={match[1]}
-                                    PreTag="div"
-                                    className="rounded-md"
-                                    {...props}
-                                  >
-                                    {String(children).replace(/\n$/, '')}
-                                  </SyntaxHighlighter>
-                                ) : (
-                                  <code className={className} {...props}>
-                                    {children}
-                                  </code>
-                                );
-                              }
-                            }}
-                          >
-                            {message.content}
-                          </ReactMarkdown>
-                        )}
-                      </div>
+                      {/* Use ResponseTabs component for tabbed interface */}
+                      <ResponseTabs
+                        messageId={message.id}
+                        mainContent={message.content}
+                        originalQuery={messages.find(m => m.role === 'user' && m.timestamp < message.timestamp)?.content || ''}
+                        sessionId={sessionId}
+                        preferences={message.preferences || preferences}
+                        userId={user?.id}
+                      />
                     </div>
                   ) : message.role === 'thinking' ? (
                     <div className="flex items-center space-x-2">

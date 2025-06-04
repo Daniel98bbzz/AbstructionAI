@@ -998,49 +998,36 @@ app.post('/api/update-memory-profile', async (req, res) => {
     
     // Get existing profile or create new one
     global.userProfiles = global.userProfiles || {};
-    const existingProfile = global.userProfiles[userId] || {
-      id: userId,
-      username: 'user_' + userId.substring(0, 8),
-      occupation: 'Student',
-      age: 25,
-      education_level: 'Undergraduate',
-      interests: ['Video Games', 'Art'],
-      learning_style: 'Visual',
-      technical_depth: 50,
-      preferred_analogy_domains: ['Gaming', 'Cooking'],
-      main_learning_goal: 'Personal Interest'
-    };
+    const existingProfile = global.userProfiles[userId] || {};
     
-    // Update with new values if provided
-    const updatedProfile = {
+    // Update the profile
+    global.userProfiles[userId] = {
       ...existingProfile,
-      occupation: occupation || existingProfile.occupation,
-      age: age || existingProfile.age,
-      education_level: education_level || existingProfile.education_level,
-      interests: interests || existingProfile.interests,
-      learning_style: learning_style || existingProfile.learning_style,
-      technical_depth: technical_depth || existingProfile.technical_depth,
-      preferred_analogy_domains: preferred_analogy_domains || existingProfile.preferred_analogy_domains,
-      main_learning_goal: main_learning_goal || existingProfile.main_learning_goal
+      id: userId,
+      interests: interests || existingProfile.interests || ['Video Games', 'Art'],
+      preferred_analogy_domains: preferred_analogy_domains || existingProfile.preferred_analogy_domains || ['Gaming', 'Cooking'],
+      occupation: occupation || existingProfile.occupation || 'Student',
+      age: age || existingProfile.age || 25,
+      education_level: education_level || existingProfile.education_level || 'Undergraduate',
+      learning_style: learning_style || existingProfile.learning_style || 'Visual',
+      technical_depth: technical_depth || existingProfile.technical_depth || 50,
+      main_learning_goal: main_learning_goal || existingProfile.main_learning_goal || 'Personal Interest'
     };
-    
-    // Store updated profile in memory
-    global.userProfiles[userId] = updatedProfile;
     
     console.log('Updated memory profile for user:', userId);
     console.log('New preferences:', {
-      interests: updatedProfile.interests,
-      preferred_analogy_domains: updatedProfile.preferred_analogy_domains
+      interests: global.userProfiles[userId].interests,
+      preferred_analogy_domains: global.userProfiles[userId].preferred_analogy_domains
     });
     
     res.json({
       success: true,
-      profile: updatedProfile
+      profile: global.userProfiles[userId]
     });
   } catch (error) {
-    console.error('Error updating memory profile:', error);
-    res.status(500).json({ 
-      success: false,
+    console.error('Update memory profile error:', error);
+    res.status(500).json({
+      success: false, 
       error: error.message
     });
   }
@@ -3469,5 +3456,158 @@ app.get('/api/analytics/clusters/distribution', async (req, res) => {
   } catch (error) {
     console.error('[Analytics] Error fetching cluster distribution:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API endpoint for generating Examples tab content
+app.post('/api/generate-examples', async (req, res) => {
+  try {
+    const { query, mainContent, sessionId, preferences, userId } = req.body;
+    
+    console.log('Received request to generate examples:', { 
+      query: query?.substring(0, 50) + '...', 
+      sessionId, 
+      userId: userId || 'anonymous'
+    });
+    
+    if (!query || !mainContent) {
+      return res.status(400).json({ error: 'Query and main content are required' });
+    }
+    
+    // Create a prompt for generating examples
+    const examplesPrompt = `Based on the following question and explanation, generate practical examples that help illustrate the concept. Make the examples concrete, diverse, and easy to understand.
+
+Original Question: ${query}
+
+Main Explanation: ${mainContent.substring(0, 1000)}...
+
+Please provide 3-5 clear, practical examples that demonstrate this concept in action. Each example should:
+1. Be concrete and specific
+2. Show the concept being applied in real-world scenarios
+3. Be relatable and easy to understand
+4. Include brief explanations of how the concept applies
+
+${preferences?.preferred_analogy_domains?.length ? 
+  `User is particularly interested in: ${preferences.preferred_analogy_domains.join(', ')}. Try to include examples from these domains when relevant.` : 
+  ''}
+
+Format your response as clear, well-structured examples with headings and explanations.`;
+
+    // Call OpenAI API for examples
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: examplesPrompt }],
+      temperature: 0.7,
+      max_tokens: 2000,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1
+    });
+    
+    const examplesContent = completion.choices[0].message.content;
+    
+    // Log the interaction if we have a session
+    if (sessionId) {
+      await sessionManager.addInteraction(sessionId, {
+        type: 'examples_generation',
+        query,
+        examples: examplesContent,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.json({
+      content: examplesContent,
+      examples: examplesContent,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Error generating examples:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate examples', 
+      message: error.message 
+    });
+  }
+});
+
+// API endpoint for generating Abstract/Analogies tab content
+app.post('/api/generate-abstract', async (req, res) => {
+  try {
+    const { query, mainContent, sessionId, preferences, userId } = req.body;
+    
+    console.log('Received request to generate analogies:', { 
+      query: query?.substring(0, 50) + '...', 
+      sessionId, 
+      userId: userId || 'anonymous'
+    });
+    
+    if (!query || !mainContent) {
+      return res.status(400).json({ error: 'Query and main content are required' });
+    }
+    
+    // Determine analogy domains based on preferences
+    let analogyDomains = ['everyday life', 'nature', 'cooking', 'sports'];
+    if (preferences?.preferred_analogy_domains?.length) {
+      analogyDomains = preferences.preferred_analogy_domains;
+    } else if (preferences?.interests?.length) {
+      analogyDomains = preferences.interests;
+    }
+    
+    // Create a prompt for generating analogies
+    const analogiesPrompt = `Based on the following question and explanation, create insightful analogies that help make this concept easier to understand. Focus on clear, relatable comparisons.
+
+Original Question: ${query}
+
+Main Explanation: ${mainContent.substring(0, 1000)}...
+
+Please provide 2-3 detailed analogies that explain this concept using familiar comparisons. Each analogy should:
+1. Use familiar concepts from domains like: ${analogyDomains.join(', ')}
+2. Clearly map the key aspects of the original concept to the analogy
+3. Explain the similarities and how they help understand the concept
+4. Be engaging and memorable
+
+Format your response with clear analogies, each with:
+- A descriptive title
+- The analogy explanation
+- How it relates back to the original concept
+
+Make the analogies vivid and easy to visualize.`;
+
+    // Call OpenAI API for analogies
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: analogiesPrompt }],
+      temperature: 0.8,
+      max_tokens: 2000,
+      presence_penalty: 0.1,
+      frequency_penalty: 0.1
+    });
+    
+    const analogiesContent = completion.choices[0].message.content;
+    
+    // Log the interaction if we have a session
+    if (sessionId) {
+      await sessionManager.addInteraction(sessionId, {
+        type: 'analogies_generation',
+        query,
+        analogies: analogiesContent,
+        analogy_domains: analogyDomains,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.json({
+      content: analogiesContent,
+      abstract: analogiesContent,
+      analogy_domains: analogyDomains,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Error generating analogies:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate analogies', 
+      message: error.message 
+    });
   }
 });
