@@ -608,7 +608,11 @@ function QueryPage() {
         role: 'assistant',
         timestamp: Date.now(),
         // Store preferences used for this response to maintain consistency
-        preferences: queryPreferences
+        preferences: queryPreferences,
+        // Include tab content for immediate availability
+        tab_content: response.tab_content || null,
+        // Include quiz data if available
+        quiz: response.quiz || null
       };
       
       // Remove the thinking message and add the AI response
@@ -788,6 +792,10 @@ function QueryPage() {
         timestamp: Date.now(),
         // Store the preferences used for this regenerated response
         preferences: queryPreferences,
+        // Include tab content for immediate availability
+        tab_content: response.tab_content || null,
+        // Include quiz data if available
+        quiz: response.quiz || null,
         isRegenerated: true
       };
 
@@ -1280,6 +1288,7 @@ examplePlaceholder();`
                         sessionId={sessionId}
                         preferences={message.preferences || preferences}
                         userId={user?.id}
+                        tabContent={message.tab_content}
                       />
                     </div>
                   ) : message.role === 'thinking' ? (

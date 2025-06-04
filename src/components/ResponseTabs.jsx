@@ -11,7 +11,8 @@ const ResponseTabs = ({
   originalQuery, 
   sessionId, 
   preferences = {},
-  userId 
+  userId,
+  tabContent = null // New prop for pre-generated content
 }) => {
   const [activeTab, setActiveTab] = useState('main');
   const [examplesContent, setExamplesContent] = useState(null);
@@ -20,11 +21,69 @@ const ResponseTabs = ({
   const [loadingAbstract, setLoadingAbstract] = useState(false);
   const [errorExamples, setErrorExamples] = useState(null);
   const [errorAbstract, setErrorAbstract] = useState(null);
+  const [examplesFromCache, setExamplesFromCache] = useState(false);
+  const [abstractFromCache, setAbstractFromCache] = useState(false);
+
+  // Load existing content when component mounts
+  useEffect(() => {
+    const loadContent = async () => {
+      // First check if we have pre-generated content from the main response
+      if (tabContent && tabContent.generated_simultaneously) {
+        console.log('Using pre-generated tab content from main response');
+        if (tabContent.examples) {
+          setExamplesContent(tabContent.examples);
+          setExamplesFromCache(true);
+        }
+        if (tabContent.abstract) {
+          setAbstractContent(tabContent.abstract);
+          setAbstractFromCache(true);
+        }
+        return; // Don't need to fetch from database if we have fresh content
+      }
+
+      // If no pre-generated content, try to load from database
+      if (!messageId || !userId) {
+        console.log('Missing messageId or userId, cannot load cached content');
+        return;
+      }
+
+      try {
+        console.log(`Loading existing tab content for message ${messageId}`);
+        
+        // Check for existing content for both tabs
+        const [examplesResponse, abstractResponse] = await Promise.allSettled([
+          axios.get(`${API_URL}/api/response-tab-content/${messageId}/examples`),
+          axios.get(`${API_URL}/api/response-tab-content/${messageId}/abstract`)
+        ]);
+
+        if (examplesResponse.status === 'fulfilled' && examplesResponse.value.data.content) {
+          console.log('Loaded examples from database cache');
+          setExamplesContent(examplesResponse.value.data.content);
+          setExamplesFromCache(true);
+        }
+
+        if (abstractResponse.status === 'fulfilled' && abstractResponse.value.data.content) {
+          console.log('Loaded abstract from database cache');
+          setAbstractContent(abstractResponse.value.data.content);
+          setAbstractFromCache(true);
+        }
+      } catch (error) {
+        console.log('No existing content found or error loading:', error.message);
+        // This is normal on first load, so we don't show errors
+      }
+    };
+
+    loadContent();
+  }, [messageId, userId, tabContent]); // Add tabContent to dependencies
 
   // Function to generate examples content
   const generateExamples = async () => {
-    if (examplesContent) return; // Already loaded
+    if (examplesContent) {
+      console.log('Examples content already available, skipping generation');
+      return; // Already loaded
+    }
     
+    console.log('Generating examples content via API call');
     setLoadingExamples(true);
     setErrorExamples(null);
     
@@ -34,10 +93,13 @@ const ResponseTabs = ({
         mainContent: mainContent,
         sessionId: sessionId,
         preferences: preferences,
-        userId: userId
+        userId: userId,
+        messageId: messageId
       });
       
       setExamplesContent(response.data.content || response.data.examples);
+      setExamplesFromCache(response.data.from_cache || false);
+      console.log('Examples generated successfully:', response.data.from_cache ? 'from cache' : 'newly generated');
     } catch (error) {
       console.error('Error generating examples:', error);
       setErrorExamples('Failed to generate examples. Please try again.');
@@ -48,8 +110,12 @@ const ResponseTabs = ({
 
   // Function to generate abstract content
   const generateAbstract = async () => {
-    if (abstractContent) return; // Already loaded
+    if (abstractContent) {
+      console.log('Abstract content already available, skipping generation');
+      return; // Already loaded
+    }
     
+    console.log('Generating abstract content via API call');
     setLoadingAbstract(true);
     setErrorAbstract(null);
     
@@ -59,13 +125,16 @@ const ResponseTabs = ({
         mainContent: mainContent,
         sessionId: sessionId,
         preferences: preferences,
-        userId: userId
+        userId: userId,
+        messageId: messageId
       });
       
       setAbstractContent(response.data.content || response.data.abstract);
+      setAbstractFromCache(response.data.from_cache || false);
+      console.log('Abstract generated successfully:', response.data.from_cache ? 'from cache' : 'newly generated');
     } catch (error) {
       console.error('Error generating abstract:', error);
-      setErrorAbstract('Failed to generate analogies. Please try again.');
+      setErrorAbstract('Failed to generate abstract content. Please try again.');
     } finally {
       setLoadingAbstract(false);
     }
@@ -106,37 +175,50 @@ const ResponseTabs = ({
 
   return (
     <div className="response-tabs-container">
-      {/* Tab Navigation */}
-      <div className="border-b border-gray-200 mb-4">
-        <nav className="-mb-px flex space-x-8" aria-label="Response tabs">
-          {/* Main Tab - Visually elevated */}
+      {/* Main Tab Navigation - Top Level */}
+      <div className="border-b border-gray-200 mb-3">
+        <nav className="-mb-px flex justify-center" aria-label="Main response tab">
           <button
             onClick={() => handleTabChange('main')}
-            className={`py-3 px-1 border-b-2 font-semibold text-sm ${
+            className={`py-4 px-6 border-b-3 font-bold text-base ${
               activeTab === 'main'
-                ? 'border-primary-500 text-primary-600 bg-primary-50 rounded-t-md px-3'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } transition-all duration-200`}
+                ? 'border-primary-500 text-primary-700 bg-primary-50 rounded-t-lg shadow-sm'
+                : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+            } transition-all duration-200 transform hover:scale-105`}
             style={{ 
-              position: 'relative', 
-              top: activeTab === 'main' ? '-2px' : '0',
-              zIndex: activeTab === 'main' ? 2 : 1,
-              transform: activeTab === 'main' ? 'scale(1.05)' : 'scale(1)'
+              fontSize: '1.1rem',
+              fontWeight: activeTab === 'main' ? '700' : '600'
             }}
           >
-            Main Answer
+            📋 Main Answer
           </button>
-          
+        </nav>
+      </div>
+
+      {/* Secondary Tabs Navigation - Bottom Level */}
+      <div className="border-b border-gray-100 mb-4">
+        <nav className="-mb-px flex space-x-6 justify-center" aria-label="Secondary response tabs">
           {/* Examples Tab */}
           <button
             onClick={() => handleTabChange('examples')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`py-2 px-4 border-b-2 font-medium text-sm ${
               activeTab === 'examples'
-                ? 'border-secondary-500 text-secondary-600'
+                ? 'border-secondary-500 text-secondary-600 bg-secondary-50 rounded-t-md'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             } transition-all duration-200`}
+            title={
+              examplesFromCache 
+                ? 'Content loaded from cache' 
+                : (examplesContent ? 'Content pre-generated' : 'Click to generate examples')
+            }
           >
-            Examples
+            💡 Examples
+            {examplesFromCache && (
+              <span className="ml-1 text-xs opacity-60" title="Cached content">💾</span>
+            )}
+            {examplesContent && !examplesFromCache && (
+              <span className="ml-1 text-xs opacity-60" title="Pre-generated content">⚡</span>
+            )}
             {loadingExamples && (
               <span className="ml-2 inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin"></span>
             )}
@@ -145,13 +227,24 @@ const ResponseTabs = ({
           {/* Abstract Tab */}
           <button
             onClick={() => handleTabChange('abstract')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`py-2 px-4 border-b-2 font-medium text-sm ${
               activeTab === 'abstract'
-                ? 'border-indigo-500 text-indigo-600'
+                ? 'border-indigo-500 text-indigo-600 bg-indigo-50 rounded-t-md'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             } transition-all duration-200`}
+            title={
+              abstractFromCache 
+                ? 'Content loaded from cache' 
+                : (abstractContent ? 'Content pre-generated' : 'Click to generate abstract content')
+            }
           >
-            Analogies
+            🎭 Abstract
+            {abstractFromCache && (
+              <span className="ml-1 text-xs opacity-60" title="Cached content">💾</span>
+            )}
+            {abstractContent && !abstractFromCache && (
+              <span className="ml-1 text-xs opacity-60" title="Pre-generated content">⚡</span>
+            )}
             {loadingAbstract && (
               <span className="ml-2 inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin"></span>
             )}
@@ -225,7 +318,7 @@ const ResponseTabs = ({
               <div className="flex items-center justify-center py-8">
                 <div className="flex items-center space-x-3">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
-                  <span className="text-gray-600">Generating analogies...</span>
+                  <span className="text-gray-600">Generating abstractions...</span>
                 </div>
               </div>
             ) : errorAbstract ? (
@@ -259,7 +352,7 @@ const ResponseTabs = ({
                   onClick={generateAbstract}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                 >
-                  Generate Analogies
+                  Generate Abstractions
                 </button>
               </div>
             )}
