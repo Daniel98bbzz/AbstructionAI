@@ -1,9 +1,9 @@
-import ResponseClusterManager from './ResponseClusterManager.js';
+import { supabase } from '../lib/supabaseClient.js';
+import { OpenAI } from 'openai';
 
 class Supervisor {
   constructor() {
     // No direct initialization required
-    this.responseClusterManager = ResponseClusterManager;
   }
 
   /**
@@ -105,61 +105,98 @@ class Supervisor {
   }
 
   /**
-   * Process user query with crowd wisdom enhancement
-   * @param {string} query - The user's query
-   * @param {string} sessionId - The session ID
-   * @param {string} userId - The user ID (optional)
-   * @param {Object} openai - OpenAI client
-   * @param {boolean} useCompositeScore - Whether to use composite quality score (default: true)
-   * @param {number} explorationRate - Rate of exploring newer templates (0-1)
-   * @returns {Promise<Object>} - Enhanced query and template information
+   * Process a query using the wisdom-of-crowds logic (new implementation)
+   * @param {string} query
+   * @param {string} sessionId
+   * @param {string} userId
+   * @param {object} openai
+   * @param {boolean} useCompositeScore
+   * @param {number} explorationRate
+   * @returns {Promise<object>} - Returns an object with enhancedQuery, template, topic, selectionMethod
    */
-  async processQueryWithCrowdWisdom(query, sessionId, userId, openai, useCompositeScore = true, explorationRate = 0.1) {
+  async processQueryWithCrowdWisdom(query, sessionId, userId, openai, useCompositeScore, explorationRate) {
+    console.log('[Supervisor] processQueryWithCrowdWisdom called', { query, sessionId, userId, useCompositeScore, explorationRate });
     try {
-      console.log('[Crowd Wisdom] Processing query with crowd wisdom enhancement');
-      console.log(`[Crowd Wisdom] Using ${useCompositeScore ? 'composite' : 'efficacy'} score with exploration rate: ${explorationRate}`);
-      
-      // Step 1: Classify the topic of the query
-      const topic = await this.responseClusterManager.classifyTopic(query, openai);
-      console.log(`[Crowd Wisdom] Classified topic: ${topic}`);
-      
-      // Step 2: Get a template for this topic using new parameters
-      const template = await this.responseClusterManager.getTemplateForTopic(
-        topic, 
-        useCompositeScore, 
-        explorationRate
-      );
-      
-      if (!template) {
-        console.log(`[Crowd Wisdom] No template found for topic: ${topic}`);
+      // 1. Create embedding
+      const embeddingResponse = await openai.embeddings.create({
+        input: query,
+        model: 'text-embedding-ada-002'
+      });
+      const embedding = embeddingResponse.data[0].embedding;
+
+      // 2. Cluster stage – proximity retrieval
+      const { data: clusterMatch, error: clusterError } = await supabase
+        .rpc('match_semantic_cluster', { embedding_vector: embedding });
+
+      if (clusterError || !clusterMatch || clusterMatch.length === 0) {
+        console.error('[Supervisor] Error matching cluster:', clusterError);
+        // Fallback: no cluster, use default template
         return {
           enhancedQuery: query,
-          template: null,
-          topic
+          template: 'default_template',
+          topic: null,
+          selectionMethod: 'fallback',
+          cluster_id: null
         };
       }
-      
-      console.log(`[Crowd Wisdom] Found template (ID: ${template.id})`);
-      
-      // Step 3: Enhance the prompt with the template
-      const enhancedQuery = this.responseClusterManager.enhancePromptWithTemplate(query, template);
-      
-      // Step 4: Log this template usage
-      await this.responseClusterManager.logTemplateUsage(template.id, sessionId, userId, query, null);
-      
-      return {
-        enhancedQuery,
-        template,
-        topic,
-        selectionMethod: useCompositeScore ? 'composite_score' : 'efficacy_score'
-      };
-    } catch (error) {
-      console.error('Error in processQueryWithCrowdWisdom:', error);
+
+      const match = clusterMatch[0];
+      console.log(`[Supervisor] Matched semantic cluster: ID=${match.id}, similarity=${match.similarity}`);
+      const cluster_id = match.id;
+
+      // 3. Find the best template for this cluster from the new view
+      const { data: bestRow, error: bestRowError } = await supabase
+        .from('cluster_best_template')
+        .select('template_id')
+        .eq('cluster_id', cluster_id)
+        .limit(1)
+        .single();
+
+      if (bestRowError || !bestRow || !bestRow.template_id) {
+        console.warn(`[Crowd Wisdom] No best template found for cluster ${cluster_id}. Using fallback.`);
+        return {
+          enhancedQuery: query,
+          template: 'default_template',
+          topic: match?.topic || null,
+          selectionMethod: 'fallback',
+          cluster_id: cluster_id
+        };
+      }
+
+      // Fetch the actual template data
+      const { data: templateData, error: templateError } = await supabase
+        .from('prompt_templates')
+        .select('*')
+        .eq('id', bestRow.template_id)
+        .single();
+
+      if (templateError || !templateData) {
+        console.warn(`[Crowd Wisdom] Could not fetch template data for template_id ${bestRow.template_id}. Using fallback.`);
+        return {
+          enhancedQuery: query,
+          template: 'default_template',
+          topic: match?.topic || null,
+          selectionMethod: 'fallback',
+          cluster_id: cluster_id
+        };
+      }
+
+      console.log(`[Crowd Wisdom] Selected template ID: ${templateData.id} for cluster ${cluster_id}`);
       return {
         enhancedQuery: query,
-        template: null,
-        topic: 'general',
-        selectionMethod: 'none'
+        template: templateData,
+        topic: match?.topic || null,
+        selectionMethod: 'crowd_wisdom',
+        cluster_id: cluster_id
+      };
+    } catch (error) {
+      console.error('[Supervisor] Error in processQueryWithCrowdWisdom:', error);
+      return {
+        enhancedQuery: query,
+        template: 'default_template',
+        topic: null,
+        selectionMethod: 'fallback',
+        cluster_id: null
       };
     }
   }
@@ -218,6 +255,87 @@ class Supervisor {
     } catch (error) {
       console.error('Error updating composite scores:', error);
       return 0;
+    }
+  }
+
+  /**
+   * Evaluate an AI-generated answer using GPT for pedagogical quality
+   * @param {string} user_query
+   * @param {string} ai_answer
+   * @param {string} template_id
+   * @param {number} cluster_id
+   * @param {string} interaction_id (optional)
+   * @returns {Promise<Object|null>} Parsed score JSON or null on error
+   */
+  async evaluateAnswerWithGPT(user_query, ai_answer, template_id, cluster_id, interaction_id = null, openaiInstance = null) {
+    const openai = openaiInstance || (typeof OpenAI !== 'undefined' ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null);
+    if (!openai) {
+      console.error('[Supervisor] OpenAI client not available');
+      return null;
+    }
+    const prompt = `You are an expert educational evaluator. Rate the following AI-generated answer to the user's question on a scale of 1–5 for each of the following criteria: Clarity, Relevance, Educational Value, and Accuracy.\n\nReturn your answer as a JSON object with this format:\n{"clarity": X, "relevance": X, "educational_value": X, "accuracy": X}\n\nQuestion: ${user_query}\nAI Answer: ${ai_answer}`;
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.0,
+        max_tokens: 200
+      });
+      let scoreJson = {};
+      try {
+        scoreJson = JSON.parse(completion.choices[0].message.content);
+      } catch (err) {
+        console.error('[Supervisor] Failed to parse GPT evaluation JSON:', err, completion.choices[0].message.content);
+        return null;
+      }
+      // Store in template_evaluation_log
+      const { error } = await supabase
+        .from('template_evaluation_log')
+        .insert({
+          template_id,
+          cluster_id,
+          interaction_id,
+          score_json: scoreJson
+        });
+      if (error) {
+        console.error('[Supervisor] Error saving template evaluation log:', error);
+      }
+      return scoreJson;
+    } catch (error) {
+      console.error('[Supervisor] Error in evaluateAnswerWithGPT:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Classify user feedback into pedagogical categories using GPT
+   * @param {string} feedbackText
+   * @param {object} openaiInstance (optional)
+   * @returns {Promise<string>} The feedback category
+   */
+  async classifyVerbalFeedback(feedbackText, openaiInstance = null) {
+    if (!feedbackText || feedbackText.trim() === '') {
+      return 'no_feedback';
+    }
+    const openai = openaiInstance || (typeof OpenAI !== 'undefined' ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null);
+    if (!openai) {
+      console.error('[Supervisor] OpenAI client not available');
+      return 'no_feedback';
+    }
+    const prompt = `Classify the following user feedback as one of the following categories:\n"positive", "negative", "neutral", "confused", "request_example", "delighted", "frustrated".\n\nReturn only the category.\nFeedback: "${feedbackText}"`;
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.0,
+        max_tokens: 20
+      });
+      // Extract the category (should be a single word)
+      const category = completion.choices[0].message.content.trim().toLowerCase();
+      return category;
+    } catch (error) {
+      console.error('[Supervisor] Error in classifyVerbalFeedback:', error);
+      return 'no_feedback';
     }
   }
 }

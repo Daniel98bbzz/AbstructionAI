@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 // This is a drop-in replacement for the feedback API endpoint in server/index.js
 
 // Updated feedback API endpoint

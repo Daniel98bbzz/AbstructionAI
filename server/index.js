@@ -98,16 +98,13 @@ const openai = new OpenAI({
 import UserManager from './managers/UserManager.js';
 import PromptManager from './managers/PromptManager.js';
 import SessionManager from './managers/SessionManager.js';
-import FeedbackProcessor from './managers/FeedbackProcessor.js';
-import Supervisor from './managers/Supervisor.js';
 import UserProfileManager from './managers/UserProfileManager.js';
-import ResponseClusterManager from './managers/ResponseClusterManager.js';
+import Supervisor from './managers/Supervisor.js';
 
 // Initialize managers
 const userManager = new UserManager();
 const promptManager = PromptManager;
 const sessionManager = new SessionManager();
-const feedbackProcessor = new FeedbackProcessor();
 const supervisor = new Supervisor();
 
 // Routes
@@ -147,6 +144,7 @@ app.post('/api/query', async (req, res) => {
     let crowdWisdomTopic = null;
     let selectionMethod = 'none';
     const hasLimitedContext = !sessionData.interactions || sessionData.interactions.length < 2;
+    let clusterIdForUsage = null;
 
     if (hasLimitedContext && !isRegeneration) {
       try {
@@ -161,13 +159,20 @@ app.post('/api/query', async (req, res) => {
           useCompositeScore,
           explorationRate
         );
+        console.log('[DEBUG] crowdWisdomResult returned:', crowdWisdomResult); // <-- Added robust logging
         enhancedQuery = crowdWisdomResult.enhancedQuery;
         usedTemplate = crowdWisdomResult.template;
         crowdWisdomTopic = crowdWisdomResult.topic;
         selectionMethod = crowdWisdomResult.selectionMethod;
-        if (usedTemplate) {
+        clusterIdForUsage = crowdWisdomResult.cluster_id;
+        // Improved template logging
+        if (usedTemplate && typeof usedTemplate === 'object' && usedTemplate.id) {
           console.log(`[Crowd Wisdom] Enhanced user query with template ID: ${usedTemplate.id} using ${selectionMethod}`);
+        } else {
+          console.log(`[Crowd Wisdom] Fallback template used: ${usedTemplate}`);
         }
+        // Add debug log for clusterIdForUsage type
+        console.log('[DEBUG] clusterIdForUsage =', clusterIdForUsage, 'type:', typeof clusterIdForUsage);
       } catch (crowdWisdomError) {
         console.error('[Crowd Wisdom] Error enhancing user query:', crowdWisdomError);
         enhancedQuery = query;
@@ -616,26 +621,98 @@ Make the analogies vivid and easy to visualize.`;
     }
 
     // Add interaction to session
+    let softSignal = null;
+    const sessionHasHistory = sessionData.interactions?.length > 0;
+    if (sessionHasHistory) {
+      console.log('🧠 Starting soft signal classification...');
+      const userMessage = query;
+      const lastGPTResponse = sessionData.interactions.slice(-1)[0]?.response?.explanation || '';
+      const classificationPrompt = `
+You are a classification module inside an educational system. Your goal is to classify a user's follow-up message based on the assistant's previous response.
+
+Previous assistant response:
+"""${lastGPTResponse}"""
+
+User follow-up message:
+"""${userMessage}"""
+
+Classify this message into one of the following categories:
+- satisfaction
+- understanding
+- confusion
+- question
+- neutral
+
+Respond only with one of the labels above.`.trim();
+      try {
+        const classificationResult = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [{ role: "user", content: classificationPrompt }],
+          temperature: 0,
+          max_tokens: 5
+        });
+        console.log('[Soft Signal Classification] GPT response:', classificationResult);
+        softSignal = classificationResult.choices[0].message.content.trim().toLowerCase();
+      } catch (err) {
+        console.error('[Soft Signal Classification] Error classifying soft signal:', err);
+      }
+    }
     await sessionManager.addInteraction(sessionData.id, {
       type: 'query',
       query,
       response,
-      aiMessage // Include the aiMessage in the interaction
+      aiMessage, // Include the aiMessage in the interaction
+      soft_signal: softSignal, // Store the soft signal
+      cluster_id: clusterIdForUsage !== undefined ? clusterIdForUsage : null // Pass cluster_id for saving
     });
     
     // If Crowd Wisdom was applied, update template usage with the new responseId
+    // (Legacy ResponseClusterManager logic removed)
+    
+    // After generating the response and before sending it, log template usage if a template was used
     if (usedTemplate) {
+      await supabase
+        .from('prompt_template_usage')
+        .insert({
+          template_id: usedTemplate.id || usedTemplate, // handle both object and string
+          session_id: sessionData.id,
+          user_id: userId,
+          query: enhancedQuery,
+          response_id: response.id,
+          cluster_id: clusterIdForUsage // <-- new field
+        });
+    }
+    
+    // After generating the response and before sending it, log template usage (including fallback)
+    const templateIdForUsage = usedTemplate?.id || usedTemplate || 'fallback';
+    const selectionMethodForUsage = selectionMethod || (usedTemplate ? 'crowd_wisdom' : 'fallback');
+    console.log(`[BACKEND DEBUG] Logging template usage with cluster_id:`, clusterIdForUsage, 'type:', typeof clusterIdForUsage, ', template_id:', templateIdForUsage, ', selection_method:', selectionMethodForUsage);
+    await supabase
+      .from('prompt_template_usage')
+      .insert({
+        template_id: templateIdForUsage,
+        session_id: sessionData.id,
+        user_id: userId,
+        query: enhancedQuery,
+        response_id: response.id,
+        cluster_id: clusterIdForUsage !== undefined && clusterIdForUsage !== null ? Number(clusterIdForUsage) : null,
+        selection_method: selectionMethodForUsage
+      });
+    
+    // Automatic template creation on fallback
+    if (selectionMethod === 'fallback' && clusterIdForUsage != null && response.explanation) {
       try {
-        console.log(`[Crowd Wisdom] Updating template usage with response ID: ${responseId}`);
-        await supervisor.responseClusterManager.logTemplateUsage(
-          usedTemplate.id,
-          sessionData.id,
-          userId,
-          query,
-          responseId
-        );
-      } catch (updateError) {
-        console.error('[Crowd Wisdom] Error updating template usage:', updateError);
+        await supabase.from('prompt_templates').insert({
+          template_text: response.explanation,
+          topic: secretTopic || 'general',
+          source: 'auto_generated',
+          cluster_id: Number(clusterIdForUsage),
+          created_at: new Date().toISOString(),
+          metadata: { inserted_by: 'auto_fallback', query: query }
+        });
+        console.log('[Crowd Wisdom] Auto-created new template for cluster', clusterIdForUsage);
+      } catch (err) {
+        console.error('[Crowd Wisdom] Error auto-creating fallback template:', err);
       }
     }
     

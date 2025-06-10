@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 // Simple script to start the server with the cluster visualization available
 import { spawn, exec } from 'child_process';
 import { fileURLToPath } from 'url';

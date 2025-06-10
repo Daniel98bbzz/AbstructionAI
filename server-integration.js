@@ -3,6 +3,8 @@ import express from 'express';
 import UserClusterManager from './server/managers/UserClusterManager.js';
 import { runClusteringTest, cleanupTestData } from './test-clustering.js';
 import { supabase } from './server/lib/supabaseClient.js';
+import dotenv from 'dotenv';
+dotenv.config();
 
 // Create router for cluster visualization endpoints
 const router = express.Router();

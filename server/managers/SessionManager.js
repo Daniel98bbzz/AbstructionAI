@@ -1,3 +1,5 @@
+import { generateEmbedding } from '../../src/utils/embedding.js';
+
 class SessionManager {
   constructor() {
     // Initialize session storage
@@ -485,6 +487,18 @@ class SessionManager {
             console.log(`[BACKEND DEBUG] Storing interaction in database: ${interaction.type} for session ${sessionId}`);
             
             // Prepare the interaction data
+            let embedding = await generateEmbedding(interaction.query);
+            // Ensure embedding is a JS array of floats
+            console.log('[CHECK TYPE] Is array:', Array.isArray(embedding), '| First 3 values:', embedding?.slice(0,3));
+            if (!Array.isArray(embedding) && typeof embedding === 'string') {
+              try {
+                embedding = JSON.parse(embedding);
+                console.log('[CHECK TYPE] Parsed embedding from string to array:', Array.isArray(embedding), '| First 3 values:', embedding?.slice(0,3));
+              } catch (e) {
+                console.error('[CHECK TYPE] Failed to parse embedding string:', e);
+                embedding = null;
+              }
+            }
             const interactionData = {
               session_id: sessionId,
               type: interaction.type,
@@ -492,9 +506,11 @@ class SessionManager {
               response: interaction.response || null,
               message_id: interaction.messageId || interaction.id || null,
               feedback_content: interaction.type === 'feedback' ? interaction : null,
-              user_id: session.userId
+              user_id: session.userId,
+              embedding: embedding || null, // Always pass as array
+              soft_signal: interaction.soft_signal || null,
+              cluster_id: interaction.cluster_id || null
             };
-            
             console.log(`[BACKEND DEBUG] Interaction data prepared:`, interactionData);
             
             const { error: interactionError } = await this.supabase

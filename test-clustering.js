@@ -1,7 +1,9 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 // Test script for user preference clustering functionality
 import { supabase } from './server/lib/supabaseClient.js';
 import UserClusterManager from './server/managers/UserClusterManager.js';
-import Supervisor from './server/managers/Supervisor.js';
 import crypto from 'crypto';
 
 // Sample user preferences for testing
@@ -75,11 +77,7 @@ async function runClusteringTest() {
     console.log('\n=== SIMULATING TEMPLATE USAGE AND FEEDBACK ===');
     await simulateUsageAndFeedback(clusterAssignments, templateIds);
     
-    // Step 5: Test recommendations
-    console.log('\n=== TESTING RECOMMENDATIONS ===');
-    await testRecommendations();
-    
-    // Step 6: Test k-means clustering
+    // Step 5: Test k-means clustering
     console.log('\n=== TESTING K-MEANS CLUSTERING ===');
     await testKMeansClustering();
     
@@ -475,39 +473,6 @@ async function simulateUsageAndFeedback(clusterAssignments, templateIds) {
         if (updateError) throw updateError;
       } catch (error) {
         console.error(`Error simulating usage for user ${userId} with template ${templateId}:`, error);
-      }
-    }
-  }
-}
-
-// Test recommendations
-async function testRecommendations() {
-  console.log('Testing template recommendations...');
-  
-  // For each user, get recommendations for each topic
-  for (const user of testUsers) {
-    console.log(`\nGetting recommendations for user: ${user.id}`);
-    
-    for (const topic of testTopics) {
-      console.log(`\nRecommendations for topic: ${topic}`);
-      
-      try {
-        // Get recommendations using the Supervisor
-        const recommendations = await Supervisor.getTemplateRecommendationsForUser(user.id, topic);
-        
-        if (recommendations.length > 0) {
-          console.log(`Found ${recommendations.length} recommended templates for ${topic}:`);
-          
-          for (const template of recommendations) {
-            console.log(`- Template ID: ${template.id}`);
-            console.log(`  - Efficacy score: ${template.efficacy_score.toFixed(2)}`);
-            console.log(`  - Composite score: ${template.composite_quality_score?.toFixed(2) || 'N/A'}`);
-          }
-        } else {
-          console.log(`No recommendations found for topic ${topic}`);
-        }
-      } catch (error) {
-        console.error(`Error getting recommendations for user ${user.id} and topic ${topic}:`, error);
       }
     }
   }
