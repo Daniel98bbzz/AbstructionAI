@@ -7,6 +7,134 @@ class Supervisor {
   }
 
   /**
+   * Apply template-based enhancements to a query
+   * @param {string} originalQuery - The original user query
+   * @param {Object} template - The selected template
+   * @returns {Object} - Enhanced query and system instructions
+   */
+  applyTemplateEnhancement(originalQuery, template) {
+    console.log('[Crowd Wisdom] Applying template enhancement...');
+    
+    if (!template || template === 'default_template') {
+      console.log('[Crowd Wisdom] Using default template - no enhancement applied');
+      return {
+        enhancedQuery: originalQuery,
+        systemEnhancement: '',
+        templateApplied: false
+      };
+    }
+
+    let enhancedSystemPrompt = '';
+    let templateStructure = null;
+
+    try {
+      // Try to parse template_text as JSON (structured template)
+      if (template.template_text && typeof template.template_text === 'string') {
+        templateStructure = JSON.parse(template.template_text);
+        console.log('[Crowd Wisdom] Using structured template:', templateStructure);
+        
+        // Apply structured template enhancements
+        enhancedSystemPrompt = this.buildStructuredPromptEnhancement(templateStructure, template);
+      } else {
+        console.log('[Crowd Wisdom] Template is not structured JSON, treating as content guidance');
+        // Use template as general guidance
+        enhancedSystemPrompt = this.buildContentGuidanceEnhancement(template);
+      }
+    } catch (parseError) {
+      console.log('[Crowd Wisdom] Template is not JSON, treating as raw content guidance');
+      // Template might be raw content from auto-generated templates
+      enhancedSystemPrompt = this.buildContentGuidanceEnhancement(template);
+    }
+
+    return {
+      enhancedQuery: originalQuery,
+      systemEnhancement: enhancedSystemPrompt,
+      templateApplied: true,
+      templateId: template.id,
+      templateTopic: template.topic,
+      templateEfficacy: template.efficacy_score
+    };
+  }
+
+  /**
+   * Build system prompt enhancement from structured template
+   * @param {Object} structure - Parsed template structure
+   * @param {Object} template - Full template object
+   * @returns {string} - Enhanced system prompt additions
+   */
+  buildStructuredPromptEnhancement(structure, template) {
+    const enhancements = [];
+    
+    enhancements.push('\n=== CROWD WISDOM ENHANCEMENT ===');
+    enhancements.push(`This question is similar to others that worked well with this approach (Efficacy: ${template.efficacy_score?.toFixed(2)}/5.0):`);
+    
+    // Apply structure-based enhancements
+    if (structure.structure) {
+      const struct = structure.structure;
+      
+      if (struct.has_introduction) {
+        enhancements.push('• Start with a clear, engaging introduction that sets context');
+      }
+      
+      if (struct.has_explanation) {
+        enhancements.push('• Provide a comprehensive, well-structured explanation');
+      }
+      
+      if (struct.has_analogy) {
+        enhancements.push('• Include a relatable analogy that helps clarify the concept');
+      }
+      
+      if (struct.has_example) {
+        enhancements.push('• Provide concrete, practical examples');
+      }
+      
+      if (struct.has_key_takeaways) {
+        enhancements.push('• End with clear key takeaways or summary points');
+      }
+      
+      if (struct.is_structured === false) {
+        enhancements.push('• Present information in a conversational, flowing style rather than rigid sections');
+      }
+    }
+    
+    // Add topic-specific guidance if available
+    if (template.topic && template.topic !== 'general') {
+      enhancements.push(`• This is a ${template.topic} question - tailor your explanation accordingly`);
+    }
+    
+    enhancements.push('=== END ENHANCEMENT ===\n');
+    
+    return enhancements.join('\n');
+  }
+
+  /**
+   * Build system prompt enhancement from content guidance
+   * @param {Object} template - Template object with content
+   * @returns {string} - Enhanced system prompt additions
+   */
+  buildContentGuidanceEnhancement(template) {
+    const enhancements = [];
+    
+    enhancements.push('\n=== CROWD WISDOM ENHANCEMENT ===');
+    enhancements.push(`Similar questions have been answered successfully using this approach (Efficacy: ${template.efficacy_score?.toFixed(2)}/5.0):`);
+    
+    // Extract guidance from template content
+    if (template.template_text) {
+      const content = template.template_text.substring(0, 200) + '...';
+      enhancements.push(`• Reference successful approach: "${content}"`);
+    }
+    
+    if (template.topic && template.topic !== 'general') {
+      enhancements.push(`• Topic focus: ${template.topic}`);
+    }
+    
+    enhancements.push('• Adapt this proven approach to the current question');
+    enhancements.push('=== END ENHANCEMENT ===\n');
+    
+    return enhancements.join('\n');
+  }
+
+  /**
    * Suggest activities based on the query and response
    * @param {string} query - The user's query
    * @param {Object} response - The AI's response
@@ -105,14 +233,14 @@ class Supervisor {
   }
 
   /**
-   * Process a query using the wisdom-of-crowds logic (new implementation)
+   * Process a query using the wisdom-of-crowds logic (ENHANCED VERSION)
    * @param {string} query
    * @param {string} sessionId
    * @param {string} userId
    * @param {object} openai
    * @param {boolean} useCompositeScore
    * @param {number} explorationRate
-   * @returns {Promise<object>} - Returns an object with enhancedQuery, template, topic, selectionMethod
+   * @returns {Promise<object>} - Returns an object with enhancedQuery, template, topic, selectionMethod, systemEnhancement
    */
   async processQueryWithCrowdWisdom(query, sessionId, userId, openai, useCompositeScore, explorationRate) {
     console.log('[Supervisor] processQueryWithCrowdWisdom called', { query, sessionId, userId, useCompositeScore, explorationRate });
@@ -133,12 +261,15 @@ class Supervisor {
         console.warn(`[CW DEBUG] No cluster match found for query: "${query}". Fallback activated`);
         // Fallback: no cluster, use best global template
         const bestGlobal = await this.getBestGlobalTemplateUCB();
+        const enhancement = this.applyTemplateEnhancement(query, bestGlobal?.templateData || 'default_template');
         return {
-          enhancedQuery: query,
+          enhancedQuery: enhancement.enhancedQuery,
+          systemEnhancement: enhancement.systemEnhancement,
           template: bestGlobal?.templateData || 'default_template',
           topic: null,
           selectionMethod: bestGlobal ? 'global_ucb1' : 'fallback',
-          cluster_id: null
+          cluster_id: null,
+          templateApplied: enhancement.templateApplied
         };
       }
 
@@ -177,23 +308,35 @@ class Supervisor {
         selectionMethod = bestGlobal ? 'global_ucb1' : 'fallback';
       }
 
+      // 4. APPLY TEMPLATE ENHANCEMENT (THE MISSING PIECE!)
+      const enhancement = this.applyTemplateEnhancement(query, templateData);
+      console.log(`[Crowd Wisdom] Template enhancement applied: ${enhancement.templateApplied}`);
+      if (enhancement.templateApplied) {
+        console.log(`[Crowd Wisdom] Enhanced query with template ID: ${enhancement.templateId} (Efficacy: ${enhancement.templateEfficacy})`);
+      }
+
       return {
-        enhancedQuery: query,
+        enhancedQuery: enhancement.enhancedQuery,
+        systemEnhancement: enhancement.systemEnhancement,
         template: templateData,
         topic: match?.topic || null,
         selectionMethod,
-        cluster_id: cluster_id
+        cluster_id: cluster_id,
+        templateApplied: enhancement.templateApplied
       };
     } catch (error) {
       console.error('[CW DEBUG] Error in processQueryWithCrowdWisdom:', error);
       // Fallback: use best global template by UCB1
       const bestGlobal = await this.getBestGlobalTemplateUCB();
+      const enhancement = this.applyTemplateEnhancement(query, bestGlobal?.templateData || 'default_template');
       return {
-        enhancedQuery: query,
+        enhancedQuery: enhancement.enhancedQuery,
+        systemEnhancement: enhancement.systemEnhancement,
         template: bestGlobal?.templateData || 'default_template',
         topic: null,
         selectionMethod: bestGlobal ? 'global_ucb1' : 'fallback',
-        cluster_id: null
+        cluster_id: null,
+        templateApplied: enhancement.templateApplied
       };
     }
   }

@@ -3,7 +3,7 @@ import { useQuery } from '../contexts/QueryContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import ConversationHistory from '../components/ConversationHistory';
-import FeedbackForm from '../components/FeedbackForm';
+// FeedbackForm removed - now using natural conversation analysis
 import ResponseTabs from '../components/ResponseTabs';
 import { supabase } from '../lib/supabaseClient';
 import QueryToQuiz from '../components/QueryToQuiz';
@@ -1349,31 +1349,7 @@ examplePlaceholder();`
                 </div>
               )}
 
-              {/* Feedback form section - update to check for active quiz */}
-              {message.role === 'assistant' && 
-               (showFeedbackFor === message.id || message.hadFeedbackShowing) && 
-               activeQuizMessage !== message.id && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                  <FeedbackForm
-                    key={`feedback-${message.id}`}
-                    responseId={message.id}
-                    onFeedbackSubmitted={(messageId) => {
-                      handleFeedbackSubmitted(messageId);
-                      // Force a refresh of the UI state
-                      setTimeout(() => {
-                        if (messages.find(m => m.id === messageId)) {
-                          messages.find(m => m.id === messageId).hadFeedbackSubmitted = true;
-                        }
-                      }, 100);
-                    }}
-                    originalQuery={messages.find(m => m.role === 'user' && 
-                      messages.indexOf(m) < messages.indexOf(message))?.content || ''}
-                    preferences={preferences}
-                    onRegenerateAnswer={handleRegenerateAnswer}
-                    sessionId={sessionId}
-                  />
-                </div>
-              )}
+              {/* FEEDBACK FORM REMOVED: Now using natural conversation analysis for crowd wisdom learning */}
 
               {/* Add feedback button for messages without feedback */}
               {message.role === 'assistant' && 
@@ -1381,15 +1357,10 @@ examplePlaceholder();`
                !activeQuizMessage &&
                !message.hadFeedbackSubmitted && (
                 <div className="mt-2 flex justify-end">
-                  <button
-                    onClick={() => {
-                      setShowFeedbackFor(message.id);
-                      setActiveFeedbackMessage(message.id);
-                    }}
-                    className="text-sm text-primary-600 hover:text-primary-800"
-                  >
-                    Provide Feedback
-                  </button>
+                  {/* FEEDBACK REMOVED: Now using natural conversation analysis */}
+                  <div className="text-xs text-gray-500 italic">
+                    💬 System learns from your natural conversation
+                  </div>
                 </div>
               )}
             </div>

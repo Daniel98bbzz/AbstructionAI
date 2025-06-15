@@ -145,6 +145,8 @@ app.post('/api/query', async (req, res) => {
     let usedTemplate = null;
     let crowdWisdomTopic = null;
     let selectionMethod = 'none';
+    let systemEnhancement = '';
+    let templateApplied = false;
     const hasLimitedContext = !sessionData.interactions || sessionData.interactions.length < 2;
     let clusterIdForUsage = null;
 
@@ -167,9 +169,15 @@ app.post('/api/query', async (req, res) => {
         crowdWisdomTopic = crowdWisdomResult.topic;
         selectionMethod = crowdWisdomResult.selectionMethod;
         clusterIdForUsage = crowdWisdomResult.cluster_id;
+        systemEnhancement = crowdWisdomResult.systemEnhancement || '';
+        templateApplied = crowdWisdomResult.templateApplied || false;
+        
         // Improved template logging
         if (usedTemplate && typeof usedTemplate === 'object' && usedTemplate.id) {
           console.log(`[Crowd Wisdom] Enhanced user query with template ID: ${usedTemplate.id} using ${selectionMethod}`);
+          if (templateApplied) {
+            console.log('[Crowd Wisdom] ✅ Template enhancement applied to system prompt');
+          }
         } else {
           console.log(`[Crowd Wisdom] Fallback template used: ${usedTemplate}`);
         }
@@ -190,6 +198,11 @@ app.post('/api/query', async (req, res) => {
     const userQueryForHistory = promptManagerMessages.find(m => m.role === 'user');
 
     if (systemContext) {
+      // APPLY CROWD WISDOM SYSTEM ENHANCEMENT
+      if (systemEnhancement && templateApplied) {
+        console.log('[Crowd Wisdom] 🚀 Applying system enhancement to prompt');
+        systemContext.content = systemContext.content + systemEnhancement;
+      }
       historyMessages.push(systemContext);
     }
 
@@ -280,11 +293,14 @@ app.post('/api/query', async (req, res) => {
       // Add Crowd Wisdom metadata
       crowd_wisdom: usedTemplate ? {
         applied: true,
-        template_id: usedTemplate.id,
+        template_id: usedTemplate.id || 'fallback',
         topic: crowdWisdomTopic,
-        selection_method: selectionMethod
+        selection_method: selectionMethod,
+        template_applied: templateApplied,
+        efficacy_score: usedTemplate.efficacy_score || null
       } : {
-        applied: false
+        applied: false,
+        template_applied: false
       }
     };
 
@@ -622,41 +638,84 @@ Make the analogies vivid and easy to visualize.`;
       };
     }
 
-    // Add interaction to session
+    // 🚀 ENHANCED: Natural Conversation Analysis for Crowd Wisdom Learning
     let softSignal = null;
     const sessionHasHistory = sessionData.interactions?.length > 0;
     if (sessionHasHistory) {
-      console.log('🧠 Starting soft signal classification...');
+      console.log('🧠 Starting natural conversation analysis for crowd wisdom...');
       const userMessage = query;
-      const lastGPTResponse = sessionData.interactions.slice(-1)[0]?.response?.explanation || '';
+      const lastInteraction = sessionData.interactions.slice(-1)[0];
+      const lastGPTResponse = lastInteraction?.response?.explanation || '';
+      const lastTemplateId = lastInteraction?.response?.crowd_wisdom?.template_id;
+      
       const classificationPrompt = `
-You are a classification module inside an educational system. Your goal is to classify a user's follow-up message based on the assistant's previous response.
+You are an AI feedback analyzer for an educational system. Analyze the user's follow-up message to determine their satisfaction with the previous AI response.
 
-Previous assistant response:
+Previous AI response:
 """${lastGPTResponse}"""
 
-User follow-up message:
+User's follow-up message:
 """${userMessage}"""
 
-Classify this message into one of the following categories:
-- satisfaction
-- understanding
-- confusion
-- question
-- neutral
+Classify this follow-up message into one of these categories:
+- satisfaction (user seems satisfied, understood, or appreciative)
+- understanding (user demonstrates they learned something)
+- confusion (user is confused, didn't understand, or needs clarification)
+- question (user has a related follow-up question)
+- dissatisfaction (user is frustrated, disappointed, or critical)
+- neutral (unrelated or no clear sentiment)
 
 Respond only with one of the labels above.`.trim();
+
       try {
         const classificationResult = await openai.chat.completions.create({
           model: "gpt-4o",
           messages: [{ role: "user", content: classificationPrompt }],
           temperature: 0,
-          max_tokens: 5
+          max_tokens: 10
         });
-        console.log('[Soft Signal Classification] GPT response:', classificationResult);
+        console.log('[Natural Conversation Analysis] GPT response:', classificationResult);
         softSignal = classificationResult.choices[0].message.content.trim().toLowerCase();
+        
+        // 🎯 CROWD WISDOM LEARNING: Update template performance based on natural conversation
+        if (lastTemplateId && softSignal) {
+          console.log(`[Crowd Wisdom Learning] Analyzing conversation for template ${lastTemplateId.substring(0,8)}...`);
+          
+          // Convert soft signal to rating equivalent
+          let implicitRating = 3; // neutral default
+          switch(softSignal) {
+            case 'satisfaction':
+            case 'understanding':
+              implicitRating = 5; // very positive
+              break;
+            case 'confusion':
+            case 'dissatisfaction':
+              implicitRating = 2; // negative
+              break;
+            case 'question':
+              implicitRating = 4; // positive (shows engagement)
+              break;
+            case 'neutral':
+              implicitRating = 3; // neutral
+              break;
+          }
+          
+          console.log(`[Crowd Wisdom Learning] Implicit rating: ${implicitRating}/5 (${softSignal})`);
+          
+          // Process this as crowd wisdom feedback
+          const cwSuccess = await supervisor.processFeedbackForCrowdWisdom(
+            lastInteraction.response.id,
+            implicitRating,
+            userMessage, // use the natural conversation as feedback
+            lastInteraction.response,
+            openai
+          );
+          
+          console.log(`[Crowd Wisdom Learning] Template learning success: ${cwSuccess}`);
+        }
+        
       } catch (err) {
-        console.error('[Soft Signal Classification] Error classifying soft signal:', err);
+        console.error('[Natural Conversation Analysis] Error analyzing conversation:', err);
       }
     }
     await sessionManager.addInteraction(sessionData.id, {
@@ -743,42 +802,15 @@ Respond only with one of the labels above.`.trim();
   }
 });
 
+// ❌ LEGACY FEEDBACK ENDPOINT - DISABLED
+// Now using natural conversation analysis for crowd wisdom learning
 app.post('/api/feedback', async (req, res) => {
-  try {
-    const { responseId, rating, comments, sessionId, responseData, originalQuery } = req.body;
-    
-    if (!responseId || !rating || !sessionId) {
-      return res.status(400).json({ error: 'Response ID, rating, and session ID are required' });
-    }
-    
-    // Get the user ID
-    const userId = req.user?.id || req.body.userId;
-    
-    // Process feedback with enhanced parameters for Crowd Wisdom
-    const feedback = await feedbackProcessor.processFeedback(
-      responseId,
-      rating,
-      comments,
-      userId,
-      responseData,
-      originalQuery,
-      openai // Pass the OpenAI client for quality evaluation
-    );
-    
-    // Add feedback interaction to session
-    await sessionManager.addInteraction(sessionId, {
-      type: 'feedback',
-      responseId,
-      rating,
-      comments,
-      feedback
-    });
-    
-    res.json({ success: true, feedback });
-  } catch (error) {
-    console.error('Error processing feedback:', error);
-    res.status(500).json({ error: 'Failed to process feedback' });
-  }
+  console.log('[Legacy Feedback] Endpoint called but disabled - using natural conversation analysis instead');
+  res.json({ 
+    success: true, 
+    message: 'Feedback system now uses natural conversation analysis',
+    deprecated: true 
+  });
 });
 
 // Add component-level feedback endpoint
