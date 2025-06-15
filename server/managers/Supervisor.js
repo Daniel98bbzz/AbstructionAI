@@ -130,12 +130,14 @@ class Supervisor {
 
       if (clusterError || !clusterMatch || clusterMatch.length === 0) {
         console.error('[Supervisor] Error matching cluster:', clusterError);
-        // Fallback: no cluster, use default template
+        console.warn(`[CW DEBUG] No cluster match found for query: "${query}". Fallback activated`);
+        // Fallback: no cluster, use best global template
+        const bestGlobal = await this.getBestGlobalTemplateUCB();
         return {
           enhancedQuery: query,
-          template: 'default_template',
+          template: bestGlobal?.templateData || 'default_template',
           topic: null,
-          selectionMethod: 'fallback',
+          selectionMethod: bestGlobal ? 'global_ucb1' : 'fallback',
           cluster_id: null
         };
       }
@@ -144,61 +146,80 @@ class Supervisor {
       console.log(`[Supervisor] Matched semantic cluster: ID=${match.id}, similarity=${match.similarity}`);
       const cluster_id = match.id;
 
-      // 3. Find the best template for this cluster from the new view
+      // 3. Find the best template for this cluster from the UCB1 view
+      console.log(`[CW DEBUG] Looking for best template for cluster ${cluster_id} (UCB1)...`);
       const { data: bestRow, error: bestRowError } = await supabase
-        .from('cluster_best_template')
-        .select('template_id')
+        .from('cluster_best_template_ucb_top')
+        .select('template_id, ucb1_score')
         .eq('cluster_id', cluster_id)
         .limit(1)
         .single();
 
-      if (bestRowError || !bestRow || !bestRow.template_id) {
-        console.warn(`[Crowd Wisdom] No best template found for cluster ${cluster_id}. Using fallback.`);
-        return {
-          enhancedQuery: query,
-          template: 'default_template',
-          topic: match?.topic || null,
-          selectionMethod: 'fallback',
-          cluster_id: cluster_id
-        };
+      let templateData = null;
+      let selectionMethod = 'ucb1';
+      if (bestRow && bestRow.template_id) {
+        // Fetch the actual template data
+        const { data: tData, error: templateError } = await supabase
+          .from('prompt_templates')
+          .select('*')
+          .eq('id', bestRow.template_id)
+          .single();
+        if (tData) {
+          templateData = tData;
+        } else {
+          console.warn(`[CW DEBUG] Could not fetch template data for template_id ${bestRow.template_id}. Error:`, templateError?.message);
+        }
+      }
+      if (!templateData) {
+        // Fallback: use best global template by UCB1
+        const bestGlobal = await this.getBestGlobalTemplateUCB();
+        templateData = bestGlobal?.templateData || 'default_template';
+        selectionMethod = bestGlobal ? 'global_ucb1' : 'fallback';
       }
 
-      // Fetch the actual template data
-      const { data: templateData, error: templateError } = await supabase
-        .from('prompt_templates')
-        .select('*')
-        .eq('id', bestRow.template_id)
-        .single();
-
-      if (templateError || !templateData) {
-        console.warn(`[Crowd Wisdom] Could not fetch template data for template_id ${bestRow.template_id}. Using fallback.`);
-        return {
-          enhancedQuery: query,
-          template: 'default_template',
-          topic: match?.topic || null,
-          selectionMethod: 'fallback',
-          cluster_id: cluster_id
-        };
-      }
-
-      console.log(`[Crowd Wisdom] Selected template ID: ${templateData.id} for cluster ${cluster_id}`);
       return {
         enhancedQuery: query,
         template: templateData,
         topic: match?.topic || null,
-        selectionMethod: 'crowd_wisdom',
+        selectionMethod,
         cluster_id: cluster_id
       };
     } catch (error) {
-      console.error('[Supervisor] Error in processQueryWithCrowdWisdom:', error);
+      console.error('[CW DEBUG] Error in processQueryWithCrowdWisdom:', error);
+      // Fallback: use best global template by UCB1
+      const bestGlobal = await this.getBestGlobalTemplateUCB();
       return {
         enhancedQuery: query,
-        template: 'default_template',
+        template: bestGlobal?.templateData || 'default_template',
         topic: null,
-        selectionMethod: 'fallback',
+        selectionMethod: bestGlobal ? 'global_ucb1' : 'fallback',
         cluster_id: null
       };
     }
+  }
+
+  /**
+   * Helper: Get the best global template by UCB1 (across all clusters)
+   */
+  async getBestGlobalTemplateUCB() {
+    // Find the template with the highest UCB1 score across all clusters
+    const { data: best, error } = await supabase
+      .from('cluster_best_template_ucb')
+      .select('template_id, ucb1_score')
+      .order('ucb1_score', { ascending: false })
+      .limit(1)
+      .single();
+    if (error || !best?.template_id) {
+      console.warn('[CW DEBUG] No global best template found by UCB1. Error:', error?.message);
+      return null;
+    }
+    // Fetch the actual template data
+    const { data: tData, error: templateError } = await supabase
+      .from('prompt_templates')
+      .select('*')
+      .eq('id', best.template_id)
+      .single();
+    return { templateData: tData, ucb1_score: best.ucb1_score };
   }
 
   /**

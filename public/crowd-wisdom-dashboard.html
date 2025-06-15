@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crowd Wisdom Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            text-align: center;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .btn.primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .card h3 {
+            font-size: 1.4em;
+            margin-bottom: 20px;
+            color: #fff;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            padding-bottom: 10px;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            font-weight: 500;
+            opacity: 0.9;
+        }
+
+        .metric-value {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #4ade80;
+        }
+
+        .cluster-card {
+            margin-bottom: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+            border-left: 4px solid #4ade80;
+        }
+
+        .cluster-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .cluster-id {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #4ade80;
+        }
+
+        .cluster-stats {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .template-list {
+            margin-top: 10px;
+        }
+
+        .template-item {
+            background: rgba(255, 255, 255, 0.05);
+            margin: 5px 0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+
+        .interaction-item {
+            background: rgba(255, 255, 255, 0.05);
+            margin: 8px 0;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+        }
+
+        .interaction-query {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .interaction-meta {
+            font-size: 0.8em;
+            opacity: 0.7;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .status.success {
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+        }
+
+        .status.warning {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+
+        .status.error {
+            background: rgba(248, 113, 113, 0.2);
+            color: #f87171;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.7;
+        }
+
+        .refresh-indicator {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .wide-card {
+            grid-column: 1 / -1;
+        }
+
+        .log-item {
+            background: rgba(0, 0, 0, 0.2);
+            margin: 5px 0;
+            padding: 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.85em;
+            white-space: pre-wrap;
+        }
+
+        .error-text {
+            color: #f87171;
+        }
+
+        .success-text {
+            color: #4ade80;
+        }
+
+        .warning-text {
+            color: #fbbf24;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>🧠 Crowd Wisdom Dashboard</h1>
+            <p>Real-time insights into template selection and clustering</p>
+        </div>
+
+        <div class="controls">
+            <button class="btn primary" onclick="refreshDashboard()">
+                <span id="refresh-btn">🔄 Refresh Data</span>
+            </button>
+            <button class="btn" onclick="runClustering()">⚙️ Run Clustering</button>
+            <button class="btn" onclick="fixClusterIds()">🔧 Fix Cluster IDs</button>
+            <button class="btn" onclick="clearLogs()">🗑️ Clear Logs</button>
+            <label style="color: white; display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="auto-refresh" checked> Auto-refresh (30s)
+            </label>
+        </div>
+
+        <div class="grid">
+            <!-- Overview Card -->
+            <div class="card">
+                <h3>📊 System Overview</h3>
+                <div id="overview-content" class="loading">Loading...</div>
+            </div>
+
+            <!-- Cluster Performance Card -->
+            <div class="card">
+                <h3>🎯 Cluster Performance</h3>
+                <div id="cluster-performance" class="loading">Loading...</div>
+            </div>
+
+            <!-- Template Usage Card -->
+            <div class="card">
+                <h3>📋 Template Usage</h3>
+                <div id="template-usage" class="loading">Loading...</div>
+            </div>
+
+            <!-- Best Templates Card -->
+            <div class="card">
+                <h3>🏆 Best Templates by Cluster</h3>
+                <div id="best-templates" class="loading">Loading...</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Clusters Detail Card -->
+            <div class="card wide-card">
+                <h3>🔍 Cluster Details</h3>
+                <div id="cluster-details" class="loading">Loading...</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Recent Interactions -->
+            <div class="card wide-card">
+                <h3>🕐 Recent Interactions</h3>
+                <div id="recent-interactions" class="loading">Loading...</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Activity Logs -->
+            <div class="card wide-card">
+                <h3>📝 Activity Logs</h3>
+                <div id="activity-logs"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let autoRefreshInterval;
+        let activityLogs = [];
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}`;
+            activityLogs.unshift(logEntry);
+            
+            // Keep only last 50 logs
+            if (activityLogs.length > 50) {
+                activityLogs = activityLogs.slice(0, 50);
+            }
+            
+            updateActivityLogs();
+        }
+
+        function updateActivityLogs() {
+            const logsContainer = document.getElementById('activity-logs');
+            logsContainer.innerHTML = activityLogs.map(log => 
+                `<div class="log-item">${log}</div>`
+            ).join('') || '<div class="loading">No activity yet...</div>';
+        }
+
+        function clearLogs() {
+            activityLogs = [];
+            updateActivityLogs();
+            log('Logs cleared');
+        }
+
+        async function apiCall(endpoint, options = {}) {
+            try {
+                log(`Making API call to ${endpoint}`);
+                const response = await fetch(endpoint, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                log(`✅ API call to ${endpoint} successful`);
+                return { success: true, data };
+            } catch (error) {
+                log(`❌ API call to ${endpoint} failed: ${error.message}`);
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function loadOverview() {
+            const result = await apiCall('/api/admin/crowd-wisdom/overview');
+            const container = document.getElementById('overview-content');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="error-text">Error: ${result.error}</div>`;
+                return;
+            }
+
+            const data = result.data;
+            container.innerHTML = `
+                <div class="metric">
+                    <span class="metric-label">Total Clusters</span>
+                    <span class="metric-value">${data.totalClusters || 0}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total Interactions</span>
+                    <span class="metric-value">${data.totalInteractions || 0}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Clustered Interactions</span>
+                    <span class="metric-value">${data.clusteredInteractions || 0}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Template Usage Records</span>
+                    <span class="metric-value">${data.templateUsageCount || 0}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Success Rate</span>
+                    <span class="metric-value">${data.successRate || 0}%</span>
+                </div>
+            `;
+        }
+
+        async function loadClusterPerformance() {
+            const result = await apiCall('/api/admin/crowd-wisdom/cluster-performance');
+            const container = document.getElementById('cluster-performance');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="error-text">Error: ${result.error}</div>`;
+                return;
+            }
+
+            const clusters = result.data.clusters || [];
+            if (clusters.length === 0) {
+                container.innerHTML = '<div class="warning-text">No cluster performance data available</div>';
+                return;
+            }
+
+            container.innerHTML = clusters.map(cluster => `
+                <div class="metric">
+                    <span class="metric-label">Cluster ${cluster.cluster_id}</span>
+                    <span class="metric-value">${cluster.usage_count} uses, ${cluster.unique_users} users</span>
+                </div>
+            `).join('');
+        }
+
+        async function loadTemplateUsage() {
+            const result = await apiCall('/api/admin/crowd-wisdom/template-usage');
+            const container = document.getElementById('template-usage');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="error-text">Error: ${result.error}</div>`;
+                return;
+            }
+
+            const templates = result.data.templates || [];
+            if (templates.length === 0) {
+                container.innerHTML = '<div class="warning-text">No template usage data available</div>';
+                return;
+            }
+
+            container.innerHTML = templates.slice(0, 10).map(template => `
+                <div class="metric">
+                    <span class="metric-label">${template.template_id.substring(0, 8)}...</span>
+                    <span class="metric-value">${template.usage_count} uses</span>
+                </div>
+            `).join('');
+        }
+
+        async function loadBestTemplates() {
+            const result = await apiCall('/api/admin/crowd-wisdom/best-templates');
+            const container = document.getElementById('best-templates');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="error-text">Error: ${result.error}</div>`;
+                return;
+            }
+
+            const bestTemplates = result.data.bestTemplates || [];
+            if (bestTemplates.length === 0) {
+                container.innerHTML = '<div class="warning-text">No best templates found</div>';
+                return;
+            }
+
+            container.innerHTML = bestTemplates.map(bt => `
+                <div class="metric">
+                    <span class="metric-label">Cluster ${bt.cluster_id}</span>
+                    <span class="metric-value">${bt.template_id.substring(0, 8)}... (${bt.usage_count} uses)</span>
+                </div>
+            `).join('');
+        }
+
+        async function loadClusterDetails() {
+            const result = await apiCall('/api/admin/crowd-wisdom/cluster-details');
+            const container = document.getElementById('cluster-details');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="error-text">Error: ${result.error}</div>`;
+                return;
+            }
+
+            const clusters = result.data.clusters || [];
+            if (clusters.length === 0) {
+                container.innerHTML = '<div class="warning-text">No cluster details available</div>';
+                return;
+            }
+
+            container.innerHTML = clusters.map(cluster => `
+                <div class="cluster-card">
+                    <div class="cluster-header">
+                        <span class="cluster-id">Cluster ${cluster.cluster_id}</span>
+                        <span class="cluster-stats">${cluster.interaction_count} interactions • ${cluster.unique_users} users</span>
+                    </div>
+                    <div><strong>Recent queries:</strong></div>
+                    ${cluster.recent_queries.map(q => `
+                        <div class="template-item">"${q.length > 60 ? q.substring(0, 60) + '...' : q}"</div>
+                    `).join('')}
+                    <div class="template-list">
+                        <strong>Templates used:</strong>
+                        ${cluster.templates.map(t => `
+                            <div class="template-item">${t.template_id.substring(0, 8)}... (${t.count} uses)</div>
+                        `).join('') || '<div class="template-item">No template usage</div>'}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadRecentInteractions() {
+            const result = await apiCall('/api/admin/crowd-wisdom/recent-interactions');
+            const container = document.getElementById('recent-interactions');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="error-text">Error: ${result.error}</div>`;
+                return;
+            }
+
+            const interactions = result.data.interactions || [];
+            if (interactions.length === 0) {
+                container.innerHTML = '<div class="warning-text">No recent interactions found</div>';
+                return;
+            }
+
+            container.innerHTML = interactions.map(interaction => `
+                <div class="interaction-item">
+                    <div class="interaction-query">"${interaction.query}"</div>
+                    <div class="interaction-meta">
+                        <span>
+                            ${interaction.cluster_id !== null 
+                                ? `<span class="status success">Cluster ${interaction.cluster_id}</span>` 
+                                : '<span class="status warning">Unassigned</span>'
+                            }
+                        </span>
+                        <span>${new Date(interaction.created_at).toLocaleString()}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function refreshDashboard() {
+            const refreshBtn = document.getElementById('refresh-btn');
+            refreshBtn.innerHTML = '<span class="refresh-indicator"></span> Refreshing...';
+            
+            log('🔄 Refreshing dashboard data...');
+            
+            // Load all data concurrently
+            await Promise.all([
+                loadOverview(),
+                loadClusterPerformance(),
+                loadTemplateUsage(),
+                loadBestTemplates(),
+                loadClusterDetails(),
+                loadRecentInteractions()
+            ]);
+            
+            refreshBtn.innerHTML = '🔄 Refresh Data';
+            log('✅ Dashboard refreshed successfully');
+        }
+
+        async function runClustering() {
+            log('⚙️ Starting clustering process...');
+            const result = await apiCall('/api/admin/clustering/run', { method: 'POST' });
+            
+            if (result.success) {
+                log('✅ Clustering completed successfully');
+                setTimeout(refreshDashboard, 2000); // Refresh after clustering
+            } else {
+                log(`❌ Clustering failed: ${result.error}`);
+            }
+        }
+
+        async function fixClusterIds() {
+            log('🔧 Fixing cluster IDs...');
+            const result = await apiCall('/api/admin/crowd-wisdom/fix-cluster-ids', { method: 'POST' });
+            
+            if (result.success) {
+                log('✅ Cluster IDs fixed successfully');
+                setTimeout(refreshDashboard, 1000);
+            } else {
+                log(`❌ Fix cluster IDs failed: ${result.error}`);
+            }
+        }
+
+        function setupAutoRefresh() {
+            const checkbox = document.getElementById('auto-refresh');
+            
+            function toggleAutoRefresh() {
+                if (checkbox.checked) {
+                    autoRefreshInterval = setInterval(refreshDashboard, 30000);
+                    log('🔄 Auto-refresh enabled (30s interval)');
+                } else {
+                    if (autoRefreshInterval) {
+                        clearInterval(autoRefreshInterval);
+                        autoRefreshInterval = null;
+                    }
+                    log('⏸️ Auto-refresh disabled');
+                }
+            }
+            
+            checkbox.addEventListener('change', toggleAutoRefresh);
+            toggleAutoRefresh(); // Initial setup
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', () => {
+            log('🚀 Crowd Wisdom Dashboard initialized');
+            updateActivityLogs();
+            setupAutoRefresh();
+            refreshDashboard();
+        });
+    </script>
+</body>
+</html> 

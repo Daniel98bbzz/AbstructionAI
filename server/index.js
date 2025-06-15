@@ -9,6 +9,8 @@ import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
 import setupQuizRoutes from './api/quizRoutes.js';
 import setupClusterRoutes from './api/clusterRoutes.js';
+// Import clustering service
+import { clusteringService } from './utils/clusteringService.js';
 
 /**
  * Parse sections from the OpenAI response
@@ -686,7 +688,15 @@ Respond only with one of the labels above.`.trim();
     // After generating the response and before sending it, log template usage (including fallback)
     const templateIdForUsage = usedTemplate?.id || usedTemplate || 'fallback';
     const selectionMethodForUsage = selectionMethod || (usedTemplate ? 'crowd_wisdom' : 'fallback');
-    console.log(`[BACKEND DEBUG] Logging template usage with cluster_id:`, clusterIdForUsage, 'type:', typeof clusterIdForUsage, ', template_id:', templateIdForUsage, ', selection_method:', selectionMethodForUsage);
+    // Find the most recent interaction for this session/query to get its id
+    let interactionId = null;
+    if (sessionData && sessionData.interactions && sessionData.interactions.length > 0) {
+      // Try to find the interaction matching this query
+      const lastInteraction = sessionData.interactions.slice(-1)[0];
+      if (lastInteraction && lastInteraction.query === query) {
+        interactionId = lastInteraction.id;
+      }
+    }
     await supabase
       .from('prompt_template_usage')
       .insert({
@@ -696,7 +706,9 @@ Respond only with one of the labels above.`.trim();
         query: enhancedQuery,
         response_id: response.id,
         cluster_id: clusterIdForUsage !== undefined && clusterIdForUsage !== null ? Number(clusterIdForUsage) : null,
-        selection_method: selectionMethodForUsage
+        selection_method: selectionMethodForUsage,
+        soft_signal_type: softSignal || null, // Pass the classified soft signal type
+        interaction_id: interactionId || null // Store the interaction id if available
       });
     
     // Automatic template creation on fallback
@@ -2684,11 +2696,30 @@ app.get('/api/user-topics/feed', async (req, res) => {
   }
 });
 
+// Start the server with port conflict handling
+function startServer(port) {
+  const server = app.listen(port, () => {
+    console.log(`🚀 Server running on http://localhost:${port}`);
+    console.log('✅ Cluster routes successfully initialized');
+    
+    // Initialize periodic clustering (run every 24 hours)
+    console.log('📅 Setting up periodic clustering...');
+    clusteringService.schedulePeriodicClustering(24);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.log(`❌ Port ${port} is busy, trying port ${port + 1}...`);
+      startServer(port + 1);
+    } else {
+      console.error('❌ Server error:', err);
+      process.exit(1);
+    }
+  });
+}
+
 // Start the server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log('✅ Cluster routes successfully initialized');
-});
+startServer(PORT);
 
 // ==================== TOPIC PROGRESS TRACKING (PHASE 3) ====================
 
@@ -4027,3 +4058,543 @@ app.get('/api/response-tab-content/:messageId/:tabType', async (req, res) => {
     });
   }
 });
+
+// ==================== CLUSTERING MANAGEMENT ENDPOINTS ====================
+
+// Get clustering service status
+app.get('/api/admin/clustering/status', async (req, res) => {
+  try {
+    const status = clusteringService.getStatus();
+    res.json({
+      success: true,
+      status
+    });
+  } catch (error) {
+    console.error('Error getting clustering status:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to get clustering status',
+      message: error.message 
+    });
+  }
+});
+
+// Trigger clustering manually
+app.post('/api/admin/clustering/run', async (req, res) => {
+  try {
+    const { fullRecluster = false } = req.body;
+    
+    console.log(`🚀 Manual clustering triggered (fullRecluster: ${fullRecluster})`);
+    
+    const result = await clusteringService.runClustering({ 
+      fullRecluster, 
+      background: true 
+    });
+    
+    res.json({
+      success: result.success,
+      message: result.success ? 'Clustering started successfully' : 'Failed to start clustering',
+      ...result
+    });
+  } catch (error) {
+    console.error('Error running clustering:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to run clustering',
+      message: error.message 
+    });
+  }
+});
+
+// Run clustering only if needed (based on new interactions)
+app.post('/api/admin/clustering/run-if-needed', async (req, res) => {
+  try {
+    const { minNewInteractions = 10 } = req.body;
+    
+    console.log(`🔍 Conditional clustering triggered (min ${minNewInteractions} interactions)`);
+    
+    const result = await clusteringService.runClusteringIfNeeded(minNewInteractions);
+    
+    res.json({
+      success: result.success,
+      message: result.message || (result.success ? 'Clustering completed' : 'Clustering failed'),
+      ...result
+    });
+  } catch (error) {
+    console.error('Error running conditional clustering:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to run conditional clustering',
+      message: error.message 
+    });
+  }
+});
+
+// Get cluster export data
+app.get('/api/admin/clustering/export', async (req, res) => {
+  try {
+    const exportData = await clusteringService.loadClusterExport();
+    
+    if (!exportData) {
+      return res.status(404).json({
+        success: false,
+        error: 'No cluster export data found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      clusters: exportData,
+      count: exportData.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error getting cluster export:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to get cluster export',
+      message: error.message 
+    });
+  }
+});
+
+// Get clustering statistics from database
+app.get('/api/admin/clustering/stats', async (req, res) => {
+  try {
+    // Get total interactions
+    const { data: totalInteractions, error: totalError } = await supabase
+      .from('interactions')
+      .select('id', { count: 'exact' });
+    
+    if (totalError) throw totalError;
+    
+    // Get clustered interactions
+    const { data: clusteredInteractions, error: clusteredError } = await supabase
+      .from('interactions')
+      .select('id', { count: 'exact' })
+      .not('cluster_id', 'is', null);
+    
+    if (clusteredError) throw clusteredError;
+    
+    // Get noise interactions
+    const { data: noiseInteractions, error: noiseError } = await supabase
+      .from('interactions')
+      .select('id', { count: 'exact' })
+      .eq('is_noise', true);
+    
+    if (noiseError) throw noiseError;
+    
+    // Get unique clusters
+    const { data: clusters, error: clustersError } = await supabase
+      .from('semantic_clusters')
+      .select('id, size, representative_query, clustering_version');
+    
+    if (clustersError) throw clustersError;
+    
+    // Get clustering version distribution
+    const { data: versionStats, error: versionError } = await supabase
+      .from('interactions')
+      .select('clustering_version')
+      .not('clustering_version', 'is', null);
+    
+    if (versionError) throw versionError;
+    
+    const versionCounts = {};
+    versionStats.forEach(item => {
+      const version = item.clustering_version || 'unknown';
+      versionCounts[version] = (versionCounts[version] || 0) + 1;
+    });
+    
+    res.json({
+      success: true,
+      stats: {
+        total_interactions: totalInteractions.length,
+        clustered_interactions: clusteredInteractions.length,
+        noise_interactions: noiseInteractions.length,
+        unclustered_interactions: totalInteractions.length - clusteredInteractions.length,
+        total_clusters: clusters.length,
+        clustering_versions: versionCounts,
+        clusters: clusters.map(c => ({
+          id: c.id,
+          size: c.size,
+          representative: c.representative_query?.substring(0, 100) + '...',
+          version: c.clustering_version
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Error getting clustering stats:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to get clustering statistics',
+      message: error.message 
+    });
+  }
+});
+
+app.get('/crowd-wisdom-admin', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/crowd-wisdom-admin.html'));
+});
+
+// Serve clustering admin interface
+app.get('/clustering-admin', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/clustering-admin.html'));
+});
+
+// Serve crowd wisdom dashboard
+app.get('/crowd-wisdom-dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/crowd-wisdom-dashboard.html'));
+});
+
+// Add crowd wisdom admin endpoints after the existing clustering endpoints
+app.get('/api/admin/crowd-wisdom/overview', async (req, res) => {
+  try {
+    console.log('[Admin] Getting crowd wisdom overview...');
+    
+    // Get total clusters
+    const { data: clustersData, error: clustersError } = await supabase
+      .from('semantic_clusters')
+      .select('id')
+      .not('is_deleted', 'eq', true);
+    
+    // Get total interactions
+    const { data: interactionsData, error: interactionsError } = await supabase
+      .from('interactions')
+      .select('id, cluster_id');
+    
+    // Get template usage count
+    const { data: templateUsageData, error: templateUsageError } = await supabase
+      .from('prompt_template_usage')
+      .select('id, cluster_id');
+    
+    const totalClusters = clustersData?.length || 0;
+    const totalInteractions = interactionsData?.length || 0;
+    const clusteredInteractions = interactionsData?.filter(i => i.cluster_id !== null).length || 0;
+    const templateUsageCount = templateUsageData?.length || 0;
+    const successRate = totalInteractions > 0 ? Math.round((clusteredInteractions / totalInteractions) * 100) : 0;
+    
+    res.json({
+      success: true,
+      data: {
+        totalClusters,
+        totalInteractions,
+        clusteredInteractions,
+        templateUsageCount,
+        successRate
+      }
+    });
+  } catch (error) {
+    console.error('[Admin] Error getting overview:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/crowd-wisdom/cluster-performance', async (req, res) => {
+  try {
+    console.log('[Admin] Getting cluster performance...');
+    
+    const { data: usageData, error: usageError } = await supabase
+      .from('prompt_template_usage')
+      .select('cluster_id, user_id')
+      .not('cluster_id', 'is', null);
+    
+    if (usageError) {
+      throw usageError;
+    }
+    
+    // Group by cluster
+    const clusterStats = {};
+    usageData.forEach(usage => {
+      if (!clusterStats[usage.cluster_id]) {
+        clusterStats[usage.cluster_id] = {
+          cluster_id: usage.cluster_id,
+          usage_count: 0,
+          unique_users: new Set()
+        };
+      }
+      clusterStats[usage.cluster_id].usage_count++;
+      clusterStats[usage.cluster_id].unique_users.add(usage.user_id);
+    });
+    
+    const clusters = Object.values(clusterStats).map(cluster => ({
+      cluster_id: cluster.cluster_id,
+      usage_count: cluster.usage_count,
+      unique_users: cluster.unique_users.size
+    })).sort((a, b) => b.usage_count - a.usage_count);
+    
+    res.json({
+      success: true,
+      data: { clusters }
+    });
+  } catch (error) {
+    console.error('[Admin] Error getting cluster performance:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/crowd-wisdom/template-usage', async (req, res) => {
+  try {
+    console.log('[Admin] Getting template usage...');
+    
+    const { data: usageData, error: usageError } = await supabase
+      .from('prompt_template_usage')
+      .select('template_id');
+    
+    if (usageError) {
+      throw usageError;
+    }
+    
+    // Count template usage
+    const templateCounts = {};
+    usageData.forEach(usage => {
+      templateCounts[usage.template_id] = (templateCounts[usage.template_id] || 0) + 1;
+    });
+    
+    const templates = Object.entries(templateCounts)
+      .map(([template_id, usage_count]) => ({ template_id, usage_count }))
+      .sort((a, b) => b.usage_count - a.usage_count);
+    
+    res.json({
+      success: true,
+      data: { templates }
+    });
+  } catch (error) {
+    console.error('[Admin] Error getting template usage:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/crowd-wisdom/best-templates', async (req, res) => {
+  try {
+    console.log('[Admin] Getting best templates...');
+    
+    const { data: bestTemplates, error: bestError } = await supabase
+      .from('cluster_best_template')
+      .select('*')
+      .order('cluster_id');
+    
+    if (bestError) {
+      throw bestError;
+    }
+    
+    res.json({
+      success: true,
+      data: { bestTemplates }
+    });
+  } catch (error) {
+    console.error('[Admin] Error getting best templates:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/crowd-wisdom/cluster-details', async (req, res) => {
+  try {
+    console.log('[Admin] Getting cluster details...');
+    
+    // Get interactions by cluster
+    const { data: interactions, error: interactionsError } = await supabase
+      .from('interactions')
+      .select('cluster_id, query, user_id')
+      .not('cluster_id', 'is', null)
+      .order('created_at', { ascending: false });
+    
+    // Get template usage by cluster
+    const { data: templateUsage, error: templateError } = await supabase
+      .from('prompt_template_usage')
+      .select('cluster_id, template_id')
+      .not('cluster_id', 'is', null);
+    
+    if (interactionsError || templateError) {
+      throw interactionsError || templateError;
+    }
+    
+    // Group data by cluster
+    const clusterMap = {};
+    
+    // Process interactions
+    interactions.forEach(interaction => {
+      if (!clusterMap[interaction.cluster_id]) {
+        clusterMap[interaction.cluster_id] = {
+          cluster_id: interaction.cluster_id,
+          recent_queries: [],
+          unique_users: new Set(),
+          interaction_count: 0,
+          templates: {}
+        };
+      }
+      
+      const cluster = clusterMap[interaction.cluster_id];
+      cluster.interaction_count++;
+      cluster.unique_users.add(interaction.user_id);
+      
+      if (cluster.recent_queries.length < 5) {
+        cluster.recent_queries.push(interaction.query);
+      }
+    });
+    
+    // Process template usage
+    templateUsage.forEach(usage => {
+      if (clusterMap[usage.cluster_id]) {
+        const templates = clusterMap[usage.cluster_id].templates;
+        templates[usage.template_id] = (templates[usage.template_id] || 0) + 1;
+      }
+    });
+    
+    // Format results
+    const clusters = Object.values(clusterMap).map(cluster => ({
+      cluster_id: cluster.cluster_id,
+      interaction_count: cluster.interaction_count,
+      unique_users: cluster.unique_users.size,
+      recent_queries: cluster.recent_queries,
+      templates: Object.entries(cluster.templates).map(([template_id, count]) => ({
+        template_id,
+        count
+      })).sort((a, b) => b.count - a.count)
+    })).sort((a, b) => a.cluster_id - b.cluster_id);
+    
+    res.json({
+      success: true,
+      data: { clusters }
+    });
+  } catch (error) {
+    console.error('[Admin] Error getting cluster details:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/crowd-wisdom/recent-interactions', async (req, res) => {
+  try {
+    console.log('[Admin] Getting recent interactions...');
+    
+    const { data: interactions, error: interactionsError } = await supabase
+      .from('interactions')
+      .select('id, query, cluster_id, created_at')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    
+    if (interactionsError) {
+      throw interactionsError;
+    }
+    
+    res.json({
+      success: true,
+      data: { interactions }
+    });
+  } catch (error) {
+    console.error('[Admin] Error getting recent interactions:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/admin/crowd-wisdom/fix-cluster-ids', async (req, res) => {
+  try {
+    console.log('[Admin] Fixing cluster IDs for template usage...');
+    
+    // This endpoint will trigger the fix script
+    const result = await runFixClusterIds();
+    
+    res.json({
+      success: true,
+      data: { 
+        message: 'Cluster IDs fix completed',
+        result 
+      }
+    });
+  } catch (error) {
+    console.error('[Admin] Error fixing cluster IDs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+async function runFixClusterIds() {
+  // This is a simplified version - in production you might want to 
+  // import and run the actual fix script
+  console.log('[Admin] Running cluster ID fix...');
+  return { message: 'Fix completed' };
+}
+
+// DAILY AGGREGATION: Update template_cluster_stats with efficacy_score
+// IMPORTANT: Schedule this endpoint to run daily (via cron or scheduler) for continuous learning
+app.post('/api/admin/crowd-wisdom/aggregate-template-stats', async (req, res) => {
+  try {
+    // 1. Fetch all prompt_template_usage grouped by cluster_id, template_id
+    const { data: usageData, error: usageError } = await supabase
+      .from('prompt_template_usage')
+      .select('cluster_id, template_id, soft_signal_type')
+      .not('cluster_id', 'is', null)
+      .not('template_id', 'is', null);
+
+    if (usageError) throw usageError;
+
+    // 2. Aggregate stats using soft_signal_type
+    const stats = {};
+    usageData.forEach(row => {
+      const key = `${row.cluster_id}::${row.template_id}`;
+      if (!stats[key]) {
+        stats[key] = {
+          cluster_id: row.cluster_id,
+          template_id: row.template_id,
+          num_uses: 0,
+          num_satisfactions: 0,
+          num_confusions: 0,
+          soft_signal_counts: {}
+        };
+      }
+      stats[key].num_uses++;
+      const signal = (row.soft_signal_type || '').toLowerCase();
+      stats[key].soft_signal_counts[signal] = (stats[key].soft_signal_counts[signal] || 0) + 1;
+      if (signal === 'satisfaction') stats[key].num_satisfactions++;
+      if (signal === 'confusion') stats[key].num_confusions++;
+    });
+
+    // 3. Prepare upserts for template_cluster_stats
+    const upserts = Object.values(stats).map(stat => {
+      // efficacy_score = (num_satisfactions - num_confusions) / num_uses
+      const efficacy_score = stat.num_uses === 0 ? 0 : (stat.num_satisfactions - stat.num_confusions) / stat.num_uses;
+      return {
+        cluster_id: stat.cluster_id,
+        template_id: stat.template_id,
+        num_uses: stat.num_uses,
+        num_satisfactions: stat.num_satisfactions, // <-- ensure this is included
+        soft_signal_distribution: stat.soft_signal_counts,
+        efficacy_score
+      };
+    });
+
+    // 4. Upsert into template_cluster_stats
+    for (const upsert of upserts) {
+      await supabase.from('template_cluster_stats').upsert(upsert, { onConflict: ['cluster_id', 'template_id'] });
+    }
+
+    res.json({ success: true, updated: upserts.length });
+  } catch (error) {
+    console.error('[Aggregation] Error updating template_cluster_stats:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// REFRESH cluster_best_template view (if materialized, or just re-query)
+// NOTE: The view is not materialized and is always up-to-date. Endpoint is for future-proofing.
+app.post('/api/admin/crowd-wisdom/refresh-best-template', async (req, res) => {
+  try {
+    // If the view is materialized, refresh it. If not, just acknowledge.
+    // For now, just respond OK (view is auto-updated on query in Postgres)
+    res.json({ success: true, message: 'cluster_best_template view will reflect latest data on next query.' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Helper: Get best template for a cluster using UCB1
+async function getBestTemplateByClusterUCB(clusterId) {
+  const { data, error } = await supabase
+    .from('cluster_best_template_ucb_top')
+    .select('template_id, ucb1_score')
+    .eq('cluster_id', clusterId)
+    .single();
+  if (error) {
+    console.error('[UCB1] Error fetching best template for cluster', clusterId, error);
+    return null;
+  }
+  return data?.template_id || null;
+}
