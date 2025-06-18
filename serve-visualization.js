@@ -3,6 +3,8 @@ import { supabase } from './server/lib/supabaseClient.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+// Using built-in fetch API (Node.js 18+)
+
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,54 +13,62 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3005;
 
+// Visualization server acts as a proxy to the main cluster API on port 3001
+
 // Middleware
 app.use(express.static(__dirname));
 app.use(express.json()); // Parse JSON request bodies
 
-// API endpoint to get clusters
+// API endpoint to get clusters - proxy to main cluster API
 app.get('/api/clusters', async (req, res) => {
   try {
-    console.log('Fetching clusters from database...');
+    console.log('Proxying clusters request to main cluster API...');
     
-    // Add query parameters for filtering
-    const { min_members, sort_by } = req.query;
-    
-    let query = supabase
-      .from('user_clusters')
-      .select('*');
-    
-    // Filter by minimum member count if specified
-    if (min_members && !isNaN(min_members)) {
-      query = query.gte('member_count', parseInt(min_members));
+    // Proxy to the main cluster API
+    const response = await fetch('http://localhost:3001/api/clusters');
+    if (!response.ok) {
+      throw new Error(`Cluster API returned ${response.status}: ${response.statusText}`);
     }
     
-    // Sort by specified field or default to member_count
-    const sortField = sort_by || 'member_count';
-    query = query.order(sortField, { ascending: false });
+    const data = await response.json();
+    console.log(`Successfully proxied cluster data: ${data.clusters?.length || 0} clusters`);
     
-    const { data, error } = await query;
-    
-    if (error) throw error;
-    
-    console.log(`Successfully fetched ${data.length} clusters`);
     res.json(data);
   } catch (error) {
-    console.error('Error fetching clusters:', error);
+    console.error('Error proxying clusters request:', error);
     res.status(500).json({ error: 'Failed to fetch clusters', details: error.message });
   }
 });
 
-// API endpoint to get users with their cluster assignments
+// API endpoint to get 2D visualization data - proxy to main cluster API
+app.get('/api/clusters/visualization', async (req, res) => {
+  try {
+    console.log('Proxying visualization data request to main cluster API...');
+    
+    const response = await fetch('http://localhost:3001/api/clusters/visualization');
+    if (!response.ok) {
+      throw new Error(`Cluster API returned ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log(`Successfully proxied visualization data`);
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Error proxying visualization data request:', error);
+    res.status(500).json({ error: 'Failed to fetch visualization data', details: error.message });
+  }
+});
+
+// API endpoint to get users with their cluster assignments - fallback implementation
 app.get('/api/clustered-users', async (req, res) => {
   try {
-    console.log('Fetching clustered users from database...');
+    console.log('Fetching clustered users with fallback method...');
     
-    // Add query parameters for filtering
     const { cluster_id, limit } = req.query;
-    
-    // Default to 100 users, but allow overriding
     const userLimit = limit && !isNaN(limit) ? parseInt(limit) : 100;
     
+    // Use direct database query as fallback
     let query = supabase
       .from('user_profiles')
       .select(`
@@ -93,6 +103,53 @@ app.get('/api/clustered-users', async (req, res) => {
   } catch (error) {
     console.error('Error fetching clustered users:', error);
     res.status(500).json({ error: 'Failed to fetch clustered users', details: error.message });
+  }
+});
+
+// API endpoint to regenerate clusters - proxy to main cluster API
+app.post('/api/clusters/regenerate', async (req, res) => {
+  try {
+    console.log('Proxying cluster regeneration request to main cluster API...');
+    
+    const response = await fetch('http://localhost:3001/api/clusters/regenerate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(req.body)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Cluster API returned ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log('Successfully proxied cluster regeneration request');
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Error proxying cluster regeneration request:', error);
+    res.status(500).json({ error: 'Failed to regenerate clusters', details: error.message });
+  }
+});
+
+// API endpoint to get cluster status - proxy to main cluster API
+app.get('/api/clusters/status', async (req, res) => {
+  try {
+    console.log('Proxying cluster status request to main cluster API...');
+    
+    const response = await fetch('http://localhost:3001/api/clusters/status');
+    if (!response.ok) {
+      throw new Error(`Cluster API returned ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log('Successfully proxied cluster status data');
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Error proxying cluster status request:', error);
+    res.status(500).json({ error: 'Failed to fetch cluster status', details: error.message });
   }
 });
 
@@ -141,33 +198,36 @@ app.post('/api/update-user-preferences', async (req, res) => {
     
     console.log(`Updated preferences for user ${user_id}`);
     
-    // Then call the stored procedure to recalculate the user's cluster
-    const { data, error } = await supabase.rpc('update_user_cluster_preferences', {
-      user_id_param: user_id,
-      technical_depth_param: technical_depth,
-      learning_style_param: learning_style,
-      interests_param: interests,
-      analogy_domains_param: preferred_analogy_domains
+    // Use the modern cluster assignment API
+    const assignmentResponse = await fetch('http://localhost:3001/api/clusters/assign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        userId: user_id,
+        preferences: {
+          technical_depth,
+          learning_style,
+          interests,
+          preferred_analogy_domains
+        }
+      })
     });
     
-    if (error) throw error;
+    if (!assignmentResponse.ok) {
+      throw new Error(`Assignment API returned ${assignmentResponse.status}: ${assignmentResponse.statusText}`);
+    }
     
-    console.log(`Reassigned user ${user_id} to cluster`);
+    const assignmentResult = await assignmentResponse.json();
     
-    // Get the new cluster assignment
-    const { data: assignment, error: assignmentError } = await supabase
-      .from('user_cluster_assignments')
-      .select('cluster_id, similarity')
-      .eq('user_id', user_id)
-      .single();
-    
-    if (assignmentError) throw assignmentError;
+    console.log(`Reassigned user ${user_id} to cluster using modern system`);
     
     res.json({
       success: true,
-      message: `User has been ${data ? 'reassigned to a new cluster' : 'updated but cluster remains the same'}`,
-      cluster_id: assignment?.cluster_id,
-      similarity: assignment?.similarity
+      message: `User has been ${assignmentResult.success ? 'reassigned to a new cluster' : 'updated but cluster remains the same'}`,
+      cluster_id: assignmentResult.clusterId,
+      similarity: null // Modern system doesn't return similarity score in this format
     });
   } catch (error) {
     console.error('Error updating user preferences:', error);

@@ -141,9 +141,9 @@ function ProgressDashboard() {
           </p>
         </div>
 
-        {/* Progress Summary Cards */}
+        {/* Progress Summary Cards with Cluster Insights */}
         {progressData && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
             <div className="bg-white overflow-hidden shadow rounded-lg">
               <div className="p-5">
                 <div className="flex items-center">
@@ -165,6 +165,34 @@ function ProgressDashboard() {
                 </div>
               </div>
             </div>
+            
+            {/* New: Cluster Performance Card */}
+            {progressData.cluster_insights && (
+              <div className="bg-white overflow-hidden shadow rounded-lg">
+                <div className="p-5">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <svg className="h-8 w-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </div>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">
+                          Learning Cluster
+                        </dt>
+                        <dd className="text-lg font-bold text-gray-900">
+                          {progressData.cluster_insights.clusterSize} learners
+                        </dd>
+                        <dd className="text-xs text-gray-500">
+                          {Math.round(progressData.cluster_performance?.avgClusterPercentile || 0)}% avg performance
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="bg-white overflow-hidden shadow rounded-lg">
               <div className="p-5">
@@ -240,6 +268,7 @@ function ProgressDashboard() {
             {[
               { id: 'overview', name: 'Overview', icon: '📊' },
               { id: 'topics', name: 'Topic Progress', icon: '📚' },
+              { id: 'cluster', name: 'Cluster Insights', icon: '👥' },
               { id: 'paths', name: 'Learning Paths', icon: '🗺️' },
               { id: 'achievements', name: 'Achievements', icon: '🏆' }
             ].map((tab) => (
@@ -371,9 +400,167 @@ function ProgressDashboard() {
                       {topic.quiz_scores.length > 0 && (
                         <p>🧠 {topic.avg_quiz_score}% avg quiz score</p>
                       )}
+                      {/* New: Cluster comparison data */}
+                      {topic.cluster_comparison && (
+                        <div className="mt-2 pt-2 border-t border-gray-200">
+                          <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            topic.cluster_comparison.performance_vs_cluster === 'above_average' ? 'bg-green-100 text-green-800' :
+                            topic.cluster_comparison.performance_vs_cluster === 'average' ? 'bg-blue-100 text-blue-800' :
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            🎯 {topic.cluster_comparison.cluster_percentile}% vs cluster
+                          </div>
+                          <p className="mt-1">
+                            👥 {topic.cluster_comparison.cluster_topic_users} peers learning this
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'cluster' && progressData && progressData.cluster_insights && (
+          <div className="space-y-6">
+            {/* Cluster Overview */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-5 sm:px-6">
+                <h3 className="text-lg font-medium text-gray-900">Your Learning Cluster</h3>
+                <p className="mt-1 text-sm text-gray-500">You're grouped with learners who have similar preferences and learning styles</p>
+              </div>
+              <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">{progressData.cluster_insights.clusterSize}</div>
+                    <div className="text-sm text-gray-500">Total Learners</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">{progressData.cluster_insights.totalTopicsInCluster}</div>
+                    <div className="text-sm text-gray-500">Topics Explored</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{progressData.cluster_insights.avgTopicsPerUser}</div>
+                    <div className="text-sm text-gray-500">Avg Topics/User</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Performance vs Cluster */}
+            {progressData.cluster_performance && (
+              <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+                <div className="px-4 py-5 sm:px-6">
+                  <h3 className="text-lg font-medium text-gray-900">Your Performance vs Cluster</h3>
+                  <p className="mt-1 text-sm text-gray-500">How you compare to other learners in your cluster</p>
+                </div>
+                <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{progressData.cluster_performance.strongerThanCluster}</div>
+                      <div className="text-sm text-gray-500">Topics Above Average</div>
+                      <div className="mt-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          🚀 Outperforming
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-600">{progressData.cluster_performance.averageInCluster}</div>
+                      <div className="text-sm text-gray-500">Topics At Average</div>
+                      <div className="mt-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          📊 On Track
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-yellow-600">{progressData.cluster_performance.weakerThanCluster}</div>
+                      <div className="text-sm text-gray-500">Topics Below Average</div>
+                      <div className="mt-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                          📈 Growth Area
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Overall Performance Indicator */}
+                  <div className="mt-6 bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">Overall Cluster Performance</span>
+                      <span className="text-sm font-bold text-gray-900">
+                        {Math.round(progressData.cluster_performance.avgClusterPercentile)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div 
+                        className={`h-3 rounded-full transition-all duration-500 ${
+                          progressData.cluster_performance.avgClusterPercentile >= 80 ? 'bg-green-500' :
+                          progressData.cluster_performance.avgClusterPercentile >= 60 ? 'bg-blue-500' :
+                          progressData.cluster_performance.avgClusterPercentile >= 40 ? 'bg-yellow-500' :
+                          'bg-red-500'
+                        }`}
+                        style={{ width: `${progressData.cluster_performance.avgClusterPercentile}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      You're performing at the {Math.round(progressData.cluster_performance.avgClusterPercentile)}% percentile within your learning cluster
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Topics with Cluster Comparisons */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-5 sm:px-6">
+                <h3 className="text-lg font-medium text-gray-900">Topic-Specific Cluster Comparisons</h3>
+                <p className="mt-1 text-sm text-gray-500">Detailed breakdown of how you compare in each topic</p>
+              </div>
+              <div className="border-t border-gray-200">
+                <div className="divide-y divide-gray-200">
+                  {progressData.progress
+                    .filter(topic => topic.cluster_comparison)
+                    .sort((a, b) => b.cluster_comparison.cluster_percentile - a.cluster_comparison.cluster_percentile)
+                    .map((topic, index) => (
+                    <div key={index} className="px-4 py-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <h4 className="text-sm font-semibold text-gray-900">
+                            {formatTopicName(topic.topic_name)}
+                          </h4>
+                          <div className="mt-1 flex items-center space-x-4 text-xs text-gray-500">
+                            <span>📖 You: {topic.session_count} sessions</span>
+                            <span>👥 Cluster avg: {topic.cluster_comparison.cluster_avg_sessions} sessions</span>
+                            <span>🎯 {topic.cluster_comparison.cluster_topic_users} peers learning this</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                            topic.cluster_comparison.performance_vs_cluster === 'above_average' ? 'bg-green-100 text-green-800' :
+                            topic.cluster_comparison.performance_vs_cluster === 'average' ? 'bg-blue-100 text-blue-800' :
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {topic.cluster_comparison.cluster_percentile}% percentile
+                          </div>
+                          <div className="w-20 bg-gray-200 rounded-full h-2">
+                            <div 
+                              className={`h-2 rounded-full ${
+                                topic.cluster_comparison.performance_vs_cluster === 'above_average' ? 'bg-green-500' :
+                                topic.cluster_comparison.performance_vs_cluster === 'average' ? 'bg-blue-500' :
+                                'bg-yellow-500'
+                              }`}
+                              style={{ width: `${topic.cluster_comparison.cluster_percentile}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
