@@ -4,6 +4,14 @@ import Fuse from 'fuse.js';
 // Supabase client (we'll import from existing client)
 import { supabase } from '../lib/supabaseClient.js';
 
+// Import the new enhancement functions
+import { 
+  moderateContent, 
+  classifyWithPatterns, 
+  scoreFeedbackQuality, 
+  generateFeedbackEmbedding 
+} from './feedbackEnhancements.js';
+
 // Enable debug mode
 const DEBUG = true;
 
@@ -70,27 +78,45 @@ export function classifyFeedback(message) {
 }
 
 // Store feedback in the secret_feedback table
-export async function storeSecretFeedback(userId, message, feedbackType, conversationId = null) {
+export async function storeSecretFeedback(userId, message, feedbackType, conversationId = null, options = {}) {
   try {
     if (DEBUG) {
       console.log('[SECRET FEEDBACK DEBUG] Attempting to store:', {
         userId,
         message,
         feedbackType,
-        conversationId
+        conversationId,
+        options
       });
+    }
+
+    // Calculate quality score
+    const qualityScore = options.qualityScore || scoreFeedbackQuality(message);
+    
+    // Generate embedding for future clustering
+    const embedding = options.embedding || generateFeedbackEmbedding(message);
+    
+    // Prepare the insert data
+    const insertData = {
+      user_id: userId,
+      message: message,
+      feedback_type: feedbackType,
+      conversation_id: conversationId,
+      quality_score: qualityScore,
+      metadata: options.metadata || {},
+      processed_by: options.processedBy || 'phrase_matching',
+      confidence_score: options.confidenceScore || 0.8
+    };
+
+    // Only add embedding if we have one (to avoid null values)
+    if (embedding) {
+      insertData.embedding = embedding;
     }
     
     const { data, error } = await supabase
       .from('secret_feedback')
-      .insert([
-        {
-          user_id: userId,
-          message: message,
-          feedback_type: feedbackType,
-          conversation_id: conversationId
-        }
-      ]);
+      .insert([insertData])
+      .select();
 
     if (error) {
       console.error('[SECRET FEEDBACK DEBUG] Error storing secret feedback:', error);
@@ -176,46 +202,144 @@ export async function getRecentFeedback(userId, limit = 50) {
   }
 }
 
-// Process and store a user message for secret feedback
-export async function processUserMessage(userId, message, conversationId = null) {
+// Enhanced process and store a user message for secret feedback
+export async function processUserMessage(userId, message, conversationId = null, metadata = {}) {
   if (DEBUG) {
     console.log('[SECRET FEEDBACK DEBUG] Processing user message:', {
       userId,
       message,
-      conversationId
+      conversationId,
+      metadata
     });
   }
   
-  const feedbackType = classifyFeedback(message);
+  // Step 1: Moderate content for spam/abuse
+  if (!moderateContent(message)) {
+    if (DEBUG) {
+      console.log('[SECRET FEEDBACK DEBUG] Message failed content moderation');
+    }
+    return { 
+      feedbackType: 'spam', 
+      stored: false, 
+      error: 'Content failed moderation (spam/inappropriate)',
+      qualityScore: 0,
+      processedBy: 'content_moderation'
+    };
+  }
+
+  // Step 2: Try phrase-based classification first
+  let feedbackType = classifyFeedback(message);
+  let processedBy = 'phrase_matching';
+  let confidenceScore = 0.8; // Default confidence for phrase matching
   
   if (DEBUG) {
-    console.log('[SECRET FEEDBACK DEBUG] Classified as:', feedbackType);
+    console.log('[SECRET FEEDBACK DEBUG] Phrase-based classification:', feedbackType);
   }
   
-  // Only store if we can classify it (not 'unknown')
-  if (feedbackType !== 'unknown') {
-    const result = await storeSecretFeedback(userId, message, feedbackType, conversationId);
+  // Step 3: Use pattern-based classification fallback if phrase matching returns unknown
+  if (feedbackType === 'unknown') {
+    if (DEBUG) {
+      console.log('[SECRET FEEDBACK DEBUG] Trying pattern classification fallback');
+    }
+    
+    feedbackType = classifyWithPatterns(message);
+    processedBy = 'pattern_classification';
+    confidenceScore = 0.6; // Lower confidence for pattern fallback
+    
+    if (DEBUG) {
+      console.log('[SECRET FEEDBACK DEBUG] Pattern classification result:', feedbackType);
+    }
+  }
+
+  // Step 4: Calculate quality score
+  const qualityScore = scoreFeedbackQuality(message);
+  
+  if (DEBUG) {
+    console.log('[SECRET FEEDBACK DEBUG] Quality score:', qualityScore);
+  }
+
+  // Step 5: Store feedback if it's valid (not unknown or spam)
+  if (feedbackType !== 'unknown' && feedbackType !== 'spam') {
+    const storeOptions = {
+      qualityScore,
+      metadata: {
+        ...metadata,
+        page: metadata.page,
+        feature: metadata.feature,
+        sessionId: metadata.sessionId
+      },
+      processedBy,
+      confidenceScore
+    };
+
+    const result = await storeSecretFeedback(userId, message, feedbackType, conversationId, storeOptions);
     
     if (DEBUG) {
       console.log('[SECRET FEEDBACK DEBUG] Storage result:', result);
     }
     
-    return {
-      feedbackType,
-      stored: result.success,
-      error: result.error
+    // Calculate updated user score
+    const userScore = await calculateScore(userId);
+    
+    return { 
+      feedbackType, 
+      stored: result.success, 
+      error: result.error,
+      qualityScore,
+      processedBy,
+      confidenceScore,
+      userScore,
+      feedbackId: result.data?.[0]?.id
     };
   }
   
-  if (DEBUG) {
-    console.log('[SECRET FEEDBACK DEBUG] Message was classified as unknown, not storing');
+  // Step 6: Handle unknown feedback - could prompt for clarification
+  if (feedbackType === 'unknown') {
+    if (DEBUG) {
+      console.log('[SECRET FEEDBACK DEBUG] Unknown feedback - could prompt for clarification');
+    }
+    
+    return { 
+      feedbackType: 'unknown', 
+      stored: false, 
+      error: null,
+      qualityScore,
+      processedBy,
+      suggestion: getFollowUpSuggestion(message),
+      userScore: await calculateScore(userId)
+    };
+  }
+
+  // Default return for any other cases
+  return { 
+    feedbackType, 
+    stored: false, 
+    error: 'Unhandled feedback type',
+    qualityScore,
+    processedBy
+  };
+}
+
+/**
+ * Generate follow-up suggestions for unknown feedback
+ * @param {string} message - The original message
+ * @returns {string} - Suggested follow-up question
+ */
+function getFollowUpSuggestion(message) {
+  // Analyze the message to provide contextual suggestions
+  if (message.length < 10) {
+    return "Could you tell us more? For example, what specifically didn't work well?";
   }
   
-  return {
-    feedbackType: 'unknown',
-    stored: false,
-    error: null
-  };
+  if (message.toLowerCase().includes('problem') || message.toLowerCase().includes('issue')) {
+    return "Could you describe what the problem was and how we might improve it?";
+  }
+  
+  if (message.toLowerCase().includes('good') || message.toLowerCase().includes('nice')) {
+    return "Thanks! What specifically did you find helpful?";
+  }
+  
+  return "Could you help us understand your feedback better? What specific aspect would you like us to know about?";
 }
 
 // Calculate user feedback score for a specific conversation

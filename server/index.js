@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
 import setupQuizRoutes from './api/quizRoutes.js';
 import setupClusterRoutes from './api/clusterRoutes.js';
+import feedbackRoutes from './api/feedbackRoutes.js';
 // Import clustering service
 import { clusteringService } from './utils/clusteringService.js';
 
@@ -2115,6 +2116,7 @@ app.post('/api/topics', async (req, res) => {
 
 setupQuizRoutes(app, supabase, openai);
 setupClusterRoutes(app, supabase);
+app.use('/api/feedback', feedbackRoutes);
 
 // Add a route to fix existing structured templates
 app.post('/api/admin/fix-structured-templates', async (req, res) => {
