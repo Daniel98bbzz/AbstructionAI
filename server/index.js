@@ -2928,7 +2928,90 @@ app.get('/api/user-topics/progress', async (req, res) => {
       });
     }
     
-    // 🆕 Enhanced mastery level calculation with feedback integration
+    // 🆕 Enhanced mastery level calculation with feedback integration + CLUSTER BENCHMARKING
+    // Get user's cluster information for benchmarking
+    const { data: userCluster, error: clusterError } = await supabase
+      .from('user_profiles')
+      .select('cluster_id')
+      .eq('id', user_id)
+      .single();
+    
+    let clusterBenchmarks = {};
+    let clusterInsights = {};
+    
+    if (!clusterError && userCluster?.cluster_id) {
+      console.log(`[Topic Progress] User belongs to cluster ${userCluster.cluster_id} - calculating cluster benchmarks`);
+      
+      // Get cluster peers' progress for benchmarking
+      const { data: clusterPeers, error: peersError } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('cluster_id', userCluster.cluster_id)
+        .neq('id', user_id)
+        .limit(50);
+      
+      if (!peersError && clusterPeers?.length > 0) {
+        const peerIds = clusterPeers.map(p => p.id);
+        
+        // Get cluster peers' sessions for topic benchmarking
+        const { data: peerSessions, error: peerSessionsError } = await supabase
+          .from('sessions')
+          .select('secret_topic, created_at, user_id')
+          .in('user_id', peerIds)
+          .not('secret_topic', 'is', null)
+          .gte('created_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()); // Last 90 days
+        
+        if (!peerSessionsError && peerSessions?.length > 0) {
+          // Calculate cluster benchmarks for each topic
+          const peerTopicStats = {};
+          
+          peerSessions.forEach(session => {
+            const topic = session.secret_topic;
+            if (!peerTopicStats[topic]) {
+              peerTopicStats[topic] = {
+                totalSessions: 0,
+                uniqueUsers: new Set(),
+                sessionCounts: []
+              };
+            }
+            
+            peerTopicStats[topic].totalSessions++;
+            peerTopicStats[topic].uniqueUsers.add(session.user_id);
+          });
+          
+          // Calculate user-specific session counts for benchmarking
+          Object.keys(peerTopicStats).forEach(topic => {
+            const userSessionCounts = {};
+            peerSessions.filter(s => s.secret_topic === topic).forEach(session => {
+              userSessionCounts[session.user_id] = (userSessionCounts[session.user_id] || 0) + 1;
+            });
+            
+            const sessionCountsArray = Object.values(userSessionCounts);
+            const avgSessionsPerUser = sessionCountsArray.length > 0 
+              ? sessionCountsArray.reduce((sum, count) => sum + count, 0) / sessionCountsArray.length 
+              : 0;
+            
+            clusterBenchmarks[topic] = {
+              avgSessionsPerUser: Math.round(avgSessionsPerUser * 10) / 10,
+              totalUsers: peerTopicStats[topic].uniqueUsers.size,
+              popularityScore: peerTopicStats[topic].totalSessions / peerIds.length, // Sessions per cluster member
+              clusterSize: peerIds.length + 1 // Include current user
+            };
+          });
+          
+          // Calculate cluster insights
+          clusterInsights = {
+            clusterId: userCluster.cluster_id,
+            clusterSize: peerIds.length + 1,
+            totalTopicsInCluster: Object.keys(clusterBenchmarks).length,
+            avgTopicsPerUser: Object.keys(clusterBenchmarks).length > 0 
+              ? (Object.keys(clusterBenchmarks).length / (peerIds.length + 1)).toFixed(1) 
+              : 0
+          };
+        }
+      }
+    }
+
     Object.keys(topicProgress).forEach(topic => {
       const progress = topicProgress[topic];
       
@@ -2975,14 +3058,50 @@ app.get('/api/user-topics/progress', async (req, res) => {
       // Estimate learning hours (rough calculation: 1 session = 0.5 hours)
       progress.learning_hours = progress.session_count * 0.5;
       
-      // 🆕 Enhanced mastery level calculation (0-100)
-      // NEW WEIGHTS: Session Count (30%), Quiz Performance (30%), Feedback Quality (25%), Learning Hours (15%)
-      const sessionScore = Math.min(progress.session_count * 3.75, 30); // Max 30 points for sessions (8 sessions = max)
-      const quizScore = avgQuizScore * 0.3; // Quiz performance weighted 30%
-      const feedbackScore = feedbackQualityScore * 0.25; // Feedback quality weighted 25%
+      // 🆕 Enhanced mastery level calculation with CLUSTER-AWARE SCORING (0-100)
+      // NEW WEIGHTS: Session Count (25%), Quiz Performance (25%), Feedback Quality (20%), Learning Hours (15%), Cluster Benchmark (15%)
+      const sessionScore = Math.min(progress.session_count * 3.125, 25); // Max 25 points for sessions (8 sessions = max)
+      const quizScore = avgQuizScore * 0.25; // Quiz performance weighted 25%
+      const feedbackScore = feedbackQualityScore * 0.20; // Feedback quality weighted 20%
       const hoursScore = Math.min(progress.learning_hours * 1.5, 15); // Max 15 points for hours (10 hours = max)
       
-      progress.mastery_level = Math.round(sessionScore + quizScore + feedbackScore + hoursScore);
+      // 🎯 NEW: Cluster-aware benchmark score (15%)
+      let clusterScore = 0;
+      const benchmark = clusterBenchmarks[topic];
+      if (benchmark) {
+        // Compare user's session count vs cluster average
+        const sessionRatio = benchmark.avgSessionsPerUser > 0 
+          ? Math.min(progress.session_count / benchmark.avgSessionsPerUser, 2) // Cap at 2x average
+          : 1;
+        
+        // Calculate percentile within cluster (0-15 points)
+        if (sessionRatio >= 1.5) {
+          clusterScore = 15; // Top performer in cluster
+        } else if (sessionRatio >= 1.2) {
+          clusterScore = 12; // Above average
+        } else if (sessionRatio >= 0.8) {
+          clusterScore = 8; // Average
+        } else if (sessionRatio >= 0.5) {
+          clusterScore = 5; // Below average
+        } else {
+          clusterScore = 2; // Beginner in cluster
+        }
+        
+        // Store cluster comparison data
+        progress.cluster_comparison = {
+          user_sessions: progress.session_count,
+          cluster_avg_sessions: benchmark.avgSessionsPerUser,
+          cluster_percentile: Math.round((sessionRatio / 2) * 100), // Normalize to 0-100%
+          cluster_popularity: benchmark.popularityScore.toFixed(1),
+          cluster_topic_users: benchmark.totalUsers,
+          performance_vs_cluster: sessionRatio >= 1.2 ? 'above_average' : 
+                                 sessionRatio >= 0.8 ? 'average' : 'below_average'
+        };
+      } else {
+        progress.cluster_comparison = null;
+      }
+      
+      progress.mastery_level = Math.round(sessionScore + quizScore + feedbackScore + hoursScore + clusterScore);
       
       // Determine difficulty progression
       if (progress.mastery_level >= 80) {
@@ -3018,7 +3137,22 @@ app.get('/api/user-topics/progress', async (req, res) => {
       progress.feedback_count = progress.feedback_scores.length + progress.component_ratings.length;
     });
     
-    console.log(`[Topic Progress] Generated progress for ${Object.keys(topicProgress).length} topics with feedback integration`);
+    console.log(`[Topic Progress] Generated progress for ${Object.keys(topicProgress).length} topics with feedback integration and cluster benchmarking`);
+    
+    // Calculate cluster-aware summary metrics
+    const clusterProgressSummary = {
+      topicsWithClusterData: Object.values(topicProgress).filter(p => p.cluster_comparison).length,
+      avgClusterPercentile: Object.values(topicProgress)
+        .filter(p => p.cluster_comparison)
+        .reduce((sum, p) => sum + p.cluster_comparison.cluster_percentile, 0) / 
+        Math.max(1, Object.values(topicProgress).filter(p => p.cluster_comparison).length),
+      strongerThanCluster: Object.values(topicProgress)
+        .filter(p => p.cluster_comparison?.performance_vs_cluster === 'above_average').length,
+      averageInCluster: Object.values(topicProgress)
+        .filter(p => p.cluster_comparison?.performance_vs_cluster === 'average').length,
+      weakerThanCluster: Object.values(topicProgress)
+        .filter(p => p.cluster_comparison?.performance_vs_cluster === 'below_average').length
+    };
     
     res.json({
       success: true,
@@ -3032,13 +3166,16 @@ app.get('/api/user-topics/progress', async (req, res) => {
         avg_mastery: Object.values(topicProgress).reduce((sum, p) => sum + p.mastery_level, 0) / Object.keys(topicProgress).length || 0,
         avg_feedback_quality: Object.values(topicProgress).reduce((sum, p) => sum + p.feedback_quality, 0) / Object.keys(topicProgress).length || 0
       },
+      cluster_insights: clusterInsights,
+      cluster_performance: clusterProgressSummary,
       feedback_integration: {
         enabled: true,
         weights: {
-          sessions: '30%',
-          quizzes: '30%',
-          feedback: '25%',
-          hours: '15%'
+          sessions: '25%',
+          quizzes: '25%',
+          feedback: '20%',
+          hours: '15%',
+          cluster_benchmark: '15%'
         }
       }
     });
@@ -3748,12 +3885,21 @@ app.get('/api/analytics/clusters/distribution', async (req, res) => {
   try {
     console.log('[Analytics] Fetching cluster distribution analytics');
     
-    const { data: profiles, error } = await supabase
+    // Get all user profiles and filter out invalid cluster_ids in JavaScript
+    const { data: allProfiles, error } = await supabase
       .from('user_profiles')
-      .select('cluster_id')
-      .not('cluster_id', 'eq', null);
+      .select('cluster_id');
     
     if (error) throw error;
+    
+    // Filter out null, undefined, and string "null" values
+    const profiles = allProfiles.filter(profile => 
+      profile.cluster_id && 
+      profile.cluster_id !== 'null' && 
+      profile.cluster_id !== '' &&
+      typeof profile.cluster_id === 'string' &&
+      profile.cluster_id.length > 0
+    );
     
     // Count users per cluster
     const clusterCounts = {};

@@ -1,6 +1,6 @@
 // server-integration.js
 import express from 'express';
-import UserClusterManager from './server/managers/UserClusterManager.js';
+import ModernClusterManager from './server/managers/ModernClusterManager.js';
 import { runClusteringTest, cleanupTestData } from './test-clustering.js';
 import { supabase } from './server/lib/supabaseClient.js';
 import dotenv from 'dotenv';
@@ -86,7 +86,7 @@ router.post('/api/generate-clusters', async (req, res) => {
     const { k = 3, method = 'k_means' } = req.body || {};
     
     console.log(`Generating ${k} clusters using ${method}...`);
-    const firstClusterId = await UserClusterManager.generateClusters(k);
+    const firstClusterId = await ModernClusterManager.generateClusters(k);
     
     res.json({ 
       success: true, 

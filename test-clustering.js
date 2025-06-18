@@ -3,7 +3,7 @@ dotenv.config();
 
 // Test script for user preference clustering functionality
 import { supabase } from './server/lib/supabaseClient.js';
-import UserClusterManager from './server/managers/UserClusterManager.js';
+import ModernClusterManager from './server/managers/ModernClusterManager.js';
 import crypto from 'crypto';
 
 // Sample user preferences for testing
@@ -291,7 +291,7 @@ async function assignUsersToCluster() {
     console.log('User preferences:', user.preferences);
     
     try {
-      const clusterId = await UserClusterManager.assignUserToCluster(
+      const clusterId = await ModernClusterManager.assignUserToCluster(
         user.id, 
         user.preferences
       );
@@ -484,7 +484,7 @@ async function testKMeansClustering() {
   
   try {
     // Generate clusters using k-means (k=2)
-    const firstClusterId = await UserClusterManager.generateClusters(2);
+    const firstClusterId = await ModernClusterManager.generateClusters(2);
     
     console.log(`Generated clusters with first cluster ID: ${firstClusterId}`);
     

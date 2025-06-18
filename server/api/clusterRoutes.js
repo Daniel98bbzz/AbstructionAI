@@ -1,9 +1,10 @@
 import express from 'express';
-import UserClusterManager from '../managers/UserClusterManager.js';
+import ModernClusterManager from '../managers/ModernClusterManager.js';
+import { getClusteringStatus } from '../config/clustering.js';
 
 export default function setupClusterRoutes(app, supabase) {
-  // UserClusterManager is already instantiated as a singleton
-  const clusterManager = UserClusterManager;
+  // ModernClusterManager is already instantiated as a singleton
+  const clusterManager = ModernClusterManager;
   // Ensure cluster manager uses the passed supabase instance
   if (supabase) {
     clusterManager.supabase = supabase;
@@ -710,6 +711,149 @@ export default function setupClusterRoutes(app, supabase) {
     } catch (error) {
       console.error('Error fetching cluster quizzes:', error);
       res.status(500).json({ error: 'Failed to fetch cluster quizzes', details: error.message });
+    }
+  });
+
+  /**
+   * Get clustering system status and configuration
+   */
+  app.get('/api/clusters/status', async (req, res) => {
+    try {
+      const status = getClusteringStatus();
+      
+      // Get current cluster statistics
+      const vizData = await clusterManager.getClusterVisualizationData();
+      
+      const response = {
+        ...status,
+        statistics: vizData ? {
+          totalClusters: vizData.clusters.length,
+          totalUsers: vizData.totalUsers,
+          averageClusterSize: (vizData.totalUsers / vizData.clusters.length).toFixed(1),
+          clusterDistribution: vizData.clusters.map((cluster, i) => ({
+            clusterId: cluster.id,
+            memberCount: cluster.memberCount,
+            centroid: cluster.centroid
+          }))
+        } : null
+      };
+      
+      res.json(response);
+    } catch (error) {
+      console.error('Error fetching clustering status:', error);
+      res.status(500).json({ error: 'Failed to fetch clustering status' });
+    }
+  });
+
+  /**
+   * Get cluster visualization data (for admin dashboards)
+   */
+  app.get('/api/clusters/visualization', async (req, res) => {
+    try {
+      const vizData = await clusterManager.getClusterVisualizationData();
+      
+      if (!vizData) {
+        return res.status(404).json({ error: 'No visualization data available' });
+      }
+      
+      res.json(vizData);
+    } catch (error) {
+      console.error('Error fetching cluster visualization data:', error);
+      res.status(500).json({ error: 'Failed to fetch visualization data' });
+    }
+  });
+
+  /**
+   * Trigger cluster regeneration (admin endpoint)
+   */
+  app.post('/api/clusters/regenerate', async (req, res) => {
+    try {
+      const { numClusters = 8 } = req.body;
+      
+      console.log(`[Admin] Triggering cluster regeneration with ${numClusters} clusters`);
+      
+      const firstClusterId = await clusterManager.generateClusters(numClusters);
+      
+      // Get updated visualization data
+      const vizData = await clusterManager.getClusterVisualizationData();
+      
+      res.json({
+        success: true,
+        message: `Successfully regenerated ${vizData?.clusters.length || 0} clusters`,
+        firstClusterId,
+        statistics: vizData
+      });
+    } catch (error) {
+      console.error('Error regenerating clusters:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to regenerate clusters',
+        details: error.message 
+      });
+    }
+  });
+
+  /**
+   * Get cluster prompt for a user
+   */
+  app.get('/api/clusters/prompt/:userId', async (req, res) => {
+    try {
+      const userId = req.params.userId;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required' });
+      }
+      
+      const clusterPrompt = await clusterManager.getClusterPromptForUser(userId);
+      
+      if (!clusterPrompt) {
+        return res.json({ 
+          prompt: null,
+          message: 'No cluster prompt available for this user'
+        });
+      }
+      
+      res.json({ 
+        prompt: clusterPrompt,
+        length: clusterPrompt.length
+      });
+    } catch (error) {
+      console.error('Error fetching cluster prompt:', error);
+      res.status(500).json({ error: 'Failed to fetch cluster prompt' });
+    }
+  });
+
+  /**
+   * Assign or reassign a user to a cluster
+   */
+  app.post('/api/clusters/assign', async (req, res) => {
+    try {
+      const { userId, preferences } = req.body;
+      
+      if (!userId || !preferences) {
+        return res.status(400).json({ 
+          error: 'User ID and preferences are required' 
+        });
+      }
+      
+      const clusterId = await clusterManager.assignUserToCluster(userId, preferences);
+      
+      // Get cluster info
+      const clusterPrompt = await clusterManager.getClusterPromptForUser(userId);
+      
+      res.json({
+        success: true,
+        clusterId,
+        prompt: clusterPrompt,
+        message: 'User successfully assigned to cluster'
+      });
+    } catch (error) {
+      console.error('Error assigning user to cluster:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to assign user to cluster',
+        details: error.message 
+      });
     }
   });
 } 
