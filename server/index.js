@@ -454,8 +454,8 @@ TOPIC:`;
       crowd_wisdom: response.crowd_wisdom
     };
 
-    // 🆕 GENERATE EXAMPLES AND ABSTRACT SIMULTANEOUSLY WITH MAIN RESPONSE
-    console.log('[Tab Content Generation] Starting simultaneous generation of Examples and Abstract content');
+    // 🆕 GENERATE EXAMPLES, ABSTRACT, QUIZ, AND FLASH CARDS SIMULTANEOUSLY WITH MAIN RESPONSE
+    console.log('[Tab Content Generation] Starting simultaneous generation of Examples, Abstract, Quiz, and Flash Cards content');
     
     try {
       // Get user preferences for better content generation
@@ -474,8 +474,8 @@ TOPIC:`;
         }
       }
 
-      // Generate Examples and Abstract content in parallel
-      const [examplesResult, abstractResult] = await Promise.allSettled([
+      // Generate Examples, Abstract, Quiz, and Flash Cards content in parallel
+      const [examplesResult, abstractResult, quizResult, flashCardsResult] = await Promise.allSettled([
         // Generate Examples
         (async () => {
           const examplesPrompt = `Based on the following question and explanation, generate practical examples that help illustrate the concept. Make the examples concrete, diverse, and easy to understand.
@@ -547,12 +547,184 @@ Make the analogies vivid and easy to visualize.`;
           });
           
           return abstractCompletion.choices[0].message.content;
+        })(),
+        
+        // Generate Quiz content
+        (async () => {
+          const difficultyLevel = userPreferences?.technical_depth > 75 ? 'hard' : 
+                                  userPreferences?.technical_depth > 40 ? 'medium' : 'easy';
+          
+          const quizPrompt = `Based on the following question and explanation, create a multiple-choice quiz with 5 questions related to this topic.
+
+Original Question: ${query}
+
+Main Explanation: ${response.explanation.substring(0, 1000)}...
+
+Create a quiz with ${difficultyLevel} difficulty level. For each question:
+1. Create 4 answer choices (A, B, C, D)
+2. Make sure only ONE answer is correct
+3. Make the incorrect answers plausible but clearly wrong upon inspection
+4. Vary the position of the correct answer (don't always make A or B the correct answer)
+5. Create questions that test understanding of different aspects of the topic
+
+Format your response as a JSON object with the following structure:
+{
+  "title": "Quiz title here",
+  "description": "Brief description of the quiz",
+  "questions": [
+    {
+      "question": "Question text here?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctAnswer": 0,
+      "explanation": "Brief explanation of why this answer is correct"
+    }
+  ]
+}
+
+The correctAnswer field should be the INDEX (0-3) of the correct option in the options array.`;
+
+          const quizCompletion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: quizPrompt }],
+            temperature: 0.7,
+            max_tokens: 3000
+          });
+          
+          const responseText = quizCompletion.choices[0].message.content;
+          
+          try {
+            // First try to extract JSON from markdown code blocks
+            let cleanedText = responseText;
+            
+            // Remove markdown code blocks if present
+            const codeBlockMatch = cleanedText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+            if (codeBlockMatch) {
+              cleanedText = codeBlockMatch[1];
+            }
+            
+            // Try to find JSON object in the response
+            const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              return JSON.parse(jsonMatch[0]);
+            } else {
+              // Try parsing the cleaned text directly
+              return JSON.parse(cleanedText);
+            }
+          } catch (parseError) {
+            console.error('[Tab Content Generation] Error parsing quiz JSON:', parseError);
+            console.error('[Tab Content Generation] Raw quiz response:', responseText);
+            
+            // Return fallback quiz structure
+            return {
+              questions: [
+                {
+                  question: "What are the key concepts of this topic?",
+                  options: ["Basic principles", "Advanced techniques", "Common applications", "All of the above"],
+                  correctAnswer: 3,
+                  explanation: "This topic encompasses multiple aspects including principles, techniques, and applications."
+                },
+                {
+                  question: "Why is this concept important?",
+                  options: ["It's fundamental", "It's practical", "It's widely used", "All of the above"],
+                  correctAnswer: 3,
+                  explanation: "The concept is important for multiple reasons including its fundamental nature and practical applications."
+                },
+                {
+                  question: "What should you focus on when learning this topic?",
+                  options: ["Memorizing facts", "Understanding principles", "Practicing applications", "Both B and C"],
+                  correctAnswer: 3,
+                  explanation: "Effective learning combines understanding core principles with practical application."
+                }
+              ]
+            };
+          }
+        })(),
+        
+        // Generate Flash Cards content
+        (async () => {
+          const flashCardsPrompt = `Based on the following question and explanation, create educational flash cards that help reinforce key concepts and definitions.
+
+Original Question: ${query}
+
+Main Explanation: ${response.explanation.substring(0, 1000)}...
+
+Please create 5 flash cards with:
+1. A clear, concise question on the front
+2. A precise, informative answer on the back
+3. Focus on key facts, definitions, and relationships
+4. Make them suitable for spaced repetition learning
+
+${userPreferences?.technical_depth > 70 ? 
+  'Create more advanced, technical questions.' : 
+  userPreferences?.technical_depth < 30 ? 
+  'Keep questions simple and beginner-friendly.' :
+  'Create questions at an intermediate level.'}
+
+Respond with a valid JSON array of objects:
+[
+  { "question": "Front side question text", "answer": "Back side answer text" },
+  { "question": "Front side question text", "answer": "Back side answer text" },
+  ...
+]`;
+
+          const flashCardsCompletion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: flashCardsPrompt }],
+            temperature: 0.7,
+            max_tokens: 2000
+          });
+          
+          const responseText = flashCardsCompletion.choices[0].message.content;
+          
+          try {
+            // Look for JSON array in the response
+            const jsonMatch = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+            if (jsonMatch) {
+              return JSON.parse(jsonMatch[0]);
+            } else {
+              // Fallback parsing from Q&A format
+              const cards = [];
+              const qaMatches = responseText.matchAll(/(?:Question|Q)[:\.]?\s*(.+?)(?:\n|\r\n?)+(?:Answer|A)[:\.]?\s*(.+?)(?=\n\s*(?:Question|Q)[:\.]?|\n\s*\d+[:\.]|$)/gs);
+              
+              for (const match of qaMatches) {
+                cards.push({
+                  question: match[1].trim(),
+                  answer: match[2].trim()
+                });
+              }
+              
+              if (cards.length > 0) {
+                return cards;
+              } else {
+                // Final fallback
+                return [
+                  { question: `What is ${query}?`, answer: "A key concept that helps organize and solve problems in this domain." },
+                  { question: "What are the main components of this concept?", answer: "The concept typically consists of several key elements that work together." },
+                  { question: "Why is this concept important?", answer: "It provides a fundamental framework for understanding this topic area." },
+                  { question: "How is this concept applied in practice?", answer: "The concept is applied through specific processes and techniques." },
+                  { question: "What should you remember about this concept?", answer: "Focus on understanding the core principles and their practical applications." }
+                ];
+              }
+            }
+          } catch (parseError) {
+            console.error('[Tab Content Generation] Error parsing flash cards JSON:', parseError);
+            // Use fallback cards
+            return [
+              { question: `What is ${query}?`, answer: "A key concept that helps organize and solve problems in this domain." },
+              { question: "What are the main components of this concept?", answer: "The concept typically consists of several key elements that work together." },
+              { question: "Why is this concept important?", answer: "It provides a fundamental framework for understanding this topic area." },
+              { question: "How is this concept applied in practice?", answer: "The concept is applied through specific processes and techniques." },
+              { question: "What should you remember about this concept?", answer: "Focus on understanding the core principles and their practical applications." }
+            ];
+          }
         })()
       ]);
 
       // Process results and save to database
       let examplesContent = null;
       let abstractContent = null;
+      let quizContent = null;
+      let flashCardsContent = null;
 
       if (examplesResult.status === 'fulfilled') {
         examplesContent = examplesResult.value;
@@ -568,7 +740,21 @@ Make the analogies vivid and easy to visualize.`;
         console.error('[Tab Content Generation] Abstract generation failed:', abstractResult.reason);
       }
 
-      // Save Examples and Abstract content to database
+      if (quizResult.status === 'fulfilled') {
+        quizContent = quizResult.value;
+        console.log('[Tab Content Generation] Quiz generated successfully');
+      } else {
+        console.error('[Tab Content Generation] Quiz generation failed:', quizResult.reason);
+      }
+
+      if (flashCardsResult.status === 'fulfilled') {
+        flashCardsContent = flashCardsResult.value;
+        console.log('[Tab Content Generation] Flash Cards generated successfully');
+      } else {
+        console.error('[Tab Content Generation] Flash Cards generation failed:', flashCardsResult.reason);
+      }
+
+              // Save Examples, Abstract, and Quiz content to database
       if (examplesContent && userId) {
         try {
           const { error: examplesError } = await supabase
@@ -619,10 +805,62 @@ Make the analogies vivid and easy to visualize.`;
         }
       }
 
+      if (quizContent && userId) {
+        try {
+          const { error: quizError } = await supabase
+            .from('response_tab_content')
+            .insert({
+              message_id: responseId,
+              user_id: userId,
+              session_id: sessionData.id,
+              tab_type: 'quiz',
+              content: quizContent,
+              original_query: query,
+              main_content: response.explanation.substring(0, 1000),
+              preferences: userPreferences || {}
+            });
+
+          if (quizError) {
+            console.error('[Tab Content Generation] Error saving quiz to database:', quizError);
+          } else {
+            console.log('[Tab Content Generation] Quiz saved to database successfully');
+          }
+        } catch (dbError) {
+          console.error('[Tab Content Generation] Database error saving quiz:', dbError);
+        }
+      }
+
+      if (flashCardsContent && userId) {
+        try {
+          const { error: flashCardsError } = await supabase
+            .from('response_tab_content')
+            .insert({
+              message_id: responseId,
+              user_id: userId,
+              session_id: sessionData.id,
+              tab_type: 'flash_cards',
+              content: flashCardsContent,
+              original_query: query,
+              main_content: response.explanation.substring(0, 1000),
+              preferences: userPreferences || {}
+            });
+
+          if (flashCardsError) {
+            console.error('[Tab Content Generation] Error saving flash cards to database:', flashCardsError);
+          } else {
+            console.log('[Tab Content Generation] Flash cards saved to database successfully');
+          }
+        } catch (dbError) {
+          console.error('[Tab Content Generation] Database error saving flash cards:', dbError);
+        }
+      }
+
       // Add generated content to the response for immediate availability
       response.tab_content = {
         examples: examplesContent,
         abstract: abstractContent,
+        quiz: quizContent,
+        flash_cards: flashCardsContent,
         generated_simultaneously: true
       };
 
@@ -634,6 +872,8 @@ Make the analogies vivid and easy to visualize.`;
       response.tab_content = {
         examples: null,
         abstract: null,
+        quiz: null,
+        flash_cards: null,
         generated_simultaneously: false,
         error: 'Failed to generate additional content'
       };
@@ -4195,6 +4435,178 @@ Make the analogies vivid and easy to visualize.`;
   }
 });
 
+// API endpoint for generating Flash Cards tab content - with database persistence
+app.post('/api/generate-flash-cards', async (req, res) => {
+  try {
+    const { query, mainContent, sessionId, preferences, userId, messageId } = req.body;
+    
+    console.log('Received request to generate flash cards:', { 
+      query: query?.substring(0, 50) + '...', 
+      sessionId, 
+      userId: userId || 'anonymous',
+      messageId: messageId || 'no_message_id'
+    });
+    
+    if (!query || !mainContent) {
+      return res.status(400).json({ error: 'Query and main content are required' });
+    }
+
+    // First check if content already exists in database
+    if (messageId) {
+      try {
+        const { data: existingContent, error: fetchError } = await supabase
+          .from('response_tab_content')
+          .select('content')
+          .eq('message_id', messageId)
+          .eq('tab_type', 'flash_cards')
+          .single();
+
+        if (existingContent && !fetchError) {
+          console.log('Returning existing flash cards content from database');
+          return res.json({ 
+            cards: existingContent.content,
+            timestamp: new Date().toISOString(),
+            from_cache: true
+          });
+        }
+      } catch (dbError) {
+        console.log('No existing content found, generating new flash cards');
+      }
+    }
+
+    console.log('Generating new flash cards content via OpenAI');
+    
+    // Create a prompt for generating flash cards
+    const flashCardsPrompt = `Based on the following question and explanation, create educational flash cards that help reinforce key concepts and definitions.
+
+Original Question: ${query}
+
+Main Explanation: ${mainContent.substring(0, 1000)}...
+
+Please create 5 flash cards with:
+1. A clear, concise question on the front
+2. A precise, informative answer on the back
+3. Focus on key facts, definitions, and relationships
+4. Make them suitable for spaced repetition learning
+
+${preferences?.technicalDepth > 70 ? 
+  'Create more advanced, technical questions.' : 
+  preferences?.technicalDepth < 30 ? 
+  'Keep questions simple and beginner-friendly.' :
+  'Create questions at an intermediate level.'}
+
+Respond with a valid JSON array of objects:
+[
+  { "question": "Front side question text", "answer": "Back side answer text" },
+  { "question": "Front side question text", "answer": "Back side answer text" },
+  ...
+]`;
+
+    // Call OpenAI API for flash cards
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: flashCardsPrompt }],
+      temperature: 0.7,
+      max_tokens: 2000
+    });
+    
+    const responseText = completion.choices[0].message.content;
+    let flashCardsContent;
+
+    // Try to parse the JSON response
+    try {
+      // Look for JSON array in the response
+      const jsonMatch = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (jsonMatch) {
+        flashCardsContent = JSON.parse(jsonMatch[0]);
+      } else {
+        // Fallback parsing from Q&A format
+        const cards = [];
+        const qaMatches = responseText.matchAll(/(?:Question|Q)[:\.]?\s*(.+?)(?:\n|\r\n?)+(?:Answer|A)[:\.]?\s*(.+?)(?=\n\s*(?:Question|Q)[:\.]?|\n\s*\d+[:\.]|$)/gs);
+        
+        for (const match of qaMatches) {
+          cards.push({
+            question: match[1].trim(),
+            answer: match[2].trim()
+          });
+        }
+        
+        if (cards.length > 0) {
+          flashCardsContent = cards;
+        } else {
+          // Final fallback
+          flashCardsContent = [
+            { question: `What is ${query}?`, answer: "A key concept that helps organize and solve problems in this domain." },
+            { question: "What are the main components of this concept?", answer: "The concept typically consists of several key elements that work together." },
+            { question: "Why is this concept important?", answer: "It provides a fundamental framework for understanding this topic area." },
+            { question: "How is this concept applied in practice?", answer: "The concept is applied through specific processes and techniques." },
+            { question: "What should you remember about this concept?", answer: "Focus on understanding the core principles and their practical applications." }
+          ];
+        }
+      }
+    } catch (parseError) {
+      console.error('Error parsing flash cards JSON:', parseError);
+      // Use fallback cards
+      flashCardsContent = [
+        { question: `What is ${query}?`, answer: "A key concept that helps organize and solve problems in this domain." },
+        { question: "What are the main components of this concept?", answer: "The concept typically consists of several key elements that work together." },
+        { question: "Why is this concept important?", answer: "It provides a fundamental framework for understanding this topic area." },
+        { question: "How is this concept applied in practice?", answer: "The concept is applied through specific processes and techniques." },
+        { question: "What should you remember about this concept?", answer: "Focus on understanding the core principles and their practical applications." }
+      ];
+    }
+
+    // Save to database for future use
+    if (messageId && userId) {
+      try {
+        const { error: saveError } = await supabase
+          .from('response_tab_content')
+          .insert({
+            message_id: messageId,
+            user_id: userId,
+            session_id: sessionId,
+            tab_type: 'flash_cards',
+            content: flashCardsContent,
+            original_query: query,
+            main_content: mainContent.substring(0, 1000),
+            preferences: preferences || {}
+          });
+
+        if (saveError) {
+          console.error('Error saving flash cards content to database:', saveError);
+        } else {
+          console.log('Successfully saved flash cards content to database');
+        }
+      } catch (dbError) {
+        console.error('Database error while saving flash cards:', dbError);
+      }
+    }
+    
+    // Log the interaction if we have a session
+    if (sessionId) {
+      await sessionManager.addInteraction(sessionId, {
+        type: 'flash_cards_generation',
+        query,
+        flash_cards: flashCardsContent,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.json({
+      cards: flashCardsContent,
+      timestamp: new Date().toISOString(),
+      from_cache: false
+    });
+    
+  } catch (error) {
+    console.error('Error generating flash cards:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate flash cards', 
+      message: error.message 
+    });
+  }
+});
+
 // API endpoint to retrieve existing tab content
 app.get('/api/response-tab-content/:messageId/:tabType', async (req, res) => {
   try {
@@ -4204,8 +4616,8 @@ app.get('/api/response-tab-content/:messageId/:tabType', async (req, res) => {
       return res.status(400).json({ error: 'Message ID and tab type are required' });
     }
 
-    if (!['examples', 'abstract'].includes(tabType)) {
-      return res.status(400).json({ error: 'Invalid tab type. Must be examples or abstract' });
+    if (!['examples', 'abstract', 'quiz', 'flash_cards'].includes(tabType)) {
+      return res.status(400).json({ error: 'Invalid tab type. Must be examples, abstract, quiz, or flash_cards' });
     }
 
     const { data: content, error } = await supabase
