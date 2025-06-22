@@ -14,6 +14,7 @@ import { processUserMessage, calculateScore } from '../utils/secretFeedbackClass
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { saveProjects, loadProjects } from '../utils/userDataManager';
 
 function QueryPage() {
   const [quizMode, setQuizMode] = useState(false);
@@ -24,13 +25,9 @@ function QueryPage() {
   const [activeQuizMessage, setActiveQuizMessage] = useState(null);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
 
-  // Add state for code example and flash cards features
+  // Add state for code example features
   const [showCodeExample, setShowCodeExample] = useState(false);
   const [codeExample, setCodeExample] = useState(null);
-  const [showFlashCards, setShowFlashCards] = useState(false);
-  const [flashCards, setFlashCards] = useState([]);
-  const [currentCardIndex, setCurrentCardIndex] = useState(0);
-  const [isCardFlipped, setIsCardFlipped] = useState(false);
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
 
   const { user } = useAuth();
@@ -52,11 +49,7 @@ function QueryPage() {
     const savedMessages = localStorage.getItem(key);
     return savedMessages ? JSON.parse(savedMessages) : [];
   });
-  const [projects, setProjects] = useState(() => {
-    const key = user ? `projects_${user.id}` : 'projects';
-    const savedProjects = localStorage.getItem(key);
-    return savedProjects ? JSON.parse(savedProjects) : [];
-  });
+  const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [activeConversation, setActiveConversation] = useState(() => {
     // Try to load active conversation from localStorage with user namespace
@@ -115,10 +108,17 @@ function QueryPage() {
     }
   }, [messages, user]);
   
-  // Persist projects whenever they change
+  // Persist projects whenever they change to both localStorage and database
   useEffect(() => {
-    if (user) {
+    if (user && projects.length > 0) {
+      // Save to localStorage for immediate access
       localStorage.setItem(`projects_${user.id}`, JSON.stringify(projects));
+      
+      // Save to database for persistence
+      saveProjects(user.id, projects).catch(error => {
+        console.error('Failed to save projects to database:', error);
+        toast.error('Failed to save projects. Your data may not persist across sessions.');
+      });
     }
   }, [projects, user]);
   
@@ -146,50 +146,101 @@ function QueryPage() {
   
   // Load user-specific data when user changes
   useEffect(() => {
-    if (user) {
-      // Load preferences
-      const savedPreferences = localStorage.getItem(`userPreferences_${user.id}`);
-      if (savedPreferences) {
-        setPreferences(JSON.parse(savedPreferences));
-      }
-      
-      // Load projects
-      const savedProjects = localStorage.getItem(`projects_${user.id}`);
-      if (savedProjects) {
-        const projects = JSON.parse(savedProjects);
-        setProjects(projects);
+    const loadUserData = async () => {
+      if (user) {
+        // Load preferences
+        const savedPreferences = localStorage.getItem(`userPreferences_${user.id}`);
+        if (savedPreferences) {
+          setPreferences(JSON.parse(savedPreferences));
+        }
         
-        // If we have an active project and conversation, load its messages
-        const savedActiveProject = localStorage.getItem(`activeProject_${user.id}`);
-        const savedActiveConversation = localStorage.getItem(`activeConversation_${user.id}`);
-        
-        if (savedActiveProject && savedActiveConversation) {
-          const project = projects.find(p => p.id === savedActiveProject);
-          const conversation = project?.conversations.find(c => c.id === savedActiveConversation);
+        // Load projects - prioritize database over localStorage
+        try {
+          console.log('Loading projects for user:', user.id);
+          const databaseProjects = await loadProjects(user.id);
           
-          if (project && conversation) {
-            setActiveProject(savedActiveProject);
-            setActiveConversation(savedActiveConversation);
-            setMessages(conversation.messages || []);
+          if (databaseProjects && databaseProjects.length > 0) {
+            console.log('Loaded projects from database:', databaseProjects.length);
+            setProjects(databaseProjects);
+            
+            // Update localStorage with the latest database data
+            localStorage.setItem(`projects_${user.id}`, JSON.stringify(databaseProjects));
+            
+            // Restore active project and conversation
+            const savedActiveProject = localStorage.getItem(`activeProject_${user.id}`);
+            const savedActiveConversation = localStorage.getItem(`activeConversation_${user.id}`);
+            
+            if (savedActiveProject && savedActiveConversation) {
+              const project = databaseProjects.find(p => p.id === savedActiveProject);
+              const conversation = project?.conversations.find(c => c.id === savedActiveConversation);
+              
+              if (project && conversation) {
+                setActiveProject(savedActiveProject);
+                setActiveConversation(savedActiveConversation);
+                setMessages(conversation.messages || []);
+              }
+            }
+          } else {
+            // Fallback to localStorage if no database data
+            console.log('No database projects found, trying localStorage');
+            const savedProjects = localStorage.getItem(`projects_${user.id}`);
+            if (savedProjects) {
+              const projects = JSON.parse(savedProjects);
+              setProjects(projects);
+              
+              // Migrate localStorage data to database
+              if (projects.length > 0) {
+                console.log('Migrating localStorage projects to database');
+                await saveProjects(user.id, projects);
+              }
+              
+              // If we have an active project and conversation, load its messages
+              const savedActiveProject = localStorage.getItem(`activeProject_${user.id}`);
+              const savedActiveConversation = localStorage.getItem(`activeConversation_${user.id}`);
+              
+              if (savedActiveProject && savedActiveConversation) {
+                const project = projects.find(p => p.id === savedActiveProject);
+                const conversation = project?.conversations.find(c => c.id === savedActiveConversation);
+                
+                if (project && conversation) {
+                  setActiveProject(savedActiveProject);
+                  setActiveConversation(savedActiveConversation);
+                  setMessages(conversation.messages || []);
+                }
+              }
+            } else {
+              console.log('No projects found in localStorage either');
+              setProjects([]);
+              setMessages([]);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading projects:', error);
+          // Fallback to localStorage on error
+          const savedProjects = localStorage.getItem(`projects_${user.id}`);
+          if (savedProjects) {
+            setProjects(JSON.parse(savedProjects));
+          } else {
+            setProjects([]);
+            setMessages([]);
           }
         }
-      } else {
-        setProjects([]);
-        setMessages([]);
+        
+        // Load feedback state
+        const savedFeedbackFor = localStorage.getItem(`showFeedbackFor_${user.id}`);
+        if (savedFeedbackFor) {
+          setShowFeedbackFor(savedFeedbackFor);
+        }
+        
+        // Load session ID
+        const savedSessionId = localStorage.getItem(`sessionId_${user.id}`);
+        if (savedSessionId) {
+          setSessionId(savedSessionId);
+        }
       }
-      
-      // Load feedback state
-      const savedFeedbackFor = localStorage.getItem(`showFeedbackFor_${user.id}`);
-      if (savedFeedbackFor) {
-        setShowFeedbackFor(savedFeedbackFor);
-      }
-      
-      // Load session ID
-      const savedSessionId = localStorage.getItem(`sessionId_${user.id}`);
-      if (savedSessionId) {
-        setSessionId(savedSessionId);
-      }
-    }
+    };
+
+    loadUserData();
   }, [user?.id]);
 
   // Migrate existing conversations to a default project if needed
@@ -1038,129 +1089,9 @@ examplePlaceholder();`
     }
   };
 
-  // Handler for generating flash cards
-  const handleGenerateFlashCards = async () => {
-    try {
-      setIsGeneratingContent(true);
-      
-      // Find the most recent assistant message to extract context
-      const lastAssistantMessage = messages.find(msg => msg.role === 'assistant');
-      if (!lastAssistantMessage) {
-        throw new Error('No assistant message found to generate flash cards from');
-      }
-      
-      // Find the most recent user query before this response
-      const userMessageIndex = messages.findIndex(msg => msg.id === lastAssistantMessage.id) - 1;
-      const userQuery = userMessageIndex >= 0 ? messages[userMessageIndex].content : '';
-      
-      toast.promise(
-        generateFlashCards(userQuery, lastAssistantMessage.content),
-        {
-          loading: 'Generating flash cards...',
-          success: 'Flash cards generated!',
-          error: 'Failed to generate flash cards'
-        }
-      );
-      
-      // Generate the flash cards
-      const cards = await generateFlashCards(userQuery, lastAssistantMessage.content);
-      setFlashCards(cards);
-      setCurrentCardIndex(0);
-      setIsCardFlipped(false);
-      setShowFlashCards(true);
-      
-      // Close other modals
-      setQuizMode(false);
-      setShowCodeExample(false);
-      
-    } catch (error) {
-      console.error('Error generating flash cards:', error);
-      toast.error('Failed to generate flash cards');
-    } finally {
-      setIsGeneratingContent(false);
-    }
-  };
-
-  // Function to generate flash cards
-  const generateFlashCards = async (query, explanation) => {
-    try {
-      // Create a prompt for the flash cards
-      const prompt = `Based on this concept: "${query}", and this explanation: "${explanation.substring(0, 200)}...", 
-      generate 3 flash cards with questions on the front and answers on the back that reinforce key facts and definitions.
-      Make them clear, concise, and focused on the most important points for understanding this concept.`;
-      
-      // Get the active project's preferences
-      const activeProjectData = projects.find(p => p.id === activeProject);
-      
-      // Call the backend to generate the flash cards
-      const response = await fetch('/api/generate-flash-cards', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt,
-          preferences: activeProjectData?.preferences
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to generate flash cards');
-      }
-      
-      const data = await response.json();
-      
-      // If we can't fetch from the API, use fallback cards
-      if (!data.cards || !data.cards.length) {
-        return [
-          { question: `What is ${query}?`, answer: "A key concept that helps organize and solve problems in this domain." },
-          { question: "What are the main components of this concept?", answer: "The concept typically consists of several key elements that work together." },
-          { question: "Why is this concept important?", answer: "It provides a fundamental framework for understanding this topic area." }
-        ];
-      }
-      
-      return data.cards;
-      
-    } catch (error) {
-      console.error('Error in flash cards generation:', error);
-      // Return fallback cards
-      return [
-        { question: `What is ${query}?`, answer: "A key concept that helps organize and solve problems in this domain." },
-        { question: "What are the main components of this concept?", answer: "The concept typically consists of several key elements that work together." },
-        { question: "Why is this concept important?", answer: "It provides a fundamental framework for understanding this topic area." }
-      ];
-    }
-  };
-
-  // Function to handle flash card flipping
-  const flipCard = () => {
-    setIsCardFlipped(!isCardFlipped);
-  };
-
-  // Function to move to the next flash card
-  const nextCard = () => {
-    if (currentCardIndex < flashCards.length - 1) {
-      setCurrentCardIndex(currentCardIndex + 1);
-      setIsCardFlipped(false);
-    }
-  };
-
-  // Function to move to the previous flash card
-  const prevCard = () => {
-    if (currentCardIndex > 0) {
-      setCurrentCardIndex(currentCardIndex - 1);
-      setIsCardFlipped(false);
-    }
-  };
-
   // Handler function to close code example modal
   const handleCloseCodeExample = () => {
     setShowCodeExample(false);
-  };
-
-  // Handler function to close flash cards modal
-  const handleCloseFlashCards = () => {
-    setShowFlashCards(false);
   };
 
   // Add this helper function for local question generation
@@ -1430,18 +1361,7 @@ examplePlaceholder();`
                   Code Example
                 </button>
                 
-                {/* Flash Cards Button */}
-                <button
-                  type="button"
-                  onClick={handleGenerateFlashCards}
-                  disabled={loading || regenerating || !messages.some(m => m.role === 'assistant') || isGeneratingContent}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                >
-                  <svg className="h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                  </svg>
-                  Flash Cards
-                </button>
+
               </div>
             </form>
             
@@ -1636,72 +1556,7 @@ examplePlaceholder();`
         </div>
       )}
 
-      {/* Flash Cards Modal */}
-      {showFlashCards && flashCards.length > 0 && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 m-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-gray-900">
-                Flash Cards ({currentCardIndex + 1}/{flashCards.length})
-              </h3>
-              <button 
-                onClick={handleCloseFlashCards}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            {/* Flash Card */}
-            <div 
-              className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow p-6 min-h-[200px] flex items-center justify-center cursor-pointer transform transition-transform duration-300 hover:scale-105"
-              onClick={flipCard}
-            >
-              <div className="text-center">
-                {!isCardFlipped ? (
-                  <div>
-                    <h4 className="text-lg font-medium text-gray-900 mb-2">Question:</h4>
-                    <p className="text-gray-700">{flashCards[currentCardIndex].question}</p>
-                    <p className="text-sm text-gray-500 mt-4">(Click to see answer)</p>
-                  </div>
-                ) : (
-                  <div>
-                    <h4 className="text-lg font-medium text-gray-900 mb-2">Answer:</h4>
-                    <p className="text-gray-700">{flashCards[currentCardIndex].answer}</p>
-                    <p className="text-sm text-gray-500 mt-4">(Click to see question)</p>
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            {/* Navigation buttons */}
-            <div className="mt-6 flex justify-between">
-              <button
-                onClick={prevCard}
-                disabled={currentCardIndex === 0}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md disabled:opacity-50 hover:bg-indigo-700"
-              >
-                Previous
-              </button>
-              <button
-                onClick={handleCloseFlashCards}
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
-              >
-                Close
-              </button>
-              <button
-                onClick={nextCard}
-                disabled={currentCardIndex === flashCards.length - 1}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md disabled:opacity-50 hover:bg-indigo-700"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }
