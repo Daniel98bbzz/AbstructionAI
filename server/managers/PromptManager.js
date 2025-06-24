@@ -226,9 +226,9 @@ When responding to queries:
    */
   identifyCommonIssues(feedbackInteractions) {
     return feedbackInteractions
-      .filter(f => f.rating <= 3 && f.comments)
+      .filter(f => f.comments && this.isNegativeFeedback(f.comments))
       .map(f => ({
-        rating: f.rating,
+        sentiment: 'negative',
         issue: this.categorizeIssue(f.comments)
       }));
   }
@@ -240,11 +240,33 @@ When responding to queries:
    */
   identifySuccessfulApproaches(feedbackInteractions) {
     return feedbackInteractions
-      .filter(f => f.rating >= 4 && f.comments)
+      .filter(f => f.comments && this.isPositiveFeedback(f.comments))
       .map(f => ({
-        rating: f.rating,
+        sentiment: 'positive',
         approach: this.categorizeSuccess(f.comments)
       }));
+  }
+
+  /**
+   * Check if feedback comments indicate negative sentiment
+   * @param {string} comments - Feedback comments
+   * @returns {boolean} - Whether feedback is negative
+   */
+  isNegativeFeedback(comments) {
+    const negativeWords = ['bad', 'poor', 'confusing', 'unclear', 'useless', 'terrible', 'hate', 'wrong', 'difficult', 'disappointing'];
+    const lowerComments = comments.toLowerCase();
+    return negativeWords.some(word => lowerComments.includes(word));
+  }
+
+  /**
+   * Check if feedback comments indicate positive sentiment
+   * @param {string} comments - Feedback comments
+   * @returns {boolean} - Whether feedback is positive
+   */
+  isPositiveFeedback(comments) {
+    const positiveWords = ['good', 'great', 'excellent', 'helpful', 'clear', 'useful', 'perfect', 'love', 'amazing', 'wonderful'];
+    const lowerComments = comments.toLowerCase();
+    return positiveWords.some(word => lowerComments.includes(word));
   }
 
   /**
@@ -364,9 +386,6 @@ ${feedback.explanationDetail === 'more_detailed' ?
 
 ${feedback.explanationDetail === 'simpler' ? 
 `IMPORTANT: Simplify the explanation significantly. Use easier language and less technical jargon.` : ''}
-
-${feedback.rating <= 3 ? 
-`The user rated the previous response as ${feedback.rating}/5, indicating it needs significant improvement.` : ''}
 
 ${feedback.comments ? `\nUser comments: "${feedback.comments}"` : ''}
 

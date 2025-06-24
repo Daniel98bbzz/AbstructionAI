@@ -153,20 +153,14 @@ async function createTestTablesIfNeeded() {
         IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'prompt_templates') THEN
           CREATE TABLE prompt_templates (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            created_at TIMESTAMPTZ DEFAULT now(),
             topic VARCHAR NOT NULL,
             template_text TEXT NOT NULL,
-            source VARCHAR NOT NULL,
             efficacy_score NUMERIC DEFAULT 0,
-            usage_count INTEGER DEFAULT 0,
-            quality_score NUMERIC DEFAULT 0,
-            confusion_score NUMERIC DEFAULT 0,
-            follow_up_rate NUMERIC DEFAULT 0,
-            confidence_score NUMERIC DEFAULT 0,
-            component_rating JSONB DEFAULT '{}',
-            composite_quality_score NUMERIC DEFAULT 0,
-            quality_score_metadata JSONB,
-            metadata JSONB
+            use_count INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now(),
+            cluster_id INTEGER,
+            version INTEGER DEFAULT 1
           );
         END IF;
       END
@@ -188,12 +182,12 @@ async function createTestTablesIfNeeded() {
         IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'prompt_template_usage') THEN
           CREATE TABLE prompt_template_usage (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            template_id UUID NOT NULL,
-            session_id UUID,
-            user_id TEXT,
+            template_id UUID NOT NULL REFERENCES prompt_templates(id),
+            session_id UUID NOT NULL,
+            user_id UUID,
             query TEXT NOT NULL,
             response_id UUID,
-            feedback_score INTEGER,
+            soft_signal_type VARCHAR,
             created_at TIMESTAMPTZ DEFAULT now()
           );
         END IF;
@@ -357,18 +351,12 @@ async function createTestTemplates() {
           .insert([{
             topic,
             template_text: templateText,
-            source: i === 1 ? 'system' : 'crowd',
             efficacy_score: 3.0 + Math.random() * 2.0, // 3.0 to 5.0
-            usage_count: Math.floor(Math.random() * 10) + 1, // 1 to 10
-            quality_score: 0.6 + Math.random() * 0.4, // 0.6 to 1.0
-            confusion_score: Math.random() * 0.5, // 0.0 to 0.5
-            confidence_score: 0.5 + Math.random() * 0.5, // 0.5 to 1.0
-            follow_up_rate: Math.random() * 0.4, // 0.0 to 0.4
-            composite_quality_score: 0.7 + Math.random() * 0.3, // 0.7 to 1.0
-            metadata: {
-              test_template: true,
-              test_index: i
-            }
+            use_count: Math.floor(Math.random() * 10) + 1, // 1 to 10
+            created_at: new Date(),
+            updated_at: new Date(),
+            cluster_id: null,
+            version: 1
           }])
           .select();
         
@@ -454,7 +442,7 @@ async function simulateUsageAndFeedback(clusterAssignments, templateIds) {
         // Update template efficacy score
         const { data: template, error: templateError } = await supabase
           .from('prompt_templates')
-          .select('efficacy_score, usage_count')
+          .select('efficacy_score, use_count')
           .eq('id', templateId)
           .single();
         
@@ -462,8 +450,8 @@ async function simulateUsageAndFeedback(clusterAssignments, templateIds) {
         
         // Simple weighted average update for efficacy score
         const currentScore = template.efficacy_score || 0;
-        const usageCount = template.usage_count || 1;
-        const newEfficacyScore = ((currentScore * (usageCount - 1)) + feedbackScore) / usageCount;
+        const useCount = template.use_count || 1;
+        const newEfficacyScore = ((currentScore * (useCount - 1)) + feedbackScore) / useCount;
         
         const { error: updateError } = await supabase
           .from('prompt_templates')

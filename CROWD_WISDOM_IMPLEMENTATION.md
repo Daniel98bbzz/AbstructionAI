@@ -177,7 +177,7 @@ ORDER BY avg_rating DESC;
 ```
 
 ### **Admin Dashboard:**
-- Access: `http://localhost:3000/crowdWisdomAdmin.html`
+- REMOVED: Admin dashboard file has been deleted and will be rebuilt
 - View template performance metrics
 - Monitor A/B testing results  
 - Simulate template selection

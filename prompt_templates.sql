@@ -2,63 +2,38 @@
 
 CREATE TABLE IF NOT EXISTS prompt_templates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  created_at TIMESTAMPTZ DEFAULT now(),
   topic VARCHAR NOT NULL,
   template_text TEXT NOT NULL,
-  source VARCHAR NOT NULL,
   efficacy_score NUMERIC DEFAULT 0,
-  usage_count INTEGER DEFAULT 0,
-  quality_score NUMERIC DEFAULT 0,
-  confusion_score NUMERIC DEFAULT 0,
-  follow_up_rate NUMERIC DEFAULT 0,
-  confidence_score NUMERIC DEFAULT 0,
-  component_rating JSONB DEFAULT '{}',
-  composite_quality_score NUMERIC DEFAULT 0,
-  quality_score_metadata JSONB,
-  metadata JSONB
+  use_count INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  cluster_id INTEGER,
+  version INTEGER DEFAULT 1
 );
 
 -- Table for storing template usage and feedback
 CREATE TABLE IF NOT EXISTS prompt_template_usage (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   template_id UUID NOT NULL REFERENCES prompt_templates(id),
-  session_id UUID,
-  user_id TEXT,
+  session_id UUID NOT NULL,
+  user_id UUID,
   query TEXT NOT NULL,
   response_id UUID,
-  feedback_score INTEGER,
-  created_at TIMESTAMPTZ DEFAULT now()
+  soft_signal_type VARCHAR, -- Soft signal from natural conversation: 'satisfaction', 'confusion', 'positive', etc.
+  created_at TIMESTAMPTZ DEFAULT now(),
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
 -- Create indexes for performance
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'prompt_templates_topic_idx') THEN
-    CREATE INDEX prompt_templates_topic_idx ON prompt_templates(topic);
-  END IF;
-  
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'prompt_templates_efficacy_idx') THEN
-    CREATE INDEX prompt_templates_efficacy_idx ON prompt_templates(efficacy_score);
-  END IF;
-  
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'prompt_templates_composite_idx') THEN
-    CREATE INDEX prompt_templates_composite_idx ON prompt_templates(composite_quality_score);
-  END IF;
-  
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'prompt_template_usage_template_idx') THEN
-    CREATE INDEX prompt_template_usage_template_idx ON prompt_template_usage(template_id);
-  END IF;
-  
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'prompt_template_usage_user_idx') THEN
-    CREATE INDEX prompt_template_usage_user_idx ON prompt_template_usage(user_id);
-  END IF;
-END $$;
+CREATE INDEX prompt_templates_topic_idx ON prompt_templates(topic);
+CREATE INDEX prompt_templates_efficacy_idx ON prompt_templates(efficacy_score);
+CREATE INDEX prompt_templates_cluster_idx ON prompt_templates(cluster_id);
 
 -- Enable Row Level Security
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_tables 
+  IF NOT EXISTS (SELECT 1 FROM pg_tables 
     WHERE tablename = 'prompt_templates' 
     AND rowsecurity = true
   ) THEN

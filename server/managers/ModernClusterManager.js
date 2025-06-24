@@ -749,54 +749,56 @@ class ModernClusterManager {
         return [];
       }
       
-      // Get template usage with high ratings from cluster members
+      // Get template usage with positive soft signals from cluster members
       const memberIds = clusterMembers.map(member => member.user_id);
       
       const { data: templateUsage, error: usageError } = await this.supabase
         .from('prompt_template_usage')
-        .select('template_id, feedback_score')
+        .select('template_id, soft_signal_type')
         .in('user_id', memberIds)
-        .gte('feedback_score', 4) // Only consider high ratings
-        .order('feedback_score', { ascending: false });
+        .in('soft_signal_type', ['satisfaction', 'positive', 'understanding']) // Only positive signals
+        .order('created_at', { ascending: false });
       
       if (usageError) throw usageError;
       
       if (!templateUsage || templateUsage.length === 0) {
-        console.log(`[Modern Clusters] No highly-rated templates found for cluster ${clusterId}`);
+        console.log(`[Modern Clusters] No positively-signaled templates found for cluster ${clusterId}`);
         return [];
       }
       
-      // Count template frequencies and average ratings
+      // Count template frequencies and positive signal counts
       const templateStats = {};
       
       templateUsage.forEach(usage => {
         if (!templateStats[usage.template_id]) {
           templateStats[usage.template_id] = {
-            count: 0,
-            totalRating: 0
+            totalCount: 0,
+            positiveCount: 0
           };
         }
         
-        templateStats[usage.template_id].count++;
-        templateStats[usage.template_id].totalRating += usage.feedback_score;
+        templateStats[usage.template_id].totalCount++;
+        // All entries here are positive since we filtered above
+        templateStats[usage.template_id].positiveCount++;
       });
       
-      // Calculate average ratings and sort by popularity and rating
+      // Calculate positive signal ratio and sort by effectiveness
       const rankedTemplates = Object.keys(templateStats).map(templateId => {
         const stats = templateStats[templateId];
         return {
           templateId,
-          count: stats.count,
-          averageRating: stats.totalRating / stats.count
+          totalCount: stats.totalCount,
+          positiveCount: stats.positiveCount,
+          positiveRatio: stats.positiveCount / stats.totalCount // Will be 1.0 since we filtered for positive only
         };
       });
       
-      // Sort by count (desc) and then average rating (desc)
+      // Sort by positive count (popularity) and then by total usage
       rankedTemplates.sort((a, b) => {
-        if (b.count !== a.count) {
-          return b.count - a.count;
+        if (b.positiveCount !== a.positiveCount) {
+          return b.positiveCount - a.positiveCount;
         }
-        return b.averageRating - a.averageRating;
+        return b.totalCount - a.totalCount;
       });
       
       // Get top 5 template IDs

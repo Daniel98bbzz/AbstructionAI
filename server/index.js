@@ -113,15 +113,13 @@ const supervisor = new Supervisor();
 // Routes
 app.post('/api/query', async (req, res) => {
   try {
-    const { query, sessionId, preferences, feedback, isRegeneration, originalResponseId, abTestGroup } = req.body;
+    const { query, sessionId, preferences, feedback, isRegeneration, originalResponseId } = req.body;
     
     console.log('Received query request:', { 
       query, 
       sessionId: sessionId || 'none', 
       preferencesProvided: !!preferences,
-      isRegeneration: !!isRegeneration,
-      hasFeedback: !!feedback,
-      abTestGroup: abTestGroup || 'default'
+      isRegeneration: !!isRegeneration
     });
     
     const userId = req.user?.id || req.body.userId;
@@ -150,18 +148,18 @@ app.post('/api/query', async (req, res) => {
     let templateApplied = false;
     const hasLimitedContext = !sessionData.interactions || sessionData.interactions.length < 2;
     let clusterIdForUsage = null;
+    let isNewCluster = false; // Track if we created a new cluster
 
     if (hasLimitedContext && !isRegeneration) {
       try {
         console.log('[Crowd Wisdom] User has limited context, applying crowd wisdom enhancement to user query');
-        let useCompositeScore = abTestGroup ? (abTestGroup === 'composite' || abTestGroup === 'new') : (Math.random() < 0.7);
-        const explorationRate = useCompositeScore ? 0.15 : 0.1;
+        // Simplified: Always use UCB1 with soft signals approach
+        const explorationRate = 0.15;
         const crowdWisdomResult = await supervisor.processQueryWithCrowdWisdom(
           query, 
           sessionData.id, 
           userId, 
           openai,
-          useCompositeScore,
           explorationRate
         );
         console.log('[DEBUG] crowdWisdomResult returned:', crowdWisdomResult); // <-- Added robust logging
@@ -172,6 +170,21 @@ app.post('/api/query', async (req, res) => {
         clusterIdForUsage = crowdWisdomResult.cluster_id;
         systemEnhancement = crowdWisdomResult.systemEnhancement || '';
         templateApplied = crowdWisdomResult.templateApplied || false;
+        isNewCluster = crowdWisdomResult.isNewCluster || false; // Extract new cluster flag
+        
+        // ✅ FIX: Ensure cluster_id is properly typed as number
+        if (clusterIdForUsage !== null && clusterIdForUsage !== undefined) {
+          clusterIdForUsage = Number(clusterIdForUsage);
+          console.log(`[DEBUG] clusterIdForUsage converted to number: ${clusterIdForUsage} (type: ${typeof clusterIdForUsage})`);
+        } else {
+          console.log('[DEBUG] clusterIdForUsage is null/undefined');
+        }
+        
+        // Enhanced logging for new clusters
+        if (isNewCluster) {
+          console.log(`[Real-time Clustering] 🎯 NEW CLUSTER CREATED: ID=${clusterIdForUsage} for query: "${query.substring(0, 50)}..."`);
+          console.log(`[Real-time Clustering] 🚀 System will learn templates for this new domain going forward`);
+        }
         
         // Improved template logging
         if (usedTemplate && typeof usedTemplate === 'object' && usedTemplate.id) {
@@ -677,37 +690,95 @@ Respond with a valid JSON array of objects:
           const responseText = flashCardsCompletion.choices[0].message.content;
           
           try {
-            // Look for JSON array in the response
-            const jsonMatch = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/);
-            if (jsonMatch) {
-              return JSON.parse(jsonMatch[0]);
-            } else {
-              // Fallback parsing from Q&A format
-              const cards = [];
-              const qaMatches = responseText.matchAll(/(?:Question|Q)[:\.]?\s*(.+?)(?:\n|\r\n?)+(?:Answer|A)[:\.]?\s*(.+?)(?=\n\s*(?:Question|Q)[:\.]?|\n\s*\d+[:\.]|$)/gs);
+            // Robust JSON parsing with multiple fallback strategies
+            const parseFlashCardsResponse = (responseText) => {
+              // Strategy 1: Try to find and parse clean JSON
+              let jsonMatch = responseText.match(/\[\s*\{[\s\S]*?\}\s*\]/);
               
-              for (const match of qaMatches) {
-                cards.push({
-                  question: match[1].trim(),
-                  answer: match[2].trim()
-                });
+              if (jsonMatch) {
+                let jsonString = jsonMatch[0];
+                
+                // Clean up common JSON issues
+                jsonString = jsonString
+                  .replace(/\\\\/g, '\\')           // Fix double backslashes
+                  .replace(/\\"/g, '"')             // Fix escaped quotes
+                  .replace(/\\'/g, "'")             // Fix escaped single quotes
+                  .replace(/[\u0000-\u001F]/g, '')   // Remove control characters
+                  .replace(/\\n/g, ' ')             // Replace newlines in strings
+                  .replace(/\\t/g, ' ')             // Replace tabs in strings
+                  .replace(/,(\s*[}\]])/g, '$1');   // Remove trailing commas
+                
+                // Try parsing the cleaned JSON
+                try {
+                  const parsed = JSON.parse(jsonString);
+                  if (Array.isArray(parsed) && parsed.length > 0) {
+                    return parsed.map(card => ({
+                      question: String(card.question || card.q || '').trim(),
+                      answer: String(card.answer || card.a || '').trim()
+                    })).filter(card => card.question && card.answer);
+                  }
+                } catch (e) {
+                  console.log('[Flash Cards] JSON parse failed, trying alternative approach...');
+                }
+              }
+              
+              // Strategy 2: Parse Q&A format manually
+              const lines = responseText.split('\n').map(line => line.trim()).filter(line => line);
+              const cards = [];
+              let currentCard = {};
+              
+              for (const line of lines) {
+                if (line.match(/^(Q|Question)\s*:?\s*(.+)/i)) {
+                  if (currentCard.question && currentCard.answer) {
+                    cards.push(currentCard);
+                  }
+                  currentCard = { question: line.replace(/^(Q|Question)\s*:?\s*/i, '').trim() };
+                } else if (line.match(/^(A|Answer)\s*:?\s*(.+)/i)) {
+                  if (currentCard.question) {
+                    currentCard.answer = line.replace(/^(A|Answer)\s*:?\s*/i, '').trim();
+                  }
+                }
+              }
+              
+              if (currentCard.question && currentCard.answer) {
+                cards.push(currentCard);
               }
               
               if (cards.length > 0) {
                 return cards;
-              } else {
-                // Final fallback
-                return [
-                  { question: `What is ${query}?`, answer: "A key concept that helps organize and solve problems in this domain." },
-                  { question: "What are the main components of this concept?", answer: "The concept typically consists of several key elements that work together." },
-                  { question: "Why is this concept important?", answer: "It provides a fundamental framework for understanding this topic area." },
-                  { question: "How is this concept applied in practice?", answer: "The concept is applied through specific processes and techniques." },
-                  { question: "What should you remember about this concept?", answer: "Focus on understanding the core principles and their practical applications." }
-                ];
               }
-            }
+              
+              // Strategy 3: Extract any question-answer patterns
+              const qaPatterns = [
+                /(?:Question|Q)\s*:?\s*(.+?)(?:\n|\r\n?)+(?:Answer|A)\s*:?\s*(.+?)(?=\n\s*(?:Question|Q)|$)/gs,
+                /(\d+\.\s*.+?\?)[\s\n]+(.+?)(?=\d+\.|$)/gs,
+                /(.+?\?)[\s\n]+(.+?)(?=.+?\?|$)/gs
+              ];
+              
+              for (const pattern of qaPatterns) {
+                const matches = [...responseText.matchAll(pattern)];
+                if (matches.length > 0) {
+                  return matches.map(match => ({
+                    question: match[1].trim().replace(/^\d+\.\s*/, ''),
+                    answer: match[2].trim()
+                  })).filter(card => card.question && card.answer);
+                }
+              }
+              
+              // Strategy 4: Final fallback with topic-specific cards
+              console.log('[Flash Cards] All parsing strategies failed, using fallback cards');
+              return [
+                { question: `What is the main concept in: "${query}"?`, answer: "This is a fundamental concept that requires understanding its core principles and applications." },
+                { question: "What are the key components of this topic?", answer: "The topic consists of several interconnected elements that work together to form a complete understanding." },
+                { question: "Why is this concept important to learn?", answer: "Understanding this concept provides a foundation for further learning and practical application in related areas." },
+                { question: "How can this concept be applied in practice?", answer: "This concept can be applied through systematic approaches and real-world problem-solving techniques." },
+                { question: "What should you remember about this topic?", answer: "Focus on understanding the core principles, key relationships, and practical applications of this concept." }
+              ];
+            };
+            
+            return parseFlashCardsResponse(responseText);
           } catch (parseError) {
-            console.error('[Tab Content Generation] Error parsing flash cards JSON:', parseError);
+            console.error('Error parsing flash cards JSON:', parseError);
             // Use fallback cards
             return [
               { question: `What is ${query}?`, answer: "A key concept that helps organize and solve problems in this domain." },
@@ -942,17 +1013,8 @@ Respond only with one of the labels above.`.trim();
           }
           
           console.log(`[Crowd Wisdom Learning] Implicit rating: ${implicitRating}/5 (${softSignal})`);
-          
-          // Process this as crowd wisdom feedback
-          const cwSuccess = await supervisor.processFeedbackForCrowdWisdom(
-            lastInteraction.response.id,
-            implicitRating,
-            userMessage, // use the natural conversation as feedback
-            lastInteraction.response,
-            openai
-          );
-          
-          console.log(`[Crowd Wisdom Learning] Template learning success: ${cwSuccess}`);
+        
+          console.log(`[Crowd Wisdom Learning] Soft signal '${softSignal}' will be processed by aggregateTemplateStats.js`);
         }
         
       } catch (err) {
@@ -965,7 +1027,8 @@ Respond only with one of the labels above.`.trim();
       response,
       aiMessage, // Include the aiMessage in the interaction
       soft_signal: softSignal, // Store the soft signal
-      cluster_id: clusterIdForUsage !== undefined ? clusterIdForUsage : null // Pass cluster_id for saving
+      cluster_id: clusterIdForUsage !== undefined ? clusterIdForUsage : null, // Pass cluster_id for saving
+      semantic_cluster_id: clusterIdForUsage !== undefined ? clusterIdForUsage : null // ✅ FIX: Also save as semantic_cluster_id
     });
     
     // If Crowd Wisdom was applied, update template usage with the new responseId
@@ -1011,20 +1074,71 @@ Respond only with one of the labels above.`.trim();
         interaction_id: interactionId || null // Store the interaction id if available
       });
     
-    // Automatic template creation on fallback
-    if (selectionMethod === 'fallback' && clusterIdForUsage != null && response.explanation) {
-      try {
-        await supabase.from('prompt_templates').insert({
-          template_text: response.explanation,
-          topic: secretTopic || 'general',
-          source: 'auto_generated',
-          cluster_id: Number(clusterIdForUsage),
-          created_at: new Date().toISOString(),
-          metadata: { inserted_by: 'auto_fallback', query: query }
-        });
-        console.log('[Crowd Wisdom] Auto-created new template for cluster', clusterIdForUsage);
-      } catch (err) {
-        console.error('[Crowd Wisdom] Error auto-creating fallback template:', err);
+    // ✅ FIX: Add logging to track template usage logging
+    console.log(`[CROWD WISDOM LOGGING] Template usage logged:`, {
+      template_id: templateIdForUsage,
+      cluster_id: clusterIdForUsage,
+      selection_method: selectionMethodForUsage,
+      query: enhancedQuery.substring(0, 50) + '...'
+    });
+    
+    // Enhanced template auto-generation for new clusters and fallback scenarios
+    if (clusterIdForUsage != null && response.explanation) {
+      let shouldCreateTemplate = false;
+      let templateSource = 'auto_generated';
+      let insertReason = 'auto_fallback';
+      
+      if (isNewCluster) {
+        // Always create a foundational template for new clusters
+        shouldCreateTemplate = true;
+        templateSource = 'realtime_cluster';
+        insertReason = 'new_cluster_foundation';
+        console.log(`[Real-time Clustering] Creating foundational template for new cluster ${clusterIdForUsage}`);
+      } else if (selectionMethod === 'fallback') {
+        // Also create templates for fallback scenarios in existing clusters
+        shouldCreateTemplate = true;
+        templateSource = 'auto_generated';
+        insertReason = 'auto_fallback';
+        console.log(`[Crowd Wisdom] Creating fallback template for existing cluster ${clusterIdForUsage}`);
+      }
+      
+      if (shouldCreateTemplate) {
+        try {
+          // Create a comprehensive template that captures the successful response pattern
+          const templateMetadata = {
+            inserted_by: insertReason,
+            query: query,
+            response_length: response.explanation.length,
+            has_analogy: !!response.analogy,
+            has_example: !!response.example,
+            has_key_takeaways: !!(response.key_takeaways && response.key_takeaways.length > 0),
+            selection_method_used: selectionMethod,
+            created_from_cluster_creation: isNewCluster,
+            cluster_size_at_creation: isNewCluster ? 1 : null
+          };
+          
+          await supabase.from('prompt_templates').insert({
+            template_text: response.explanation,
+            topic: secretTopic || 'general',
+            source: templateSource,
+            cluster_id: Number(clusterIdForUsage),
+            created_at: new Date().toISOString(),
+            metadata: templateMetadata,
+            // Initialize with neutral scores for new templates
+            success_signals: 0,
+            total_uses: 0,
+            usage_count: 0
+          });
+          
+          if (isNewCluster) {
+            console.log(`[Real-time Clustering] ✅ Created foundational template for new cluster ${clusterIdForUsage}`);
+            console.log(`[Real-time Clustering] 🎯 Future queries in this domain will benefit from this template`);
+          } else {
+            console.log(`[Crowd Wisdom] ✅ Auto-created template for cluster ${clusterIdForUsage}`);
+          }
+        } catch (err) {
+          console.error(`[Template Creation] Error creating template for cluster ${clusterIdForUsage}:`, err);
+        }
       }
     }
     
@@ -1053,101 +1167,6 @@ app.post('/api/feedback', async (req, res) => {
     deprecated: true 
   });
 });
-
-// Add component-level feedback endpoint
-app.post('/api/component-feedback', async (req, res) => {
-  try {
-    const { 
-      usageId, 
-      analogyRating, 
-      explanationRating, 
-      clarityRating, 
-      relevanceRating,
-      sessionId 
-    } = req.body;
-    
-    if (!usageId) {
-      return res.status(400).json({ error: 'Usage ID is required' });
-    }
-    
-    // Get the user ID
-    const userId = req.user?.id || req.body.userId;
-    
-    console.log(`[Crowd Wisdom] Received component feedback for usage ${usageId}`);
-    
-    // Store component-level feedback
-    const { data, error } = await supabase
-      .from('template_component_feedback')
-      .insert({
-        template_usage_id: usageId,
-        analogy_rating: analogyRating || null,
-        explanation_rating: explanationRating || null,
-        clarity_rating: clarityRating || null,
-        relevance_rating: relevanceRating || null
-      });
-    
-    if (error) {
-      console.error('[Crowd Wisdom] Error storing component feedback:', error);
-      throw error;
-    }
-    
-    // Also update the component_rating JSONB field with averages
-    // Get the template_id from usage
-    const { data: usage } = await supabase
-      .from('prompt_template_usage')
-      .select('template_id')
-      .eq('id', usageId)
-      .single();
-      
-    if (usage && usage.template_id) {
-      // Get all component ratings for this template
-      const { data: allComponentFeedback } = await supabase
-        .from('template_component_feedback')
-        .select('*')
-        .eq('template_usage_id', usageId);
-        
-      // Calculate averages
-      const componentAverages = {
-        analogy: calculateAverage(allComponentFeedback, 'analogy_rating'),
-        explanation: calculateAverage(allComponentFeedback, 'explanation_rating'),
-        clarity: calculateAverage(allComponentFeedback, 'clarity_rating'),
-        relevance: calculateAverage(allComponentFeedback, 'relevance_rating')
-      };
-      
-      // Update template with component averages
-      await supabase
-        .from('prompt_templates')
-        .update({ component_rating: componentAverages })
-        .eq('id', usage.template_id);
-        
-      console.log(`[Crowd Wisdom] Updated component ratings for template ${usage.template_id}`);
-    }
-    
-    // If sessionId provided, add an interaction for this component feedback
-    if (sessionId) {
-      await sessionManager.addInteraction(sessionId, {
-        type: 'component_feedback',
-        usageId,
-        analogyRating,
-        explanationRating,
-        clarityRating,
-        relevanceRating
-      });
-    }
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error processing component feedback:', error);
-    res.status(500).json({ error: 'Failed to process component feedback' });
-  }
-});
-
-// Helper function to calculate average
-function calculateAverage(items, field) {
-  const validItems = items.filter(item => item[field] !== null);
-  if (validItems.length === 0) return null;
-  return validItems.reduce((sum, item) => sum + item[field], 0) / validItems.length;
-}
 
 // Add context endpoint
 app.get('/api/context/:sessionId', async (req, res) => {
@@ -1623,9 +1642,6 @@ app.get('/profile-override', (req, res) => {
 });
 
 // Add Crowd Wisdom admin UI
-app.get('/crowd-wisdom-admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'crowdWisdomAdmin.html'));
-});
 
 // Add a webhook to listen for profile updates from Supabase
 app.post('/api/hooks/profile-updated', async (req, res) => {
@@ -2111,7 +2127,7 @@ app.get('/api/admin/crowd-wisdom/stats', async (req, res) => {
     // Get usage statistics
     const { data: usage, error: usageError } = await supabase
       .from('prompt_template_usage')
-      .select('id, template_id, feedback_score');
+      .select('id, template_id, soft_signal_type');
     
     if (usageError) throw usageError;
     
@@ -2136,7 +2152,7 @@ app.get('/api/admin/crowd-wisdom/stats', async (req, res) => {
     }, {});
     
     // Calculate average feedback score
-    const feedbackScores = usage.filter(u => u.feedback_score !== null).map(u => u.feedback_score);
+    const feedbackScores = usage.filter(u => u.soft_signal_type !== null).map(u => u.soft_signal_type);
     const avgFeedbackScore = feedbackScores.length > 0 ? 
       feedbackScores.reduce((sum, score) => sum + score, 0) / feedbackScores.length : 0;
     
@@ -2979,6 +2995,20 @@ function startServer(port) {
     // Initialize periodic clustering (run every 24 hours)
     console.log('📅 Setting up periodic clustering...');
     clusteringService.schedulePeriodicClustering(24);
+    
+    // 🆕 Schedule aggregateTemplateStats for implicit feedback processing
+    console.log('📊 Setting up periodic template stats aggregation...');
+    console.log('📊 Scheduling template stats aggregation to run every 6 hours');
+    setInterval(async () => {
+      try {
+        console.log('⏰ Running scheduled template stats aggregation...');
+        const { aggregateTemplateStats } = await import('../scripts/aggregateTemplateStats.js');
+        await aggregateTemplateStats();
+        console.log('✅ Scheduled template stats aggregation completed');
+      } catch (error) {
+        console.error('❌ Scheduled template stats aggregation failed:', error);
+      }
+    }, 6 * 60 * 60 * 1000); // Every 6 hours
   });
 
   server.on('error', (err) => {
@@ -3036,7 +3066,7 @@ app.get('/api/user-topics/progress', async (req, res) => {
     // 🆕 Get user feedback data for progress enhancement
     const { data: feedbackData, error: feedbackError } = await supabase
       .from('feedback')
-      .select('rating, query_text, response_text, comments, created_at, session_id')
+      .select('query_text, response_text, comments, created_at, session_id')
       .eq('user_id', user_id)
       .order('created_at', { ascending: false });
     
@@ -3082,7 +3112,6 @@ app.get('/api/user-topics/progress', async (req, res) => {
           session_count: 0,
           quiz_scores: [],
           feedback_scores: [], // 🆕 Added feedback tracking
-          component_ratings: [], // 🆕 Added component feedback tracking
           recent_activity: null,
           first_learned: session.created_at,
           mastery_level: 0,
@@ -3131,7 +3160,6 @@ app.get('/api/user-topics/progress', async (req, res) => {
             const feedbackAnalysis = analyzeSecretFeedbackQuality(feedback);
             
             topicProgress[topic].feedback_scores.push({
-              rating: feedback.rating,
               quality_score: feedbackAnalysis.qualityScore,
               satisfaction_level: feedbackAnalysis.satisfactionLevel,
               content_richness: feedbackAnalysis.contentRichness,
@@ -3143,32 +3171,6 @@ app.get('/api/user-topics/progress', async (req, res) => {
       });
     }
     
-    // 🆕 Process component feedback data with content analysis
-    if (componentFeedback && componentFeedback.length > 0) {
-      componentFeedback.forEach(component => {
-        // Find which session this component feedback belongs to
-        const sessionId = component.template_usage?.session_id;
-        const relatedSession = sessions.find(s => s.id === sessionId);
-        if (relatedSession && relatedSession.secret_topic) {
-          const topic = relatedSession.secret_topic;
-          if (topicProgress[topic]) {
-            // Analyze component effectiveness
-            const componentAnalysis = analyzeComponentEffectiveness(component);
-            
-            topicProgress[topic].component_ratings.push({
-              effectiveness_score: componentAnalysis.effectivenessScore,
-              components: {
-                analogy: component.analogy_rating,
-                explanation: component.explanation_rating,
-                clarity: component.clarity_rating,
-                relevance: component.relevance_rating
-              },
-              analysis: componentAnalysis
-            });
-          }
-        }
-      });
-    }
     
     // 🆕 Enhanced mastery level calculation with feedback integration + CLUSTER BENCHMARKING
     // Get user's cluster information for benchmarking
@@ -3281,20 +3283,6 @@ app.get('/api/user-topics/progress', async (req, res) => {
         feedbackQualityScore = totalQualityScore / progress.feedback_scores.length;
       }
       
-      // Add component feedback analysis if available
-      if (progress.component_ratings.length > 0) {
-        const componentEffectivenessAvg = progress.component_ratings.reduce((sum, c) => {
-          return sum + (c.effectiveness_score || 0);
-        }, 0) / progress.component_ratings.length;
-        
-        // Combine general feedback with component feedback (weighted average)
-        if (feedbackQualityScore > 0) {
-          feedbackQualityScore = (feedbackQualityScore * 0.7) + (componentEffectivenessAvg * 0.3);
-        } else {
-          feedbackQualityScore = componentEffectivenessAvg;
-        }
-      }
-      
       progress.feedback_quality = Math.round(feedbackQualityScore);
       
       // Estimate learning hours (rough calculation: 1 session = 0.5 hours)
@@ -3376,7 +3364,7 @@ app.get('/api/user-topics/progress', async (req, res) => {
         ? Math.round(progress.feedback_scores.reduce((sum, f) => sum + (f.preference_alignment || 0), 0) / progress.feedback_scores.length)
         : 0;
       
-      progress.feedback_count = progress.feedback_scores.length + progress.component_ratings.length;
+      progress.feedback_count = progress.feedback_scores.length;
     });
     
     console.log(`[Topic Progress] Generated progress for ${Object.keys(topicProgress).length} topics with feedback integration and cluster benchmarking`);
@@ -3712,7 +3700,7 @@ app.get('/api/user-achievements', async (req, res) => {
         condition: () => {
           let componentFeedbackCount = 0;
           userProgress.forEach(p => {
-            componentFeedbackCount += p.component_ratings ? p.component_ratings.length : 0;
+            // componentFeedbackCount removed - component ratings eliminated
           });
           return componentFeedbackCount >= 5;
         }
@@ -3720,15 +3708,30 @@ app.get('/api/user-achievements', async (req, res) => {
       {
         id: 'perfect_reviewer',
         name: 'Perfect Reviewer',
-        description: 'Gave 5-star ratings on 3+ responses',
+        description: 'Received high satisfaction on 3+ responses',
         icon: '🌟',
         condition: () => {
-          let perfectRatings = 0;
+          let highSatisfactionCount = 0;
           userProgress.forEach(p => {
-            perfectRatings += p.feedback_scores ? p.feedback_scores.filter(f => f.rating === 5).length : 0;
-            perfectRatings += p.component_ratings ? p.component_ratings.filter(c => c.rating >= 4.5).length : 0;
+            highSatisfactionCount += p.feedback_scores ? p.feedback_scores.filter(f => f.satisfaction_level >= 80).length : 0;
+            // perfectRatings from component ratings eliminated
           });
-          return perfectRatings >= 3;
+          return highSatisfactionCount >= 3;
+        }
+      },
+      {
+        id: 'high_satisfaction',
+        name: 'High Satisfaction',
+        description: 'Received high satisfaction on 3+ responses',
+        icon: '🌟',
+        condition: () => {
+          let highSatisfactionCount = 0;
+          userProgress.forEach(p => {
+            // Count feedback with high satisfaction levels (80+ out of 100)
+            highSatisfactionCount += p.feedback_scores ? p.feedback_scores.filter(f => f.satisfaction_level >= 80).length : 0;
+            // perfectRatings from component ratings eliminated
+          });
+          return highSatisfactionCount >= 3;
         }
       }
     ];
@@ -3771,13 +3774,12 @@ app.get('/api/user-achievements', async (req, res) => {
  */
 function analyzeSecretFeedbackQuality(feedback) {
   const comments = feedback.comments || '';
-  const rating = feedback.rating || 3;
   
   // Content richness: How detailed and informative is the feedback?
   const contentRichness = analyzeContentRichness(comments);
   
-  // Satisfaction level: Derived from sentiment and rating consistency
-  const satisfactionLevel = analyzeSatisfactionLevel(comments, rating);
+  // Satisfaction level: Derived from sentiment analysis of comments
+  const satisfactionLevel = analyzeSatisfactionLevel(comments);
   
   // Preference alignment: How well did the response match user preferences?
   const preferenceAlignment = analyzePreferenceAlignment(comments);
@@ -3798,28 +3800,6 @@ function analyzeSecretFeedbackQuality(feedback) {
  * @param {Object} component - Component feedback data
  * @returns {Object} - Effectiveness analysis
  */
-function analyzeComponentEffectiveness(component) {
-  const ratings = [
-    component.analogy_rating,
-    component.explanation_rating,
-    component.clarity_rating,
-    component.relevance_rating
-  ].filter(r => r !== null);
-  
-  if (ratings.length === 0) {
-    return { effectivenessScore: 0 };
-  }
-  
-  // Calculate weighted effectiveness score
-  const avgRating = ratings.reduce((sum, r) => sum + r, 0) / ratings.length;
-  const effectivenessScore = ((avgRating - 1) / 4) * 100; // Convert 1-5 to 0-100
-  
-  return {
-    effectivenessScore: Math.round(effectivenessScore),
-    componentCount: ratings.length,
-    averageComponentRating: Math.round(avgRating * 10) / 10
-  };
-}
 
 /**
  * Analyze content richness of feedback
@@ -3851,13 +3831,12 @@ function analyzeContentRichness(comments) {
 }
 
 /**
- * Analyze satisfaction level from feedback content and rating consistency
+ * Analyze satisfaction level from feedback comments alone (no explicit rating)
  * @param {string} comments - Feedback comments
- * @param {number} rating - Numerical rating
  * @returns {number} - Satisfaction score (0-100)
  */
-function analyzeSatisfactionLevel(comments, rating) {
-  if (!comments) return (rating - 1) * 25; // Fallback to rating-based score
+function analyzeSatisfactionLevel(comments) {
+  if (!comments) return 50; // Neutral score if no comments
   
   // Positive sentiment indicators
   const positiveWords = ['good', 'great', 'excellent', 'helpful', 'clear', 'useful', 'perfect', 'love', 'amazing'];
@@ -3867,16 +3846,10 @@ function analyzeSatisfactionLevel(comments, rating) {
   const positiveCount = positiveWords.filter(word => lowerComments.includes(word)).length;
   const negativeCount = negativeWords.filter(word => lowerComments.includes(word)).length;
   
-  // Sentiment score
-  const sentimentScore = (positiveCount - negativeCount) * 10 + 50; // Base 50, adjust by sentiment
+  // Pure sentiment-based scoring
+  const sentimentScore = (positiveCount - negativeCount) * 15 + 50; // Base 50, adjust by sentiment
   
-  // Rating consistency
-  const ratingScore = (rating - 1) * 25; // Convert 1-5 to 0-100
-  
-  // Combine sentiment and rating with weights
-  const satisfactionScore = (sentimentScore * 0.6) + (ratingScore * 0.4);
-  
-  return Math.max(0, Math.min(100, satisfactionScore));
+  return Math.max(0, Math.min(100, sentimentScore));
 }
 
 /**
@@ -4515,14 +4488,29 @@ Respond with a valid JSON array of objects:
 
     // Try to parse the JSON response
     try {
+      // Clean the response text first to handle escaped characters
+      let cleanedText = responseText;
+      
       // Look for JSON array in the response
-      const jsonMatch = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      const jsonMatch = cleanedText.match(/\[\s*\{[\s\S]*\}\s*\]/);
       if (jsonMatch) {
-        flashCardsContent = JSON.parse(jsonMatch[0]);
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch (jsonParseError) {
+          console.log('[Tab Content Generation] JSON parse failed, trying with cleaned text...');
+          // Try to clean common problematic characters
+          const cleaned = jsonMatch[0]
+            .replace(/\\'/g, "'")  // Fix escaped single quotes
+            .replace(/\\"/g, '"')  // Fix escaped double quotes
+            .replace(/\\\\/g, '\\') // Fix double escapes
+            .replace(/[\u0000-\u001F\u007F-\u009F]/g, ''); // Remove control characters
+          
+          return JSON.parse(cleaned);
+        }
       } else {
         // Fallback parsing from Q&A format
         const cards = [];
-        const qaMatches = responseText.matchAll(/(?:Question|Q)[:\.]?\s*(.+?)(?:\n|\r\n?)+(?:Answer|A)[:\.]?\s*(.+?)(?=\n\s*(?:Question|Q)[:\.]?|\n\s*\d+[:\.]|$)/gs);
+        const qaMatches = cleanedText.matchAll(/(?:Question|Q)[:\.]?\s*(.+?)(?:\n|\r\n?)+(?:Answer|A)[:\.]?\s*(.+?)(?=\n\s*(?:Question|Q)[:\.]?|\n\s*\d+[:\.]|$)/gs);
         
         for (const match of qaMatches) {
           cards.push({
@@ -4824,9 +4812,6 @@ app.get('/api/admin/clustering/stats', async (req, res) => {
   }
 });
 
-app.get('/crowd-wisdom-admin', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/crowd-wisdom-admin.html'));
-});
 
 // Serve clustering admin interface
 app.get('/clustering-admin', (req, res) => {

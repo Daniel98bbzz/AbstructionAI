@@ -34,7 +34,6 @@ class FeedbackProcessor {
   /**
    * Process feedback: classify and return structured result
    * @param {string} responseId
-   * @param {number} rating
    * @param {string} comments
    * @param {string} userId
    * @param {Object} responseData
@@ -42,12 +41,11 @@ class FeedbackProcessor {
    * @param {Object} openai
    * @returns {Promise<object>} - Enhanced feedback processing result
    */
-  async processFeedback(responseId, rating, comments, userId, responseData, originalQuery, openai) {
+  async processFeedback(responseId, comments, userId, responseData, originalQuery, openai) {
     console.log('[FeedbackProcessor] Processing comprehensive feedback...');
     
     const result = {
       responseId,
-      rating,
       comments,
       userId,
       originalQuery,
@@ -70,7 +68,6 @@ class FeedbackProcessor {
           template_id: responseData.crowd_wisdom.template_id,
           response_id: responseId,
           user_id: userId,
-          rating: rating,
           feedback_text: comments,
           feedback_classification: result.classification,
           query: originalQuery,

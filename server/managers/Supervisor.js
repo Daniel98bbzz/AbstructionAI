@@ -233,17 +233,16 @@ class Supervisor {
   }
 
   /**
-   * Process a query using the wisdom-of-crowds logic (ENHANCED VERSION)
+   * Process a query with crowd wisdom enhancement
    * @param {string} query
    * @param {string} sessionId
    * @param {string} userId
    * @param {object} openai
-   * @param {boolean} useCompositeScore
    * @param {number} explorationRate
    * @returns {Promise<object>} - Returns an object with enhancedQuery, template, topic, selectionMethod, systemEnhancement
    */
-  async processQueryWithCrowdWisdom(query, sessionId, userId, openai, useCompositeScore, explorationRate) {
-    console.log('[Supervisor] processQueryWithCrowdWisdom called', { query, sessionId, userId, useCompositeScore, explorationRate });
+  async processQueryWithCrowdWisdom(query, sessionId, userId, openai, explorationRate) {
+    console.log('[Supervisor] processQueryWithCrowdWisdom called', { query, sessionId, userId, explorationRate });
     try {
       // 1. Create embedding
       const embeddingResponse = await openai.embeddings.create({
@@ -252,63 +251,86 @@ class Supervisor {
       });
       const embedding = embeddingResponse.data[0].embedding;
 
-      // 2. Cluster stage – proximity retrieval
+      // 2. Cluster stage – proximity retrieval with similarity threshold
+      const SIMILARITY_THRESHOLD = 0.75; // Cosine similarity threshold for cluster matching
       const { data: clusterMatch, error: clusterError } = await supabase
         .rpc('match_semantic_cluster', { embedding_vector: embedding });
 
+      let cluster_id = null;
+      let isNewCluster = false;
+
       if (clusterError || !clusterMatch || clusterMatch.length === 0) {
         console.error('[Supervisor] Error matching cluster:', clusterError);
-        console.warn(`[CW DEBUG] No cluster match found for query: "${query}". Fallback activated`);
-        // Fallback: no cluster, use best global template
-        const bestGlobal = await this.getBestGlobalTemplateUCB();
-        const enhancement = this.applyTemplateEnhancement(query, bestGlobal?.templateData || 'default_template');
-        return {
-          enhancedQuery: enhancement.enhancedQuery,
-          systemEnhancement: enhancement.systemEnhancement,
-          template: bestGlobal?.templateData || 'default_template',
-          topic: null,
-          selectionMethod: bestGlobal ? 'global_ucb1' : 'fallback',
-          cluster_id: null,
-          templateApplied: enhancement.templateApplied
-        };
+        console.warn(`[Real-time Clustering] No cluster match found for query: "${query}". Creating new cluster...`);
+        
+        // 🚀 REAL-TIME CLUSTER CREATION
+        cluster_id = await this.createRealtimeCluster(embedding, query);
+        isNewCluster = true;
+      } else {
+        const match = clusterMatch[0];
+        const similarity = match.similarity;
+        
+        console.log(`[Supervisor] Matched semantic cluster: ID=${match.id}, similarity=${similarity}`);
+        
+        // Check if similarity is above threshold
+        if (similarity < SIMILARITY_THRESHOLD) {
+          console.log(`[Real-time Clustering] Similarity ${similarity} below threshold ${SIMILARITY_THRESHOLD}. Creating new cluster...`);
+          
+          // 🚀 REAL-TIME CLUSTER CREATION
+          cluster_id = await this.createRealtimeCluster(embedding, query);
+          isNewCluster = true;
+        } else {
+          cluster_id = match.id;
+          console.log(`[Real-time Clustering] Using existing cluster ${cluster_id} (similarity: ${similarity})`);
+        }
       }
-
-      const match = clusterMatch[0];
-      console.log(`[Supervisor] Matched semantic cluster: ID=${match.id}, similarity=${match.similarity}`);
-      const cluster_id = match.id;
 
       // 3. Find the best template for this cluster from the UCB1 view
       console.log(`[CW DEBUG] Looking for best template for cluster ${cluster_id} (UCB1)...`);
-      const { data: bestRow, error: bestRowError } = await supabase
-        .from('cluster_best_template_ucb_top')
-        .select('template_id, ucb1_score')
-        .eq('cluster_id', cluster_id)
-        .limit(1)
-        .single();
-
+      
       let templateData = null;
       let selectionMethod = 'ucb1';
-      if (bestRow && bestRow.template_id) {
-        // Fetch the actual template data
-        const { data: tData, error: templateError } = await supabase
-          .from('prompt_templates')
-          .select('*')
-          .eq('id', bestRow.template_id)
+      
+      if (!isNewCluster) {
+        // For existing clusters, try to find existing templates
+        const { data: bestRow, error: bestRowError } = await supabase
+          .from('cluster_best_template_ucb_top')
+          .select('template_id, ucb1_score')
+          .eq('cluster_id', cluster_id)
+          .limit(1)
           .single();
-        if (tData) {
-          templateData = tData;
-        } else {
-          console.warn(`[CW DEBUG] Could not fetch template data for template_id ${bestRow.template_id}. Error:`, templateError?.message);
+
+        if (bestRow && bestRow.template_id) {
+          // Fetch the actual template data
+          const { data: tData, error: templateError } = await supabase
+            .from('prompt_templates')
+            .select('*')
+            .eq('id', bestRow.template_id)
+            .single();
+          if (tData) {
+            templateData = tData;
+            console.log(`[Real-time Clustering] Found existing template for cluster ${cluster_id}: ${tData.id}`);
+          } else {
+            console.warn(`[CW DEBUG] Could not fetch template data for template_id ${bestRow.template_id}. Error:`, templateError?.message);
+          }
         }
       }
+      
       if (!templateData) {
-        // Fallback: use best global template by UCB1
-        const bestGlobal = await this.getBestGlobalTemplateUCB();
-        templateData = bestGlobal?.templateData || 'default_template';
-        selectionMethod = bestGlobal ? 'global_ucb1' : 'fallback';
+        // For new clusters, don't apply irrelevant templates
+        if (isNewCluster) {
+          console.log(`[Real-time Clustering] New cluster ${cluster_id} created - starting fresh without template contamination`);
+          templateData = 'default_template';
+          selectionMethod = 'new_cluster_fresh';
+        } else {
+          // For existing clusters without templates, use best global template by UCB1
+          const bestGlobal = await this.getBestGlobalTemplateUCB();
+          templateData = bestGlobal?.templateData || 'default_template';
+          selectionMethod = bestGlobal ? 'global_ucb1' : 'fallback';
+        }
       }
 
-      // 4. APPLY TEMPLATE ENHANCEMENT (THE MISSING PIECE!)
+      // 4. APPLY TEMPLATE ENHANCEMENT
       const enhancement = this.applyTemplateEnhancement(query, templateData);
       console.log(`[Crowd Wisdom] Template enhancement applied: ${enhancement.templateApplied}`);
       if (enhancement.templateApplied) {
@@ -319,10 +341,11 @@ class Supervisor {
         enhancedQuery: enhancement.enhancedQuery,
         systemEnhancement: enhancement.systemEnhancement,
         template: templateData,
-        topic: match?.topic || null,
+        topic: null, // New clusters don't have predefined topics yet
         selectionMethod,
         cluster_id: cluster_id,
-        templateApplied: enhancement.templateApplied
+        templateApplied: enhancement.templateApplied,
+        isNewCluster: isNewCluster
       };
     } catch (error) {
       console.error('[CW DEBUG] Error in processQueryWithCrowdWisdom:', error);
@@ -336,13 +359,54 @@ class Supervisor {
         topic: null,
         selectionMethod: bestGlobal ? 'global_ucb1' : 'fallback',
         cluster_id: null,
-        templateApplied: enhancement.templateApplied
+        templateApplied: enhancement.templateApplied,
+        isNewCluster: false
       };
     }
   }
 
   /**
-   * Helper: Get the best global template by UCB1 (across all clusters)
+   * Create a new semantic cluster in real-time
+   * @param {Array} embedding - The 1536D embedding vector
+   * @param {string} query - The representative query for this cluster
+   * @returns {Promise<number>} - The ID of the newly created cluster
+   */
+  async createRealtimeCluster(embedding, query) {
+    try {
+      console.log(`[Real-time Clustering] Creating new cluster for query: "${query.substring(0, 60)}..."`);
+      
+      // Create new cluster record - let the database auto-assign the ID
+      const { data: newCluster, error: clusterError } = await supabase
+        .from('semantic_clusters')
+        .insert({
+          centroid: embedding, // Use the query's embedding as the centroid
+          size: 1, // Start with size 1
+          representative_query: query, // Use this query as the representative
+          clustering_version: 'realtime'
+          // Don't specify id - let the sequence auto-assign it
+        })
+        .select('id')
+        .single();
+
+      if (clusterError) {
+        console.error('[Real-time Clustering] Error creating new cluster:', clusterError);
+        throw clusterError;
+      }
+
+      const newClusterId = newCluster.id;
+      console.log(`[Real-time Clustering] ✅ Created new cluster ID: ${newClusterId}`);
+      console.log(`[Real-time Clustering] 🎯 System can now learn templates for this new domain: "${query.substring(0, 40)}..."`);
+      
+      return newClusterId;
+    } catch (error) {
+      console.error('[Real-time Clustering] Failed to create new cluster:', error);
+      // Return null to indicate failure - the calling code will handle fallback
+      return null;
+    }
+  }
+
+  /**
+   * Get the best global template by UCB1 (across all clusters)
    */
   async getBestGlobalTemplateUCB() {
     // Find the template with the highest UCB1 score across all clusters
@@ -363,63 +427,6 @@ class Supervisor {
       .eq('id', best.template_id)
       .single();
     return { templateData: tData, ucb1_score: best.ucb1_score };
-  }
-
-  /**
-   * Update template efficacy based on feedback
-   * @param {string} responseId - The response ID
-   * @param {number} rating - The feedback rating (1-5)
-   * @param {string} query - The original query
-   * @param {Object} response - The response object
-   * @param {Object} openai - OpenAI client (optional)
-   * @returns {Promise<boolean>} - Success status
-   */
-  async processFeedbackForCrowdWisdom(responseId, rating, query, response, openai) {
-    try {
-      // Update efficacy for existing template
-      const updated = await this.responseClusterManager.updateTemplateEfficacy(responseId, rating);
-      
-      if (!updated && rating >= 4) {
-        // If no template was used, but the response was highly rated,
-        // create a new template from this successful interaction
-        const topic = await this.responseClusterManager.classifyTopic(query, openai);
-        await this.responseClusterManager.createTemplateFromSuccess(topic, query, response, rating, openai);
-      }
-      
-      // Recalculate composite quality scores periodically
-      // Only do this sometimes to avoid overhead on every feedback
-      if (Math.random() < 0.2) { // 20% chance
-        console.log('[Crowd Wisdom] Triggering periodic composite quality score update');
-        // Run in the background to not block the response
-        setTimeout(async () => {
-          try {
-            await this.responseClusterManager.calculateCompositeQualityScores();
-          } catch (error) {
-            console.error('[Crowd Wisdom] Error in background quality score update:', error);
-          }
-        }, 100);
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('Error in processFeedbackForCrowdWisdom:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Calculate composite quality scores for all templates
-   * @param {Object} customWeights - Optional custom weights for signals
-   * @returns {Promise<number>} - Number of templates updated
-   */
-  async updateCompositeScores(customWeights = null) {
-    try {
-      console.log('[Crowd Wisdom] Admin-triggered composite quality score update');
-      return await this.responseClusterManager.calculateCompositeQualityScores(customWeights);
-    } catch (error) {
-      console.error('Error updating composite scores:', error);
-      return 0;
-    }
   }
 
   /**

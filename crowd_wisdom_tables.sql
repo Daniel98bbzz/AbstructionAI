@@ -20,7 +20,7 @@ CREATE TABLE prompt_template_usage (
   user_id UUID, -- Can be null for anonymous users
   query TEXT NOT NULL,
   response_id UUID, -- Reference to the response
-  feedback_score INTEGER, -- User feedback rating 1-5
+  soft_signal_type VARCHAR, -- Soft signal from natural conversation: 'satisfaction', 'confusion', 'positive', etc.
   created_at TIMESTAMPTZ DEFAULT now(),
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );

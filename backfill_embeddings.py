@@ -36,7 +36,7 @@ for r in records:
         print(f"✨ Embedding query: {query[:50]}...")
         response = openai.embeddings.create(
             input=query,
-            model="text-embedding-3-small"
+            model="text-embedding-ada-002"
         )
         embedding = response.data[0].embedding
 

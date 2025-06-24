@@ -13,13 +13,12 @@ const openai = new OpenAI({
  */
 export async function generateFeedbackEmbedding(content) {
   try {
-    const response = await openai.embeddings.create({
-      model: "text-embedding-3-small",
+    const embeddingResponse = await openai.embeddings.create({
       input: content,
-      encoding_format: "float",
+      model: "text-embedding-ada-002",
     });
 
-    return response.data[0].embedding;
+    return embeddingResponse.data[0].embedding;
   } catch (error) {
     console.error('[FEEDBACK ENHANCEMENT] Error generating embedding:', error);
     throw error;

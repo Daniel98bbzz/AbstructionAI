@@ -1,4 +1,33 @@
-import { generateEmbedding } from '../../src/utils/embedding.js';
+import OpenAI from 'openai';
+
+// Initialize OpenAI client for embeddings
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+/**
+ * Generate embedding using OpenAI API (server-side only)
+ * @param {string} text - Text to embed
+ * @returns {Array|null} - 1536D embedding vector from text-embedding-ada-002
+ */
+async function generateEmbedding(text) {
+  try {
+    if (!text || typeof text !== 'string') {
+      console.warn('[SessionManager] Invalid text for embedding generation');
+      return null;
+    }
+
+    const embeddingResponse = await openai.embeddings.create({
+      input: text,
+      model: 'text-embedding-ada-002'
+    });
+
+    return embeddingResponse.data[0].embedding;
+  } catch (error) {
+    console.error('[SessionManager] Error generating embedding:', error);
+    return null;
+  }
+}
 
 class SessionManager {
   constructor() {
@@ -509,9 +538,17 @@ class SessionManager {
               user_id: session.userId,
               embedding: embedding || null, // Always pass as array
               soft_signal: interaction.soft_signal || null,
-              cluster_id: interaction.cluster_id || null
+              cluster_id: interaction.cluster_id || null,
+              semantic_cluster_id: interaction.semantic_cluster_id || null
             };
             console.log(`[BACKEND DEBUG] Interaction data prepared:`, interactionData);
+            
+            // ✅ FIX: Add specific cluster_id logging
+            if (interaction.cluster_id !== undefined && interaction.cluster_id !== null) {
+              console.log(`[CROWD WISDOM LOGGING] Interaction logged with cluster_id: ${interaction.cluster_id} (type: ${typeof interaction.cluster_id})`);
+            } else {
+              console.log(`[CROWD WISDOM LOGGING] Interaction logged with NO cluster_id (value: ${interaction.cluster_id})`);
+            }
             
             const { error: interactionError } = await this.supabase
               .from('interactions')
