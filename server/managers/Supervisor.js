@@ -251,42 +251,62 @@ class Supervisor {
       });
       const embedding = embeddingResponse.data[0].embedding;
 
-      // 2. Cluster stage – proximity retrieval with similarity threshold
-      const SIMILARITY_THRESHOLD = 0.75; // Cosine similarity threshold for cluster matching
-      const { data: clusterMatch, error: clusterError } = await supabase
-        .rpc('match_semantic_cluster', { embedding_vector: embedding });
+      // 🎯 NEW: CLASSIFY TOPIC FIRST (before clustering)
+      console.log('[Topic-Based Clustering] Classifying query topic...');
+      const queryTopic = await this.classifyQueryTopic(query, openai);
+      console.log(`[Topic-Based Clustering] Query classified as topic: "${queryTopic}"`);
 
+      // 2. Enhanced cluster stage – topic-aware clustering with fallback to similarity
       let cluster_id = null;
       let isNewCluster = false;
+      let clusteringMethod = 'similarity'; // Track how cluster was assigned
 
-      if (clusterError || !clusterMatch || clusterMatch.length === 0) {
-        console.error('[Supervisor] Error matching cluster:', clusterError);
-        console.warn(`[Real-time Clustering] No cluster match found for query: "${query}". Creating new cluster...`);
+      // 🚀 STRATEGY 1: Check for existing clusters with the same topic
+      if (queryTopic && queryTopic !== 'general') {
+        const existingTopicCluster = await this.findMostPopulatedClusterForTopic(queryTopic);
         
-        // 🚀 REAL-TIME CLUSTER CREATION
-        cluster_id = await this.createRealtimeCluster(embedding, query);
-        isNewCluster = true;
-      } else {
-        const match = clusterMatch[0];
-        const similarity = match.similarity;
-        
-        console.log(`[Supervisor] Matched semantic cluster: ID=${match.id}, similarity=${similarity}`);
-        
-        // Check if similarity is above threshold
-        if (similarity < SIMILARITY_THRESHOLD) {
-          console.log(`[Real-time Clustering] Similarity ${similarity} below threshold ${SIMILARITY_THRESHOLD}. Creating new cluster...`);
-          
-          // 🚀 REAL-TIME CLUSTER CREATION
-          cluster_id = await this.createRealtimeCluster(embedding, query);
-          isNewCluster = true;
-        } else {
-          cluster_id = match.id;
-          console.log(`[Real-time Clustering] Using existing cluster ${cluster_id} (similarity: ${similarity})`);
+        if (existingTopicCluster) {
+          cluster_id = existingTopicCluster.cluster_id;
+          clusteringMethod = 'topic_based';
+          console.log(`[Topic-Based Clustering] ✅ Assigned to existing topic cluster: ID=${cluster_id} (topic: ${queryTopic}, size: ${existingTopicCluster.size})`);
         }
       }
 
+      // 🚀 STRATEGY 2: If no topic cluster found, try similarity-based matching
+      if (!cluster_id) {
+        const SIMILARITY_THRESHOLD = 0.75; // Cosine similarity threshold for cluster matching
+        const { data: clusterMatch, error: clusterError } = await supabase
+          .rpc('match_semantic_cluster', { embedding_vector: embedding });
+
+        if (clusterError || !clusterMatch || clusterMatch.length === 0) {
+          console.log(`[Topic-Based Clustering] No similarity match found for query: "${query}"`);
+        } else {
+          const match = clusterMatch[0];
+          const similarity = match.similarity;
+          
+          console.log(`[Topic-Based Clustering] Similarity match found: ID=${match.id}, similarity=${similarity.toFixed(3)}`);
+          
+          // Check if similarity is above threshold
+          if (similarity >= SIMILARITY_THRESHOLD) {
+            cluster_id = match.id;
+            clusteringMethod = 'similarity';
+            console.log(`[Topic-Based Clustering] ✅ Assigned via similarity: cluster ${cluster_id} (similarity: ${similarity.toFixed(3)})`);
+          } else {
+            console.log(`[Topic-Based Clustering] Similarity ${similarity.toFixed(3)} below threshold ${SIMILARITY_THRESHOLD}`);
+          }
+        }
+      }
+
+      // 🚀 STRATEGY 3: Create new cluster only if both topic-based and similarity-based matching failed
+      if (!cluster_id) {
+        console.log(`[Topic-Based Clustering] Creating new cluster for topic "${queryTopic}"`);
+        cluster_id = await this.createRealtimeCluster(embedding, query, queryTopic);
+        isNewCluster = true;
+        clusteringMethod = 'new_cluster';
+      }
+
       // 3. Find the best template for this cluster from the UCB1 view
-      console.log(`[CW DEBUG] Looking for best template for cluster ${cluster_id} (UCB1)...`);
+      console.log(`[CW DEBUG] Looking for best template for cluster ${cluster_id} (method: ${clusteringMethod})...`);
       
       let templateData = null;
       let selectionMethod = 'ucb1';
@@ -309,7 +329,7 @@ class Supervisor {
             .single();
           if (tData) {
             templateData = tData;
-            console.log(`[Real-time Clustering] Found existing template for cluster ${cluster_id}: ${tData.id}`);
+            console.log(`[Topic-Based Clustering] Found existing template for cluster ${cluster_id}: ${tData.id}`);
           } else {
             console.warn(`[CW DEBUG] Could not fetch template data for template_id ${bestRow.template_id}. Error:`, templateError?.message);
           }
@@ -319,7 +339,7 @@ class Supervisor {
       if (!templateData) {
         // For new clusters, don't apply irrelevant templates
         if (isNewCluster) {
-          console.log(`[Real-time Clustering] New cluster ${cluster_id} created - starting fresh without template contamination`);
+          console.log(`[Topic-Based Clustering] New cluster ${cluster_id} created - starting fresh without template contamination`);
           templateData = 'default_template';
           selectionMethod = 'new_cluster_fresh';
         } else {
@@ -332,23 +352,24 @@ class Supervisor {
 
       // 4. APPLY TEMPLATE ENHANCEMENT
       const enhancement = this.applyTemplateEnhancement(query, templateData);
-      console.log(`[Crowd Wisdom] Template enhancement applied: ${enhancement.templateApplied}`);
+      console.log(`[Topic-Based Clustering] Template enhancement applied: ${enhancement.templateApplied}`);
       if (enhancement.templateApplied) {
-        console.log(`[Crowd Wisdom] Enhanced query with template ID: ${enhancement.templateId} (Efficacy: ${enhancement.templateEfficacy})`);
+        console.log(`[Topic-Based Clustering] Enhanced query with template ID: ${enhancement.templateId} (Efficacy: ${enhancement.templateEfficacy})`);
       }
 
       return {
         enhancedQuery: enhancement.enhancedQuery,
         systemEnhancement: enhancement.systemEnhancement,
         template: templateData,
-        topic: null, // New clusters don't have predefined topics yet
+        topic: queryTopic, // Return the classified topic
         selectionMethod,
         cluster_id: cluster_id,
         templateApplied: enhancement.templateApplied,
-        isNewCluster: isNewCluster
+        isNewCluster: isNewCluster,
+        clusteringMethod: clusteringMethod // New: track how clustering was done
       };
     } catch (error) {
-      console.error('[CW DEBUG] Error in processQueryWithCrowdWisdom:', error);
+      console.error('[Topic-Based Clustering] Error in processQueryWithCrowdWisdom:', error);
       // Fallback: use best global template by UCB1
       const bestGlobal = await this.getBestGlobalTemplateUCB();
       const enhancement = this.applyTemplateEnhancement(query, bestGlobal?.templateData || 'default_template');
@@ -360,20 +381,179 @@ class Supervisor {
         selectionMethod: bestGlobal ? 'global_ucb1' : 'fallback',
         cluster_id: null,
         templateApplied: enhancement.templateApplied,
-        isNewCluster: false
+        isNewCluster: false,
+        clusteringMethod: 'error_fallback'
       };
     }
   }
 
   /**
-   * Create a new semantic cluster in real-time
+   * 🎯 NEW: Classify query topic using OpenAI (similar to main server logic)
+   * @param {string} query - The user query to classify
+   * @param {object} openai - OpenAI client instance
+   * @returns {Promise<string>} - The classified topic name
+   */
+  async classifyQueryTopic(query, openai) {
+    try {
+      // Get existing topics from database (same as main server logic)
+      const { data: existingTopics, error: topicsError } = await supabase
+        .from('topics')
+        .select('name, description')
+        .eq('is_active', true);
+      
+      if (topicsError) {
+        console.error('[Topic Classification] Error fetching topics:', topicsError);
+        return 'general';
+      }
+      
+      const topicsList = existingTopics?.map(t => t.name) || [];
+      const topicsContext = existingTopics?.map(t => `${t.name}: ${t.description}`).join('\n') || '';
+      
+      // Create topic classification prompt (same as main server)
+      const topicClassificationPrompt = `You are a topic classifier for an educational AI tutoring system. 
+Analyze the following query to determine the most appropriate topic.
+
+EXISTING TOPICS:
+${topicsContext}
+
+USER QUERY: ${query}
+
+CLASSIFICATION RULES:
+1. If the query fits one of the existing topics above, respond with EXACTLY that topic name
+2. If no existing topic fits well, create a new descriptive topic name (use underscores, lowercase)
+3. NEVER respond with "no_specific_topic" - always find or create a meaningful topic
+4. For mathematical queries (formulas, equations, calculations, math concepts), use "mathematics"
+5. For programming/coding queries, use "computer_science" or "programming"
+6. For science queries, use the specific science field (physics, chemistry, biology)
+7. Only use "general" for truly non-academic queries like greetings, thanks, or casual conversation
+8. Be specific: prefer "linear_algebra" over "mathematics" if the query is specifically about linear algebra
+
+EXAMPLES:
+- "what is root formula in math" → mathematics
+- "explain calculus derivatives" → calculus  
+- "how do algorithms work" → algorithms
+- "thank you" → general
+- "hello" → general
+- "i don't understand" → general
+- "explain photosynthesis" → biology
+- "how to code in python" → programming
+
+TOPIC:`;
+
+      const topicCompletion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: topicClassificationPrompt }],
+        temperature: 0.1,
+        max_tokens: 50
+      });
+      
+      let classifiedTopic = topicCompletion.choices[0].message.content.trim();
+      console.log(`[Topic Classification] Raw classification: "${classifiedTopic}"`);
+      
+      // 🚫 SAFEGUARD: Never allow invalid topics
+      if (classifiedTopic === 'no_specific_topic' || classifiedTopic === 'no_topic' || classifiedTopic === 'none' || !classifiedTopic) {
+        classifiedTopic = 'general';
+        console.log(`[Topic Classification] Prevented invalid topic, using fallback: ${classifiedTopic}`);
+      }
+      
+      // If it's a new topic, add it to the topics table
+      if (!topicsList.includes(classifiedTopic)) {
+        console.log(`[Topic Classification] Adding new topic: ${classifiedTopic}`);
+        const { error: insertError } = await supabase
+          .from('topics')
+          .insert({
+            name: classifiedTopic,
+            description: `Automatically generated topic for: ${classifiedTopic.replace(/_/g, ' ')}`
+          });
+        
+        if (insertError) {
+          console.error('[Topic Classification] Error adding new topic:', insertError);
+        }
+      }
+      
+      return classifiedTopic;
+    } catch (error) {
+      console.error('[Topic Classification] Error classifying topic:', error);
+      return 'general'; // Fallback topic
+    }
+  }
+
+  /**
+   * 🎯 NEW: Find the most populated cluster for a given topic
+   * @param {string} topic - The topic to search for
+   * @returns {Promise<object|null>} - Cluster info or null if none found
+   */
+  async findMostPopulatedClusterForTopic(topic) {
+    try {
+      // Get all sessions with this topic and their cluster assignments
+      const { data: topicSessions, error: sessionsError } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('secret_topic', topic);
+      
+      if (sessionsError || !topicSessions || topicSessions.length === 0) {
+        console.log(`[Topic-Based Clustering] No existing sessions found for topic: ${topic}`);
+        return null;
+      }
+      
+      const sessionIds = topicSessions.map(s => s.id);
+      
+      // Get interactions from these sessions that have cluster assignments
+      const { data: interactions, error: interactionsError } = await supabase
+        .from('interactions')
+        .select('cluster_id')
+        .in('session_id', sessionIds)
+        .not('cluster_id', 'is', null);
+      
+      if (interactionsError || !interactions || interactions.length === 0) {
+        console.log(`[Topic-Based Clustering] No clustered interactions found for topic: ${topic}`);
+        return null;
+      }
+      
+      // Count clusters and find the most populated one
+      const clusterCounts = {};
+      interactions.forEach(interaction => {
+        const clusterId = interaction.cluster_id;
+        clusterCounts[clusterId] = (clusterCounts[clusterId] || 0) + 1;
+      });
+      
+      // Find the cluster with the most interactions
+      let mostPopulatedCluster = null;
+      let maxCount = 0;
+      
+      Object.entries(clusterCounts).forEach(([clusterId, count]) => {
+        if (count > maxCount) {
+          maxCount = count;
+          mostPopulatedCluster = clusterId;
+        }
+      });
+      
+      if (mostPopulatedCluster) {
+        console.log(`[Topic-Based Clustering] Found most populated cluster for topic "${topic}": cluster ${mostPopulatedCluster} (${maxCount} interactions)`);
+        return {
+          cluster_id: parseInt(mostPopulatedCluster),
+          size: maxCount,
+          topic: topic
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('[Topic-Based Clustering] Error finding topic cluster:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Create a new semantic cluster in real-time (enhanced with topic)
    * @param {Array} embedding - The 1536D embedding vector
    * @param {string} query - The representative query for this cluster
+   * @param {string} topic - The classified topic for this cluster
    * @returns {Promise<number>} - The ID of the newly created cluster
    */
-  async createRealtimeCluster(embedding, query) {
+  async createRealtimeCluster(embedding, query, topic = null) {
     try {
-      console.log(`[Real-time Clustering] Creating new cluster for query: "${query.substring(0, 60)}..."`);
+      console.log(`[Topic-Based Clustering] Creating new cluster for topic "${topic}" with query: "${query.substring(0, 60)}..."`);
       
       // Create new cluster record - let the database auto-assign the ID
       const { data: newCluster, error: clusterError } = await supabase
@@ -382,24 +562,25 @@ class Supervisor {
           centroid: embedding, // Use the query's embedding as the centroid
           size: 1, // Start with size 1
           representative_query: query, // Use this query as the representative
-          clustering_version: 'realtime'
+          clustering_version: 'realtime',
+          topic: topic // 🎯 NEW: Store the topic with the cluster
           // Don't specify id - let the sequence auto-assign it
         })
         .select('id')
         .single();
 
       if (clusterError) {
-        console.error('[Real-time Clustering] Error creating new cluster:', clusterError);
+        console.error('[Topic-Based Clustering] Error creating new cluster:', clusterError);
         throw clusterError;
       }
 
       const newClusterId = newCluster.id;
-      console.log(`[Real-time Clustering] ✅ Created new cluster ID: ${newClusterId}`);
-      console.log(`[Real-time Clustering] 🎯 System can now learn templates for this new domain: "${query.substring(0, 40)}..."`);
+      console.log(`[Topic-Based Clustering] ✅ Created new cluster ID: ${newClusterId} for topic: "${topic}"`);
+      console.log(`[Topic-Based Clustering] 🎯 Future "${topic}" queries will be grouped into this cluster`);
       
       return newClusterId;
     } catch (error) {
-      console.error('[Real-time Clustering] Failed to create new cluster:', error);
+      console.error('[Topic-Based Clustering] Failed to create new cluster:', error);
       // Return null to indicate failure - the calling code will handle fallback
       return null;
     }

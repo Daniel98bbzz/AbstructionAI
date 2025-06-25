@@ -172,6 +172,13 @@ app.post('/api/query', async (req, res) => {
         templateApplied = crowdWisdomResult.templateApplied || false;
         isNewCluster = crowdWisdomResult.isNewCluster || false; // Extract new cluster flag
         
+        // 🎯 NEW: Extract clustering method information
+        const clusteringMethod = crowdWisdomResult.clusteringMethod || 'unknown';
+        console.log(`[Topic-Based Clustering] Query clustered using method: ${clusteringMethod}`);
+        
+        // Store clustering method for response metadata
+        global.lastClusteringMethod = clusteringMethod;
+        
         // ✅ FIX: Ensure cluster_id is properly typed as number
         if (clusterIdForUsage !== null && clusterIdForUsage !== undefined) {
           clusterIdForUsage = Number(clusterIdForUsage);
@@ -311,10 +318,16 @@ app.post('/api/query', async (req, res) => {
         topic: crowdWisdomTopic,
         selection_method: selectionMethod,
         template_applied: templateApplied,
-        efficacy_score: usedTemplate.efficacy_score || null
+        efficacy_score: usedTemplate.efficacy_score || null,
+        clustering_method: global.lastClusteringMethod || 'unknown', // 🎯 NEW: Include clustering method
+        cluster_id: clusterIdForUsage, // Include cluster ID for debugging
+        is_new_cluster: isNewCluster // Include new cluster flag
       } : {
         applied: false,
-        template_applied: false
+        template_applied: false,
+        clustering_method: 'none', // No clustering when no template applied
+        cluster_id: null,
+        is_new_cluster: false
       }
     };
 
@@ -579,6 +592,7 @@ Create a quiz with ${difficultyLevel} difficulty level. For each question:
 3. Make the incorrect answers plausible but clearly wrong upon inspection
 4. Vary the position of the correct answer (don't always make A or B the correct answer)
 5. Create questions that test understanding of different aspects of the topic
+6. Avoid using LaTeX or mathematical notation in the JSON - use plain text instead
 
 Format your response as a JSON object with the following structure:
 {
@@ -594,7 +608,8 @@ Format your response as a JSON object with the following structure:
   ]
 }
 
-The correctAnswer field should be the INDEX (0-3) of the correct option in the options array.`;
+The correctAnswer field should be the INDEX (0-3) of the correct option in the options array.
+IMPORTANT: Use plain text only - no LaTeX, no special mathematical symbols, no escaped characters.`;
 
           const quizCompletion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -606,7 +621,7 @@ The correctAnswer field should be the INDEX (0-3) of the correct option in the o
           const responseText = quizCompletion.choices[0].message.content;
           
           try {
-            // First try to extract JSON from markdown code blocks
+            // Enhanced JSON cleaning for quiz responses
             let cleanedText = responseText;
             
             // Remove markdown code blocks if present
@@ -615,20 +630,60 @@ The correctAnswer field should be the INDEX (0-3) of the correct option in the o
               cleanedText = codeBlockMatch[1];
             }
             
+            // Clean up LaTeX and special characters that cause JSON parsing issues
+            cleanedText = cleanedText
+              .replace(/\\?\\\(/g, '(')          // Replace \( with (
+              .replace(/\\?\\\)/g, ')')          // Replace \) with )
+              .replace(/\\?\\\[/g, '[')          // Replace \[ with [
+              .replace(/\\?\\\]/g, ']')          // Replace \] with ]
+              .replace(/\\n/g, ' ')              // Replace literal \n with space
+              .replace(/\\t/g, ' ')              // Replace literal \t with space
+              .replace(/\\"/g, '"')              // Fix escaped quotes
+              .replace(/\\'/g, "'")              // Fix escaped single quotes
+              .replace(/\\\\/g, '\\')            // Fix double backslashes
+              .replace(/[\u0000-\u001F]/g, '')   // Remove control characters
+              .replace(/,(\s*[}\]])/g, '$1');    // Remove trailing commas
+            
             // Try to find JSON object in the response
             const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
-              return JSON.parse(jsonMatch[0]);
-            } else {
-              // Try parsing the cleaned text directly
-              return JSON.parse(cleanedText);
+              const jsonString = jsonMatch[0];
+              const parsed = JSON.parse(jsonString);
+              
+              // Validate the structure
+              if (parsed.questions && Array.isArray(parsed.questions)) {
+                // Clean up any remaining LaTeX in the parsed object
+                parsed.questions = parsed.questions.map(q => ({
+                  ...q,
+                  question: q.question?.replace(/\\\([^)]*\\\)/g, (match) => {
+                    // Convert \( variable \) to just variable
+                    return match.replace(/\\\(|\\\)/g, '');
+                  }),
+                  options: q.options?.map(opt => 
+                    opt?.replace(/\\\([^)]*\\\)/g, (match) => {
+                      return match.replace(/\\\(|\\\)/g, '');
+                    })
+                  ),
+                  explanation: q.explanation?.replace(/\\\([^)]*\\\)/g, (match) => {
+                    return match.replace(/\\\(|\\\)/g, '');
+                  })
+                }));
+                
+                return parsed;
+              }
             }
+            
+            // Fallback: try parsing cleaned text directly
+            return JSON.parse(cleanedText);
+            
           } catch (parseError) {
             console.error('[Tab Content Generation] Error parsing quiz JSON:', parseError);
             console.error('[Tab Content Generation] Raw quiz response:', responseText);
             
             // Return fallback quiz structure
             return {
+              title: "Understanding the Topic",
+              description: "Test your knowledge of this subject",
               questions: [
                 {
                   question: "What are the key concepts of this topic?",
@@ -644,7 +699,7 @@ The correctAnswer field should be the INDEX (0-3) of the correct option in the o
                 },
                 {
                   question: "What should you focus on when learning this topic?",
-                  options: ["Memorizing facts", "Understanding principles", "Practicing applications", "Both B and C"],
+                  options: ["Memorizing facts", "Understanding principles", "Practicing applications", "Both understanding and practicing"],
                   correctAnswer: 3,
                   explanation: "Effective learning combines understanding core principles with practical application."
                 }
