@@ -20,9 +20,12 @@ import History from './pages/History';
 import NotFound from './pages/NotFound';
 import VerifyEmail from './pages/VerifyEmail';
 import FeedbackList from './pages/admin/FeedbackList';
+import TopicsAdmin from './pages/admin/TopicsAdmin';
 import FeedbacksPage from './pages/FeedbacksPage';
 import FeedbackDetailPage from './pages/FeedbackDetailPage';
 import ProgressDashboard from './components/ProgressDashboard';
+import UserAnalytics from './pages/UserAnalytics';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -93,6 +96,7 @@ function App() {
           <Route path="quiz" element={<QuizPage />} /> {/* New quiz route */}
           <Route path="history" element={<History />} />
           <Route path="progress" element={<ProgressDashboard />} />
+          <Route path="analytics" element={<UserAnalytics />} />
         </Route>
         
         {/* Admin routes */}
@@ -106,6 +110,8 @@ function App() {
           <Route path="feedback" element={<FeedbackList />}>
             <Route path=":feedbackId" element={<FeedbackList />} />
           </Route>
+          <Route path="topics" element={<TopicsAdmin />} />
+          <Route path="analytics" element={<AnalyticsDashboard />} />
         </Route>
         
         {/* 404 route */}

@@ -41,7 +41,8 @@
     "react-router-dom": "^6.20.1",
     "react-syntax-highlighter": "^15.6.1",
     "umap-js": "^1.4.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "ws": "^8.18.2"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",

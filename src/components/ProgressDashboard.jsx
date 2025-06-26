@@ -7,15 +7,23 @@ function ProgressDashboard() {
     getUserProgress, 
     getLearningPathRecommendations, 
     getUserAchievements,
+    getEnhancedProgress,
+    getUserStreak,
+    getLeaderboard,
+    getAdaptiveRecommendations,
     loading 
   } = useQuery();
   
   const [progressData, setProgressData] = useState(null);
+  const [enhancedProgress, setEnhancedProgress] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
   const [achievements, setAchievements] = useState([]);
+  const [streakData, setStreakData] = useState(null);
+  const [leaderboardData, setLeaderboardData] = useState(null);
+  const [adaptiveRecommendations, setAdaptiveRecommendations] = useState([]);
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview'); // overview, topics, paths, achievements
+  const [activeTab, setActiveTab] = useState('overview'); // overview, topics, paths, achievements, leaderboard
 
   useEffect(() => {
     loadProgressData();
@@ -27,14 +35,30 @@ function ProgressDashboard() {
       setError(null);
       
       // Load all progress data in parallel
-      const [progressResult, recommendationsResult, achievementsResult] = await Promise.all([
+      const [
+        progressResult, 
+        enhancedResult,
+        recommendationsResult, 
+        achievementsResult, 
+        streakResult,
+        leaderboardResult,
+        adaptiveResult
+      ] = await Promise.all([
         getUserProgress(),
+        getEnhancedProgress(),
         getLearningPathRecommendations(),
-        getUserAchievements()
+        getUserAchievements(),
+        getUserStreak(),
+        getLeaderboard('total'),
+        getAdaptiveRecommendations()
       ]);
       
       if (progressResult.success) {
         setProgressData(progressResult);
+      }
+      
+      if (enhancedResult.success) {
+        setEnhancedProgress(enhancedResult);
       }
       
       if (recommendationsResult.success) {
@@ -43,6 +67,18 @@ function ProgressDashboard() {
       
       if (achievementsResult.success) {
         setAchievements(achievementsResult.achievements || []);
+      }
+      
+      if (streakResult.success) {
+        setStreakData(streakResult);
+      }
+      
+      if (leaderboardResult.success) {
+        setLeaderboardData(leaderboardResult);
+      }
+      
+      if (adaptiveResult.success) {
+        setAdaptiveRecommendations(adaptiveResult.recommendations || []);
       }
       
     } catch (err) {
@@ -92,6 +128,12 @@ function ProgressDashboard() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
           </svg>
         );
+      case 'review':
+        return (
+          <svg className="h-5 w-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        );
       case 'trending':
         return (
           <svg className="h-5 w-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -102,6 +144,127 @@ function ProgressDashboard() {
         return null;
     }
   };
+
+  const formatTimeUntilReview = (nextReviewDate) => {
+    if (!nextReviewDate) return 'No review scheduled';
+    
+    const now = new Date();
+    const reviewDate = new Date(nextReviewDate);
+    const diffMs = reviewDate - now;
+    
+    if (diffMs <= 0) return 'Due now';
+    
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    if (diffDays > 0) {
+      return `${diffDays} day${diffDays > 1 ? 's' : ''}`;
+    } else if (diffHours > 0) {
+      return `${diffHours} hour${diffHours > 1 ? 's' : ''}`;
+    } else {
+      return 'Soon';
+    }
+  };
+
+  const ProgressBar = ({ value, max = 100, color = 'bg-blue-500', label, showValue = true }) => (
+    <div className="w-full">
+      {label && <div className="flex justify-between text-sm text-gray-600 mb-1">
+        <span>{label}</span>
+        {showValue && <span>{Math.round(value)}%</span>}
+      </div>}
+      <div className="w-full bg-gray-200 rounded-full h-2">
+        <div 
+          className={`h-2 rounded-full ${color} transition-all duration-300`}
+          style={{ width: `${Math.min(100, (value / max) * 100)}%` }}
+        />
+      </div>
+    </div>
+  );
+
+  const StreakCard = () => (
+    <div className="bg-gradient-to-r from-orange-400 to-red-500 text-white rounded-lg p-6 shadow-lg">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-xl font-bold mb-2">🔥 Learning Streak</h3>
+          <div className="text-3xl font-bold">{streakData?.streak?.current || 0}</div>
+          <div className="text-sm opacity-90">Current streak</div>
+        </div>
+        <div className="text-right">
+          <div className="text-lg">{streakData?.streak?.longest || 0}</div>
+          <div className="text-sm opacity-90">Best streak</div>
+        </div>
+      </div>
+      
+      {streakData?.nextMilestone && (
+        <div className="mt-4 pt-4 border-t border-white/20">
+          <div className="text-sm opacity-90">Next milestone: {streakData.nextMilestone.name}</div>
+          <ProgressBar 
+            value={streakData.streak.current} 
+            max={streakData.nextMilestone.days}
+            color="bg-white/30"
+            showValue={false}
+          />
+          <div className="text-xs mt-1 opacity-75">
+            {streakData.nextMilestone.days - streakData.streak.current} days to go
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const LeaderboardCard = () => (
+    <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xl font-semibold text-gray-900">🏆 Leaderboard</h3>
+        <span className="text-sm text-gray-500">Total Points</span>
+      </div>
+      
+      {leaderboardData?.currentUser && (
+        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-blue-900">Your Rank</span>
+            <div className="flex items-center space-x-2">
+              <span className="text-xl font-bold text-blue-600">#{leaderboardData.currentUser.position}</span>
+              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                leaderboardData.currentUser.tier === 'diamond' ? 'bg-purple-100 text-purple-800' :
+                leaderboardData.currentUser.tier === 'platinum' ? 'bg-gray-100 text-gray-800' :
+                leaderboardData.currentUser.tier === 'gold' ? 'bg-yellow-100 text-yellow-800' :
+                leaderboardData.currentUser.tier === 'silver' ? 'bg-gray-100 text-gray-600' :
+                'bg-orange-100 text-orange-800'
+              }`}>
+                {leaderboardData.currentUser.tier}
+              </span>
+            </div>
+          </div>
+          <div className="text-sm text-blue-700">
+            {leaderboardData.currentUser.total_points} points
+          </div>
+        </div>
+      )}
+      
+      <div className="space-y-2">
+        {leaderboardData?.leaderboard?.slice(0, 5).map((entry, index) => (
+          <div key={entry.userId} className="flex items-center justify-between py-2">
+            <div className="flex items-center space-x-3">
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                index === 0 ? 'bg-yellow-100 text-yellow-800' :
+                index === 1 ? 'bg-gray-100 text-gray-600' :
+                index === 2 ? 'bg-orange-100 text-orange-600' :
+                'bg-gray-50 text-gray-500'
+              }`}>
+                {index + 1}
+              </span>
+              <span className="font-medium text-gray-900">{entry.name}</span>
+            </div>
+            <div className="text-right">
+              <div className="font-medium text-gray-900">{entry.points}</div>
+              <div className="text-xs text-gray-500">{entry.tier}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   if (loading || loadingProgress) {
     return (
@@ -137,533 +300,410 @@ function ProgressDashboard() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Learning Progress</h1>
           <p className="mt-2 text-lg text-gray-600">
-            Track your learning journey and discover your next steps
+            Track your learning journey with adaptive mastery and gamification
           </p>
         </div>
 
-        {/* Progress Summary Cards with Cluster Insights */}
-        {progressData && (
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <svg className="h-8 w-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        Topics Explored
-                      </dt>
-                      <dd className="text-2xl font-bold text-gray-900">
-                        {progressData.summary.total_topics}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* New: Cluster Performance Card */}
-            {progressData.cluster_insights && (
-              <div className="bg-white overflow-hidden shadow rounded-lg">
-                <div className="p-5">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0">
-                      <svg className="h-8 w-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                      </svg>
-                    </div>
-                    <div className="ml-5 w-0 flex-1">
-                      <dl>
-                        <dt className="text-sm font-medium text-gray-500 truncate">
-                          Learning Cluster
-                        </dt>
-                        <dd className="text-lg font-bold text-gray-900">
-                          {progressData.cluster_insights.clusterSize} learners
-                        </dd>
-                        <dd className="text-xs text-gray-500">
-                          {Math.round(progressData.cluster_performance?.avgClusterPercentile || 0)}% avg performance
-                        </dd>
-                      </dl>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <svg className="h-8 w-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        Average Mastery
-                      </dt>
-                      <dd className="text-2xl font-bold text-gray-900">
-                        {Math.round(progressData.summary.avg_mastery)}%
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <svg className="h-8 w-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        Learning Sessions
-                      </dt>
-                      <dd className="text-2xl font-bold text-gray-900">
-                        {progressData.summary.total_sessions}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <svg className="h-8 w-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        Achievements
-                      </dt>
-                      <dd className="text-2xl font-bold text-gray-900">
-                        {achievements.length}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Tab Navigation */}
-        <div className="border-b border-gray-200 mb-6">
-          <nav className="-mb-px flex space-x-8">
-            {[
-              { id: 'overview', name: 'Overview', icon: '📊' },
-              { id: 'topics', name: 'Topic Progress', icon: '📚' },
-              { id: 'cluster', name: 'Cluster Insights', icon: '👥' },
-              { id: 'paths', name: 'Learning Paths', icon: '🗺️' },
-              { id: 'achievements', name: 'Achievements', icon: '🏆' }
-            ].map((tab) => (
+        <div className="mb-8">
+          <nav className="flex space-x-8">
+            {['overview', 'topics', 'paths', 'achievements', 'leaderboard'].map((tab) => (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`${
-                  activeTab === tab.id
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === tab
                     ? 'border-primary-500 text-primary-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center`}
+                }`}
               >
-                <span className="mr-2">{tab.icon}</span>
-                {tab.name}
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>
             ))}
           </nav>
         </div>
 
-        {/* Tab Content */}
-        {activeTab === 'overview' && progressData && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Top Topics */}
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-5 sm:px-6">
-                <h3 className="text-lg font-medium text-gray-900">Your Top Topics</h3>
-                <p className="mt-1 text-sm text-gray-500">Topics with highest mastery levels</p>
-              </div>
-              <div className="border-t border-gray-200">
-                {progressData.progress.slice(0, 5).map((topic, index) => (
-                  <div key={index} className="px-4 py-4 border-b border-gray-200 last:border-b-0">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {formatTopicName(topic.topic_name)}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {topic.session_count} sessions • {getMasteryLabel(topic.mastery_level)}
-                        </p>
-                      </div>
-                      <div className="flex items-center">
-                        <div className="w-16 bg-gray-200 rounded-full h-2 mr-3">
-                          <div 
-                            className={`h-2 rounded-full ${getMasteryColor(topic.mastery_level)}`}
-                            style={{ width: `${topic.mastery_level}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-sm font-semibold text-gray-900">
-                          {topic.mastery_level}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+        {/* Overview Tab */}
+        {activeTab === 'overview' && (
+          <div className="space-y-8">
+            {/* Gamification Cards Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <StreakCard />
+              <LeaderboardCard />
             </div>
 
-            {/* Quick Recommendations */}
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-5 sm:px-6">
-                <h3 className="text-lg font-medium text-gray-900">Recommended Next Steps</h3>
-                <p className="mt-1 text-sm text-gray-500">Personalized learning suggestions</p>
-              </div>
-              <div className="border-t border-gray-200">
-                {recommendations.slice(0, 5).map((rec, index) => (
-                  <div key={index} className="px-4 py-4 border-b border-gray-200 last:border-b-0">
-                    <Link to={`/query?topic=${rec.topic}`} className="block hover:bg-gray-50 p-2 rounded">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 mr-3">
-                          {getRecommendationIcon(rec.type)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900">
-                            {formatTopicName(rec.topic)}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {rec.reason}
-                          </p>
-                        </div>
+            {/* Progress Summary Cards */}
+            {(progressData || enhancedProgress) && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <svg className="h-8 w-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
                       </div>
-                    </Link>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'topics' && progressData && (
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg font-medium text-gray-900">All Topic Progress</h3>
-              <p className="mt-1 text-sm text-gray-500">Detailed breakdown of your learning in each topic</p>
-            </div>
-            <div className="border-t border-gray-200">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-                {progressData.progress.map((topic, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-semibold text-gray-900">
-                        {formatTopicName(topic.topic_name)}
-                      </h4>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        topic.difficulty_progression === 'expert' ? 'bg-green-100 text-green-800' :
-                        topic.difficulty_progression === 'advanced' ? 'bg-blue-100 text-blue-800' :
-                        topic.difficulty_progression === 'intermediate' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {topic.difficulty_progression}
-                      </span>
-                    </div>
-                    
-                    <div className="mb-3">
-                      <div className="flex justify-between text-sm text-gray-600 mb-1">
-                        <span>Mastery Level</span>
-                        <span>{topic.mastery_level}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div 
-                          className={`h-2 rounded-full ${getMasteryColor(topic.mastery_level)}`}
-                          style={{ width: `${topic.mastery_level}%` }}
-                        ></div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-sm font-medium text-gray-500 truncate">
+                            Topics Explored
+                          </dt>
+                          <dd className="text-2xl font-bold text-gray-900">
+                            {enhancedProgress?.summary?.totalTopics || progressData?.summary?.total_topics || 0}
+                          </dd>
+                        </dl>
                       </div>
                     </div>
-                    
-                    <div className="space-y-1 text-xs text-gray-500">
-                      <p>📖 {topic.session_count} sessions</p>
-                      <p>⏱️ {topic.learning_hours.toFixed(1)} hours</p>
-                      {topic.quiz_scores.length > 0 && (
-                        <p>🧠 {topic.avg_quiz_score}% avg quiz score</p>
-                      )}
-                      {/* New: Cluster comparison data */}
-                      {topic.cluster_comparison && (
-                        <div className="mt-2 pt-2 border-t border-gray-200">
-                          <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            topic.cluster_comparison.performance_vs_cluster === 'above_average' ? 'bg-green-100 text-green-800' :
-                            topic.cluster_comparison.performance_vs_cluster === 'average' ? 'bg-blue-100 text-blue-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            🎯 {topic.cluster_comparison.cluster_percentile}% vs cluster
-                          </div>
-                          <p className="mt-1">
-                            👥 {topic.cluster_comparison.cluster_topic_users} peers learning this
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'cluster' && progressData && progressData.cluster_insights && (
-          <div className="space-y-6">
-            {/* Cluster Overview */}
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-5 sm:px-6">
-                <h3 className="text-lg font-medium text-gray-900">Your Learning Cluster</h3>
-                <p className="mt-1 text-sm text-gray-500">You're grouped with learners who have similar preferences and learning styles</p>
-              </div>
-              <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-purple-600">{progressData.cluster_insights.clusterSize}</div>
-                    <div className="text-sm text-gray-500">Total Learners</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600">{progressData.cluster_insights.totalTopicsInCluster}</div>
-                    <div className="text-sm text-gray-500">Topics Explored</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">{progressData.cluster_insights.avgTopicsPerUser}</div>
-                    <div className="text-sm text-gray-500">Avg Topics/User</div>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Performance vs Cluster */}
-            {progressData.cluster_performance && (
-              <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-                <div className="px-4 py-5 sm:px-6">
-                  <h3 className="text-lg font-medium text-gray-900">Your Performance vs Cluster</h3>
-                  <p className="mt-1 text-sm text-gray-500">How you compare to other learners in your cluster</p>
-                </div>
-                <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-green-600">{progressData.cluster_performance.strongerThanCluster}</div>
-                      <div className="text-sm text-gray-500">Topics Above Average</div>
-                      <div className="mt-2">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          🚀 Outperforming
-                        </span>
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <svg className="h-8 w-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
                       </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">{progressData.cluster_performance.averageInCluster}</div>
-                      <div className="text-sm text-gray-500">Topics At Average</div>
-                      <div className="mt-2">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          📊 On Track
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-yellow-600">{progressData.cluster_performance.weakerThanCluster}</div>
-                      <div className="text-sm text-gray-500">Topics Below Average</div>
-                      <div className="mt-2">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                          📈 Growth Area
-                        </span>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-sm font-medium text-gray-500 truncate">
+                            Average Mastery
+                          </dt>
+                          <dd className="text-2xl font-bold text-gray-900">
+                            {Math.round(enhancedProgress?.summary?.averageMastery || progressData?.summary?.avg_mastery || 0)}%
+                          </dd>
+                        </dl>
                       </div>
                     </div>
                   </div>
-                  
-                  {/* Overall Performance Indicator */}
-                  <div className="mt-6 bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">Overall Cluster Performance</span>
-                      <span className="text-sm font-bold text-gray-900">
-                        {Math.round(progressData.cluster_performance.avgClusterPercentile)}%
-                      </span>
+                </div>
+
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <svg className="h-8 w-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-sm font-medium text-gray-500 truncate">
+                            Due for Review
+                          </dt>
+                          <dd className="text-2xl font-bold text-gray-900">
+                            {enhancedProgress?.summary?.topicsDue || 0}
+                          </dd>
+                        </dl>
+                      </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div 
-                        className={`h-3 rounded-full transition-all duration-500 ${
-                          progressData.cluster_performance.avgClusterPercentile >= 80 ? 'bg-green-500' :
-                          progressData.cluster_performance.avgClusterPercentile >= 60 ? 'bg-blue-500' :
-                          progressData.cluster_performance.avgClusterPercentile >= 40 ? 'bg-yellow-500' :
-                          'bg-red-500'
-                        }`}
-                        style={{ width: `${progressData.cluster_performance.avgClusterPercentile}%` }}
-                      ></div>
+                  </div>
+                </div>
+
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <svg className="h-8 w-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                        </svg>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-sm font-medium text-gray-500 truncate">
+                            Expert Level
+                          </dt>
+                          <dd className="text-2xl font-bold text-gray-900">
+                            {enhancedProgress?.summary?.expertLevel || 0}
+                          </dd>
+                        </dl>
+                      </div>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      You're performing at the {Math.round(progressData.cluster_performance.avgClusterPercentile)}% percentile within your learning cluster
-                    </p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Topics with Cluster Comparisons */}
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-5 sm:px-6">
-                <h3 className="text-lg font-medium text-gray-900">Topic-Specific Cluster Comparisons</h3>
-                <p className="mt-1 text-sm text-gray-500">Detailed breakdown of how you compare in each topic</p>
+            {/* Next Review Due Section */}
+            {enhancedProgress?.nextReviewDue && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
+                <div className="flex items-center mb-4">
+                  <svg className="h-6 w-6 text-purple-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <h3 className="text-lg font-medium text-purple-900">📚 Next Review Due</h3>
+                </div>
+                <div className="bg-white rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-gray-900">
+                        {formatTopicName(enhancedProgress.nextReviewDue.topic_name)}
+                      </h4>
+                      <p className="text-sm text-gray-600">
+                        Mastery: {enhancedProgress.nextReviewDue.mastery?.level || 'Unknown'} 
+                        ({Math.round(enhancedProgress.nextReviewDue.mastery?.score || 0)}%)
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-medium text-purple-600">Due now</div>
+                      <button className="mt-1 bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700">
+                        Review Now
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="border-t border-gray-200">
-                <div className="divide-y divide-gray-200">
-                  {progressData.progress
-                    .filter(topic => topic.cluster_comparison)
-                    .sort((a, b) => b.cluster_comparison.cluster_percentile - a.cluster_comparison.cluster_percentile)
-                    .map((topic, index) => (
-                    <div key={index} className="px-4 py-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <h4 className="text-sm font-semibold text-gray-900">
-                            {formatTopicName(topic.topic_name)}
-                          </h4>
-                          <div className="mt-1 flex items-center space-x-4 text-xs text-gray-500">
-                            <span>📖 You: {topic.session_count} sessions</span>
-                            <span>👥 Cluster avg: {topic.cluster_comparison.cluster_avg_sessions} sessions</span>
-                            <span>🎯 {topic.cluster_comparison.cluster_topic_users} peers learning this</span>
-                          </div>
-                        </div>
+            )}
+
+            {/* Adaptive Recommendations */}
+            {adaptiveRecommendations.length > 0 && (
+              <div className="bg-white rounded-lg shadow-lg p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-semibold text-gray-900">🧠 Adaptive Recommendations</h3>
+                  <span className="text-sm text-gray-500">Powered by learning algorithms</span>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {adaptiveRecommendations.slice(0, 4).map((rec, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                      <div className="flex items-start justify-between">
                         <div className="flex items-center space-x-3">
-                          <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                            topic.cluster_comparison.performance_vs_cluster === 'above_average' ? 'bg-green-100 text-green-800' :
-                            topic.cluster_comparison.performance_vs_cluster === 'average' ? 'bg-blue-100 text-blue-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {topic.cluster_comparison.cluster_percentile}% percentile
-                          </div>
-                          <div className="w-20 bg-gray-200 rounded-full h-2">
-                            <div 
-                              className={`h-2 rounded-full ${
-                                topic.cluster_comparison.performance_vs_cluster === 'above_average' ? 'bg-green-500' :
-                                topic.cluster_comparison.performance_vs_cluster === 'average' ? 'bg-blue-500' :
-                                'bg-yellow-500'
-                              }`}
-                              style={{ width: `${topic.cluster_comparison.cluster_percentile}%` }}
-                            ></div>
+                          {getRecommendationIcon(rec.type)}
+                          <div>
+                            <h4 className="font-medium text-gray-900">
+                              {rec.topic_name || rec.topic || 'Unknown Topic'}
+                            </h4>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {rec.reasoning}
+                            </p>
                           </div>
                         </div>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          rec.type === 'review' ? 'bg-purple-100 text-purple-800' :
+                          rec.type === 'strengthen' ? 'bg-yellow-100 text-yellow-800' :
+                          rec.type === 'advancement' ? 'bg-green-100 text-green-800' :
+                          'bg-blue-100 text-blue-800'
+                        }`}>
+                          {rec.type}
+                        </span>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Enhanced Topics Tab */}
+        {activeTab === 'topics' && enhancedProgress && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-900">Your Learning Topics</h3>
+              <div className="text-sm text-gray-500">
+                Using {enhancedProgress.algorithm_insights?.spaced_repetition} for optimization
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-6">
+              {enhancedProgress.topics?.map((topic, index) => (
+                <div key={index} className="bg-white rounded-lg shadow p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-3">
+                      <h4 className="text-lg font-medium text-gray-900">
+                        {formatTopicName(topic.topic_name)}
+                      </h4>
+                      {topic.dueForReview && (
+                        <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs font-medium">
+                          Review Due
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-gray-500">
+                        Next review: {formatTimeUntilReview(topic.nextReviewDate)}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <ProgressBar 
+                        value={topic.mastery?.score || 0}
+                        label="Current Mastery"
+                        color={getMasteryColor(topic.mastery?.score || 0)}
+                      />
+                    </div>
+                    <div>
+                      <ProgressBar 
+                        value={topic.currentRetention || 0}
+                        label="Retention Level"
+                        color="bg-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <ProgressBar 
+                        value={(topic.mastery?.confidence || 0) * 100}
+                        label="Confidence"
+                        color="bg-indigo-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <div className="text-gray-500">Level</div>
+                      <div className="font-medium capitalize">{topic.mastery?.level || 'Unknown'}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500">Reviews</div>
+                      <div className="font-medium">{topic.review_count || 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500">Study Time</div>
+                      <div className="font-medium">
+                        {Math.round((topic.total_time_spent || 0) / 60)} min
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500">Interval</div>
+                      <div className="font-medium">{topic.interval_days || 1} days</div>
+                    </div>
+                  </div>
+                  
+                  {topic.mastery?.components && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <div className="text-sm text-gray-600 mb-2">Mastery Breakdown:</div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                        <div>Feedback: {topic.mastery.components.feedback}%</div>
+                        <div>Quiz: {topic.mastery.components.quiz}%</div>
+                        <div>Retention: {topic.mastery.components.retention}%</div>
+                        <div>Engagement: {topic.mastery.components.engagement}%</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}
 
+        {/* Learning Paths Tab */}
         {activeTab === 'paths' && (
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg font-medium text-gray-900">Learning Path Recommendations</h3>
-              <p className="mt-1 text-sm text-gray-500">Personalized suggestions for your learning journey</p>
-            </div>
-            <div className="border-t border-gray-200">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
-                {recommendations.map((rec, index) => (
-                  <Link 
-                    key={index} 
-                    to={`/query?topic=${rec.topic}`}
-                    className="block border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-primary-300 transition-all"
-                  >
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0 mr-3 mt-1">
-                        {getRecommendationIcon(rec.type)}
+          <div className="space-y-6">
+            <h3 className="text-xl font-semibold text-gray-900">Recommended Learning Paths</h3>
+            
+            <div className="grid grid-cols-1 gap-6">
+              {recommendations.map((rec, index) => (
+                <div key={index} className="bg-white rounded-lg shadow p-6 border-l-4 border-primary-500">
+                  <div className="flex items-start space-x-4">
+                    {getRecommendationIcon(rec.type)}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-lg font-medium text-gray-900">{formatTopicName(rec.topic)}</h4>
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          rec.difficulty === 'advanced' ? 'bg-red-100 text-red-800' :
+                          rec.difficulty === 'intermediate' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {rec.difficulty}
+                        </span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-semibold text-gray-900 mb-1">
-                          {formatTopicName(rec.topic)}
-                        </h4>
-                        <p className="text-xs text-gray-600 mb-2">
-                          {rec.reason}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            rec.type === 'advancement' ? 'bg-green-100 text-green-800' :
-                            rec.type === 'strengthen' ? 'bg-yellow-100 text-yellow-800' :
-                            rec.type === 'complement' ? 'bg-blue-100 text-blue-800' :
-                            'bg-purple-100 text-purple-800'
+                      <p className="text-gray-600 mt-2">{rec.reason}</p>
+                      <div className="mt-4 flex items-center justify-between">
+                        <div className="flex items-center space-x-4 text-sm text-gray-500">
+                          <span>Type: {rec.type}</span>
+                          <span>Confidence: {Math.round(rec.confidence * 100)}%</span>
+                        </div>
+                        <button className="bg-primary-600 text-white px-4 py-2 rounded-md hover:bg-primary-700">
+                          Start Learning
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Achievements Tab */}
+        {activeTab === 'achievements' && (
+          <div className="space-y-6">
+            <h3 className="text-xl font-semibold text-gray-900">Your Achievements</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {achievements.map((achievement, index) => (
+                <div key={index} className="bg-white rounded-lg shadow p-6 text-center">
+                  <div className="text-4xl mb-4">{achievement.icon}</div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">{achievement.name}</h4>
+                  <p className="text-gray-600 text-sm">{achievement.description}</p>
+                  <div className="mt-4 text-xs text-gray-500">
+                    Earned: {new Date(achievement.earned_date).toLocaleDateString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Leaderboard Tab */}
+        {activeTab === 'leaderboard' && leaderboardData && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-900">Global Leaderboard</h3>
+              <div className="text-sm text-gray-500">
+                Your rank: #{leaderboardData.currentUser?.position || 'Unranked'}
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-900">Learner</span>
+                  <span className="font-medium text-gray-900">Points</span>
+                </div>
+              </div>
+              
+              <div className="divide-y divide-gray-200">
+                {leaderboardData.leaderboard?.map((entry, index) => (
+                  <div key={entry.userId} className="px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                        index === 0 ? 'bg-yellow-100 text-yellow-800' :
+                        index === 1 ? 'bg-gray-100 text-gray-600' :
+                        index === 2 ? 'bg-orange-100 text-orange-600' :
+                        'bg-gray-50 text-gray-500'
+                      }`}>
+                        {index + 1}
+                      </span>
+                      <div>
+                        <div className="font-medium text-gray-900">{entry.name}</div>
+                        <div className="text-sm text-gray-500 flex items-center space-x-2">
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            entry.tier === 'diamond' ? 'bg-purple-100 text-purple-800' :
+                            entry.tier === 'platinum' ? 'bg-gray-100 text-gray-800' :
+                            entry.tier === 'gold' ? 'bg-yellow-100 text-yellow-800' :
+                            entry.tier === 'silver' ? 'bg-gray-100 text-gray-600' :
+                            'bg-orange-100 text-orange-800'
                           }`}>
-                            {rec.type}
+                            {entry.tier}
                           </span>
-                          <span className="text-xs text-gray-500">
-                            {Math.round(rec.confidence * 100)}% match
-                          </span>
+                          <span>{entry.achievements} achievements</span>
                         </div>
                       </div>
                     </div>
-                  </Link>
+                    <div className="text-right">
+                      <div className="font-medium text-gray-900">{entry.points.toLocaleString()}</div>
+                      <div className="text-sm text-gray-500">points</div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
           </div>
         )}
-
-        {activeTab === 'achievements' && (
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg font-medium text-gray-900">Your Achievements</h3>
-              <p className="mt-1 text-sm text-gray-500">Milestones you've unlocked on your learning journey</p>
-            </div>
-            <div className="border-t border-gray-200">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-                {achievements.map((achievement, index) => (
-                  <div 
-                    key={index} 
-                    className="border border-gray-200 rounded-lg p-4 text-center hover:shadow-md transition-shadow bg-gradient-to-br from-yellow-50 to-orange-50"
-                  >
-                    <div className="text-3xl mb-2">{achievement.icon}</div>
-                    <h4 className="text-sm font-semibold text-gray-900 mb-1">
-                      {achievement.name}
-                    </h4>
-                    <p className="text-xs text-gray-600 mb-2">
-                      {achievement.description}
-                    </p>
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                      Earned
-                    </span>
-                  </div>
-                ))}
-                
-                {achievements.length === 0 && (
-                  <div className="col-span-full text-center py-8 text-gray-500">
-                    <p>No achievements yet! Keep learning to unlock your first milestone.</p>
-                    <Link to="/query" className="text-primary-600 hover:text-primary-500 text-sm">
-                      Start learning
-                    </Link>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Refresh Button */}
-        <div className="mt-6 text-center">
-          <button
-            onClick={loadProgressData}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-          >
-            <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh Progress
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Line, Bar, Pie, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -26,7 +26,7 @@ ChartJS.register(
   ArcElement
 );
 
-const AnalyticsDashboard = () => {
+const AnalyticsDashboard = ({ userId = null, isUserSpecific = false }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState({
@@ -36,47 +36,128 @@ const AnalyticsDashboard = () => {
     trends: null,
     clusters: null
   });
-  const [timeframe, setTimeframe] = useState('7d');
 
-  // Fetch analytics data
+  // Real-time and filtering state
+  const [isRealTimeEnabled, setIsRealTimeEnabled] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [filters, setFilters] = useState({
+    timeframe: '7d',
+    startDate: '',
+    endDate: '',
+    userSegment: 'all',
+    topicFilter: '',
+    minSessions: 1
+  });
+
+  const intervalRef = useRef(null);
+  const POLLING_INTERVAL = 10000; // 10 seconds
+
+  // Fetch analytics data with filters
+  const fetchAnalytics = useCallback(async (filterOptions = filters) => {
+    try {
+      const baseUrl = `http://localhost:3001/api/analytics${isUserSpecific ? '/self' : ''}`;
+      
+      // Build query parameters
+      const params = new URLSearchParams();
+      Object.entries(filterOptions).forEach(([key, value]) => {
+        if (value && value !== 'all') {
+          params.append(key, value);
+        }
+      });
+      
+      const queryString = params.toString();
+      const urlSuffix = queryString ? `?${queryString}` : '';
+
+      const [popularityRes, timelineRes, engagementRes, trendsRes, clustersRes] = await Promise.all([
+        fetch(`${baseUrl}/topics/popularity${urlSuffix}`),
+        fetch(`${baseUrl}/topics/timeline${urlSuffix}`),
+        fetch(`${baseUrl}/users/engagement${urlSuffix}`),
+        fetch(`${baseUrl}/topics/trends${urlSuffix}`),
+        fetch(`${baseUrl}/clusters/distribution${urlSuffix}`)
+      ]);
+
+      const [popularity, timeline, engagement, trends, clusters] = await Promise.all([
+        popularityRes.json(),
+        timelineRes.json(),
+        engagementRes.json(),
+        trendsRes.json(),
+        clustersRes.json()
+      ]);
+
+      setAnalytics({ popularity, timeline, engagement, trends, clusters });
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters, isUserSpecific]);
+
+  // Handle filter changes
+  const handleFilterChange = (filterKey, value) => {
+    const newFilters = { ...filters, [filterKey]: value };
+    setFilters(newFilters);
+    setLoading(true);
+    fetchAnalytics(newFilters);
+  };
+
+  // Reset filters
+  const resetFilters = () => {
+    const defaultFilters = {
+      timeframe: '7d',
+      startDate: '',
+      endDate: '',
+      userSegment: 'all',
+      topicFilter: '',
+      minSessions: 1
+    };
+    setFilters(defaultFilters);
+    setLoading(true);
+    fetchAnalytics(defaultFilters);
+  };
+
+  // Initial data fetch
   useEffect(() => {
-    const fetchAnalytics = async () => {
-      setLoading(true);
-      try {
-        const baseUrl = 'http://localhost:3001/api/analytics';
-        
-        const [popularityRes, timelineRes, engagementRes, trendsRes, clustersRes] = await Promise.all([
-          fetch(`${baseUrl}/topics/popularity`),
-          fetch(`${baseUrl}/topics/timeline?timeframe=${timeframe}`),
-          fetch(`${baseUrl}/users/engagement`),
-          fetch(`${baseUrl}/topics/trends`),
-          fetch(`${baseUrl}/clusters/distribution`)
-        ]);
+    fetchAnalytics();
+  }, [fetchAnalytics]);
 
-        const [popularity, timeline, engagement, trends, clusters] = await Promise.all([
-          popularityRes.json(),
-          timelineRes.json(),
-          engagementRes.json(),
-          trendsRes.json(),
-          clustersRes.json()
-        ]);
+  // Real-time polling setup
+  useEffect(() => {
+    if (isRealTimeEnabled) {
+      intervalRef.current = setInterval(() => {
+        fetchAnalytics();
+      }, POLLING_INTERVAL);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
 
-        setAnalytics({ popularity, timeline, engagement, trends, clusters });
-      } catch (error) {
-        console.error('Error fetching analytics:', error);
-      } finally {
-        setLoading(false);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
       }
     };
-
-    fetchAnalytics();
-  }, [timeframe]);
+  }, [isRealTimeEnabled, fetchAnalytics]);
 
   // Chart configurations
   const getTopicPopularityChart = () => {
     if (!analytics.popularity?.popular_topics) return null;
     
-    const topTopics = analytics.popularity.popular_topics.slice(0, 10);
+    let topics = analytics.popularity.popular_topics;
+    
+    // Apply topic filter if set
+    if (filters.topicFilter) {
+      topics = topics.filter(topic => 
+        topic.topic_name.toLowerCase().includes(filters.topicFilter.toLowerCase())
+      );
+    }
+    
+    // Apply minimum sessions filter
+    topics = topics.filter(topic => topic.session_count >= filters.minSessions);
+    
+    const topTopics = topics.slice(0, 10);
     
     return {
       labels: topTopics.map(topic => topic.topic_name.replace(/_/g, ' ')),
@@ -110,7 +191,16 @@ const AnalyticsDashboard = () => {
   const getTrendsChart = () => {
     if (!analytics.trends?.trends) return null;
     
-    const trendingTopics = analytics.trends.trends.slice(0, 8);
+    let trends = analytics.trends.trends;
+    
+    // Apply topic filter if set
+    if (filters.topicFilter) {
+      trends = trends.filter(topic => 
+        topic.topic_name.toLowerCase().includes(filters.topicFilter.toLowerCase())
+      );
+    }
+    
+    const trendingTopics = trends.slice(0, 8);
     
     return {
       labels: trendingTopics.map(topic => topic.topic_name.replace(/_/g, ' ')),
@@ -145,7 +235,16 @@ const AnalyticsDashboard = () => {
       Object.keys(dayData).forEach(topic => allTopics.add(topic));
     });
     
-    const topTopics = Array.from(allTopics).slice(0, 5);
+    let topTopics = Array.from(allTopics);
+    
+    // Apply topic filter if set
+    if (filters.topicFilter) {
+      topTopics = topTopics.filter(topic => 
+        topic.toLowerCase().includes(filters.topicFilter.toLowerCase())
+      );
+    }
+    
+    topTopics = topTopics.slice(0, 5);
     const colors = ['#3B82F6', '#8B5CF6', '#EF4444', '#10B981', '#F59E0B'];
     
     return {
@@ -196,8 +295,136 @@ const AnalyticsDashboard = () => {
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">📊 System Analytics Dashboard</h1>
-        <p className="text-gray-600">Comprehensive insights into topic popularity, user engagement, and learning trends across all users</p>
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              📊 {isUserSpecific ? 'Personal' : 'System'} Analytics Dashboard
+            </h1>
+            <p className="text-gray-600">
+              {isUserSpecific 
+                ? 'Your personal learning analytics and progress insights' 
+                : 'Comprehensive insights into topic popularity, user engagement, and learning trends across all users'
+              }
+            </p>
+          </div>
+          
+          {/* Real-time toggle */}
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="realtime"
+                checked={isRealTimeEnabled}
+                onChange={(e) => setIsRealTimeEnabled(e.target.checked)}
+                className="mr-2"
+              />
+              <label htmlFor="realtime" className="text-sm font-medium text-gray-700">
+                Real-time Updates
+              </label>
+            </div>
+            {lastUpdated && (
+              <p className="text-xs text-gray-500">
+                Last updated: {lastUpdated.toLocaleTimeString()}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Filters Panel */}
+        <div className="bg-gray-50 rounded-lg p-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {/* Timeframe Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Timeframe</label>
+              <select 
+                value={filters.timeframe}
+                onChange={(e) => handleFilterChange('timeframe', e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              >
+                <option value="1d">Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+                <option value="90d">Last 90 Days</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+
+            {/* Custom Date Range */}
+            {filters.timeframe === 'custom' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={filters.startDate}
+                    onChange={(e) => handleFilterChange('startDate', e.target.value)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={filters.endDate}
+                    onChange={(e) => handleFilterChange('endDate', e.target.value)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* User Segment Filter (only for admin view) */}
+            {!isUserSpecific && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">User Segment</label>
+                <select 
+                  value={filters.userSegment}
+                  onChange={(e) => handleFilterChange('userSegment', e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                >
+                  <option value="all">All Users</option>
+                  <option value="new">New Users (&lt; 7 days)</option>
+                  <option value="active">Active Users</option>
+                  <option value="returning">Returning Users</option>
+                </select>
+              </div>
+            )}
+
+            {/* Topic Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Topic Filter</label>
+              <input
+                type="text"
+                placeholder="Search topics..."
+                value={filters.topicFilter}
+                onChange={(e) => handleFilterChange('topicFilter', e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              />
+            </div>
+
+            {/* Minimum Sessions Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Min Sessions</label>
+              <input
+                type="number"
+                min="1"
+                value={filters.minSessions}
+                onChange={(e) => handleFilterChange('minSessions', parseInt(e.target.value) || 1)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              />
+            </div>
+
+            {/* Reset Filters Button */}
+            <div className="flex items-end">
+              <button
+                onClick={resetFilters}
+                className="w-full bg-gray-600 text-white px-4 py-2 rounded-md text-sm hover:bg-gray-700 transition-colors"
+              >
+                Reset Filters
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -262,10 +489,10 @@ const AnalyticsDashboard = () => {
       {/* Tab Navigation */}
       <div className="flex space-x-4 mb-6 border-b border-gray-200">
         {[
-          { id: 'overview', label: '📈 Overview', icon: '📈' },
-          { id: 'topics', label: '📚 Topic Analytics', icon: '📚' },
-          { id: 'users', label: '👥 User Engagement', icon: '👥' },
-          { id: 'trends', label: '📊 Growth Trends', icon: '📊' }
+          { id: 'overview', label: '📈 Overview' },
+          { id: 'topics', label: '📚 Topic Analytics' },
+          { id: 'users', label: '👥 User Engagement' },
+          { id: 'trends', label: '📊 Growth Trends' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -309,8 +536,8 @@ const AnalyticsDashboard = () => {
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">📈 Topic Activity Timeline</h3>
               <select 
-                value={timeframe} 
-                onChange={(e) => setTimeframe(e.target.value)}
+                value={filters.timeframe} 
+                onChange={(e) => handleFilterChange('timeframe', e.target.value)}
                 className="border border-gray-300 rounded-md px-3 py-1"
               >
                 <option value="7d">Last 7 Days</option>

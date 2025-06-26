@@ -1,4 +1,5 @@
 import userProfileManager from './UserProfileManager.js';
+import { supabase } from '../lib/supabaseClient.js';
 
 class PromptManager {
   constructor() {
@@ -412,6 +413,614 @@ Above all, prioritize clarity and helpfulness in your responses, adapting to the
       console.error('Error generating regeneration prompt:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get similar topics based on usage patterns and semantic similarity
+   * @param {Object} options - Configuration options
+   * @param {number} options.similarityThreshold - Minimum similarity score (default: 0.7)
+   * @param {number} options.minUsageCount - Minimum usage count to consider (default: 2)
+   * @returns {Promise<Array>} - Array of similar topic pairs with similarity scores
+   */
+  async getSimilarTopics(options = {}) {
+    const { similarityThreshold = 0.7, minUsageCount = 2 } = options;
+
+    try {
+      console.log('[Topic Curation] Analyzing topic similarities...');
+
+      // Get all active topics with sufficient usage
+      const { data: topics, error } = await supabase
+        .from('topics')
+        .select('id, name, description, usage_count')
+        .eq('is_active', true)
+        .gte('usage_count', minUsageCount)
+        .order('usage_count', { ascending: false });
+
+      if (error) throw error;
+
+      if (!topics || topics.length < 2) {
+        return [];
+      }
+
+      console.log(`[Topic Curation] Analyzing ${topics.length} topics for similarities`);
+
+      // Calculate similarities between all topic pairs
+      const similarPairs = [];
+
+      for (let i = 0; i < topics.length; i++) {
+        for (let j = i + 1; j < topics.length; j++) {
+          const topic1 = topics[i];
+          const topic2 = topics[j];
+
+          // Calculate multiple similarity metrics
+          const namesSimilarity = this.calculateNameSimilarity(topic1.name, topic2.name);
+          const descriptionsSimilarity = this.calculateDescriptionSimilarity(
+            topic1.description, 
+            topic2.description
+          );
+          const usagePatternSimilarity = await this.calculateUsagePatternSimilarity(
+            topic1.name, 
+            topic2.name
+          );
+
+          // Weighted average of different similarity metrics
+          const overallSimilarity = (
+            namesSimilarity * 0.4 +
+            descriptionsSimilarity * 0.4 +
+            usagePatternSimilarity * 0.2
+          );
+
+          if (overallSimilarity >= similarityThreshold) {
+            similarPairs.push({
+              topic1: {
+                id: topic1.id,
+                name: topic1.name,
+                description: topic1.description,
+                usage_count: topic1.usage_count
+              },
+              topic2: {
+                id: topic2.id,
+                name: topic2.name,
+                description: topic2.description,
+                usage_count: topic2.usage_count
+              },
+              similarityScore: overallSimilarity,
+              similarities: {
+                names: namesSimilarity,
+                descriptions: descriptionsSimilarity,
+                usagePatterns: usagePatternSimilarity
+              },
+              mergeRecommendation: this.generateMergeRecommendation(topic1, topic2, overallSimilarity)
+            });
+          }
+        }
+      }
+
+      // Sort by similarity score (highest first)
+      similarPairs.sort((a, b) => b.similarityScore - a.similarityScore);
+
+      console.log(`[Topic Curation] Found ${similarPairs.length} similar topic pairs`);
+      return similarPairs;
+
+    } catch (error) {
+      console.error('[Topic Curation] Error finding similar topics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Suggest topic merge operations
+   * @param {string} topic1Name - First topic name
+   * @param {string} topic2Name - Second topic name
+   * @param {Object} options - Merge options
+   * @returns {Promise<Object>} - Merge suggestion with details
+   */
+  async suggestTopicMerge(topic1Name, topic2Name, options = {}) {
+    try {
+      console.log(`[Topic Merge] Analyzing merge for: ${topic1Name} + ${topic2Name}`);
+
+      // Get topic details
+      const { data: topics, error } = await supabase
+        .from('topics')
+        .select('*')
+        .in('name', [topic1Name, topic2Name])
+        .eq('is_active', true);
+
+      if (error) throw error;
+
+      if (!topics || topics.length !== 2) {
+        throw new Error('Both topics must exist and be active');
+      }
+
+      const [topic1, topic2] = topics;
+
+      // Calculate detailed merge analysis
+      const mergeAnalysis = await this.analyzeMergeCompatibility(topic1, topic2);
+
+      // Generate merge suggestions
+      const suggestions = {
+        canMerge: mergeAnalysis.compatibility > 0.6,
+        compatibility: mergeAnalysis.compatibility,
+        suggestedName: this.generateMergedTopicName(topic1, topic2),
+        suggestedDescription: this.generateMergedTopicDescription(topic1, topic2),
+        mergeStrategy: this.determineMergeStrategy(topic1, topic2),
+        impactAnalysis: {
+          totalUsage: topic1.usage_count + topic2.usage_count,
+          affectedSessions: await this.getAffectedSessionsCount([topic1Name, topic2Name]),
+          dataIntegrityRisk: mergeAnalysis.dataIntegrityRisk,
+          userImpact: mergeAnalysis.userImpact
+        },
+        recommendations: mergeAnalysis.recommendations,
+        mergeSteps: this.generateMergeSteps(topic1, topic2)
+      };
+
+      console.log(`[Topic Merge] Merge compatibility: ${mergeAnalysis.compatibility.toFixed(2)}`);
+      return suggestions;
+
+    } catch (error) {
+      console.error(`[Topic Merge] Error analyzing merge for ${topic1Name} + ${topic2Name}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Suggest topic split operations for overly broad topics
+   * @param {string} topicName - Topic name to analyze for splitting
+   * @param {Object} options - Split options
+   * @param {number} options.maxSuggestedSplits - Maximum number of suggested splits (default: 4)
+   * @returns {Promise<Object>} - Split suggestions with details
+   */
+  async suggestTopicSplit(topicName, options = {}) {
+    const { maxSuggestedSplits = 4 } = options;
+
+    try {
+      console.log(`[Topic Split] Analyzing split opportunities for: ${topicName}`);
+
+      // Get topic details
+      const { data: topicData, error: topicError } = await supabase
+        .from('topics')
+        .select('*')
+        .eq('name', topicName)
+        .eq('is_active', true)
+        .single();
+
+      if (topicError) throw topicError;
+
+      // Analyze if topic is broad enough to split
+      const splitAnalysis = await this.analyzeSplitOpportunities(topicData);
+
+      if (!splitAnalysis.shouldSplit) {
+        return {
+          shouldSplit: false,
+          reason: splitAnalysis.reason,
+          currentMetrics: splitAnalysis.metrics
+        };
+      }
+
+      // Get session data to analyze usage patterns
+      const sessionPatterns = await this.getTopicSessionPatterns(topicName);
+
+      // Generate split suggestions based on patterns
+      const splitSuggestions = this.generateSplitSuggestions(
+        topicData, 
+        sessionPatterns, 
+        maxSuggestedSplits
+      );
+
+      const suggestions = {
+        shouldSplit: true,
+        splitScore: splitAnalysis.splitScore,
+        originalTopic: {
+          name: topicData.name,
+          description: topicData.description,
+          usage_count: topicData.usage_count
+        },
+        suggestedSplits: splitSuggestions,
+        impactAnalysis: {
+          totalAffectedSessions: sessionPatterns.totalSessions,
+          expectedImprovement: splitAnalysis.expectedImprovement,
+          implementationComplexity: splitAnalysis.complexity
+        },
+        splitStrategy: this.determineSplitStrategy(topicData, sessionPatterns),
+        implementationSteps: this.generateSplitSteps(topicData, splitSuggestions)
+      };
+
+      console.log(`[Topic Split] Generated ${splitSuggestions.length} split suggestions`);
+      return suggestions;
+
+    } catch (error) {
+      console.error(`[Topic Split] Error analyzing split for ${topicName}:`, error);
+      throw error;
+    }
+  }
+
+  // Helper methods for topic curation
+
+  /**
+   * Calculate similarity between topic names
+   */
+  calculateNameSimilarity(name1, name2) {
+    const words1 = name1.toLowerCase().split(/[_\s]+/);
+    const words2 = name2.toLowerCase().split(/[_\s]+/);
+    
+    const commonWords = words1.filter(word => words2.includes(word));
+    const totalWords = new Set([...words1, ...words2]).size;
+    
+    return commonWords.length / totalWords;
+  }
+
+  /**
+   * Calculate similarity between topic descriptions
+   */
+  calculateDescriptionSimilarity(desc1, desc2) {
+    if (!desc1 || !desc2) return 0;
+    
+    const words1 = this.extractKeywords(desc1);
+    const words2 = this.extractKeywords(desc2);
+    
+    const commonWords = words1.filter(word => words2.includes(word));
+    const totalWords = new Set([...words1, ...words2]).size;
+    
+    return totalWords > 0 ? commonWords.length / totalWords : 0;
+  }
+
+  /**
+   * Calculate usage pattern similarity between topics
+   */
+  async calculateUsagePatternSimilarity(topic1, topic2) {
+    try {
+      // Get users who used both topics
+      const { data: sessions, error } = await supabase
+        .from('sessions')
+        .select('user_id, secret_topic')
+        .in('secret_topic', [topic1, topic2])
+        .not('user_id', 'is', null);
+
+      if (error || !sessions) return 0;
+
+      // Group by user
+      const userTopics = {};
+      sessions.forEach(session => {
+        if (!userTopics[session.user_id]) {
+          userTopics[session.user_id] = new Set();
+        }
+        userTopics[session.user_id].add(session.secret_topic);
+      });
+
+      // Count users who used both topics
+      const usersWithBoth = Object.values(userTopics)
+        .filter(topicSet => topicSet.has(topic1) && topicSet.has(topic2))
+        .length;
+
+      const totalUsers = Object.keys(userTopics).length;
+      
+      return totalUsers > 0 ? usersWithBoth / totalUsers : 0;
+
+    } catch (error) {
+      console.warn('Error calculating usage pattern similarity:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Extract keywords from text
+   */
+  extractKeywords(text) {
+    return text.toLowerCase()
+      .split(/\W+/)
+      .filter(word => word.length > 3 && !this.isStopWord(word));
+  }
+
+  /**
+   * Generate merge recommendation based on topics and similarity
+   */
+  generateMergeRecommendation(topic1, topic2, similarity) {
+    const higherUsage = topic1.usage_count > topic2.usage_count ? topic1 : topic2;
+    const lowerUsage = topic1.usage_count > topic2.usage_count ? topic2 : topic1;
+
+    if (similarity > 0.9) {
+      return {
+        confidence: 'high',
+        recommendation: `Strong candidate for merge - topics are highly similar`,
+        suggestedAction: `Merge '${lowerUsage.name}' into '${higherUsage.name}'`,
+        priority: 'high'
+      };
+    } else if (similarity > 0.8) {
+      return {
+        confidence: 'medium',
+        recommendation: `Good candidate for merge - consider consolidating`,
+        suggestedAction: `Review and potentially merge topics`,
+        priority: 'medium'
+      };
+    } else {
+      return {
+        confidence: 'low',
+        recommendation: `Moderate similarity - review manually`,
+        suggestedAction: `Manual review recommended`,
+        priority: 'low'
+      };
+    }
+  }
+
+  /**
+   * Analyze merge compatibility between two topics
+   */
+  async analyzeMergeCompatibility(topic1, topic2) {
+    const nameCompatibility = this.calculateNameSimilarity(topic1.name, topic2.name);
+    const descriptionCompatibility = this.calculateDescriptionSimilarity(
+      topic1.description, 
+      topic2.description
+    );
+    
+    // Calculate usage overlap
+    const usageOverlap = await this.calculateUsagePatternSimilarity(topic1.name, topic2.name);
+    
+    const compatibility = (nameCompatibility + descriptionCompatibility + usageOverlap) / 3;
+    
+    return {
+      compatibility,
+      dataIntegrityRisk: compatibility < 0.7 ? 'high' : 'low',
+      userImpact: this.assessUserImpact(topic1, topic2),
+      recommendations: this.generateMergeRecommendations(topic1, topic2, compatibility)
+    };
+  }
+
+  /**
+   * Generate merged topic name
+   */
+  generateMergedTopicName(topic1, topic2) {
+    // Use the topic with higher usage as base
+    const primary = topic1.usage_count > topic2.usage_count ? topic1 : topic2;
+    const secondary = topic1.usage_count > topic2.usage_count ? topic2 : topic1;
+    
+    // If names are very similar, use the primary name
+    if (this.calculateNameSimilarity(topic1.name, topic2.name) > 0.8) {
+      return primary.name;
+    }
+    
+    // Otherwise, create a combined name
+    const primaryWords = primary.name.split(/[_\s]+/);
+    const secondaryWords = secondary.name.split(/[_\s]+/);
+    const uniqueWords = [...new Set([...primaryWords, ...secondaryWords])];
+    
+    return uniqueWords.join('_');
+  }
+
+  /**
+   * Generate merged topic description
+   */
+  generateMergedTopicDescription(topic1, topic2) {
+    const desc1 = topic1.description || '';
+    const desc2 = topic2.description || '';
+    
+    if (!desc1 && !desc2) {
+      return `Merged topic combining ${topic1.name} and ${topic2.name}`;
+    }
+    
+    if (!desc1) return desc2;
+    if (!desc2) return desc1;
+    
+    // Combine descriptions intelligently
+    return `${desc1} This topic also encompasses ${desc2.toLowerCase()}`;
+  }
+
+  /**
+   * Determine merge strategy
+   */
+  determineMergeStrategy(topic1, topic2) {
+    const usageDifference = Math.abs(topic1.usage_count - topic2.usage_count);
+    const totalUsage = topic1.usage_count + topic2.usage_count;
+    
+    if (usageDifference / totalUsage > 0.7) {
+      return 'absorb_into_dominant';
+    } else {
+      return 'create_new_merged';
+    }
+  }
+
+  /**
+   * Get count of sessions affected by topic changes
+   */
+  async getAffectedSessionsCount(topicNames) {
+    try {
+      const { data: sessions, error } = await supabase
+        .from('sessions')
+        .select('id', { count: 'exact' })
+        .in('secret_topic', topicNames);
+      
+      return error ? 0 : sessions.count;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  /**
+   * Generate merge implementation steps
+   */
+  generateMergeSteps(topic1, topic2) {
+    const primary = topic1.usage_count > topic2.usage_count ? topic1 : topic2;
+    const secondary = topic1.usage_count > topic2.usage_count ? topic2 : topic1;
+    
+    return [
+      {
+        step: 1,
+        action: 'backup_data',
+        description: 'Create backup of current topic assignments'
+      },
+      {
+        step: 2,
+        action: 'update_sessions',
+        description: `Update all sessions with topic '${secondary.name}' to use '${primary.name}'`
+      },
+      {
+        step: 3,
+        action: 'update_usage_count',
+        description: `Update usage count for '${primary.name}' to ${topic1.usage_count + topic2.usage_count}`
+      },
+      {
+        step: 4,
+        action: 'deactivate_topic',
+        description: `Mark '${secondary.name}' as inactive`
+      },
+      {
+        step: 5,
+        action: 'verify_integrity',
+        description: 'Verify data integrity and update any dependent systems'
+      }
+    ];
+  }
+
+  /**
+   * Analyze split opportunities for a topic
+   */
+  async analyzeSplitOpportunities(topic) {
+    const usageThreshold = 20; // Minimum usage to consider splitting
+    const complexityThreshold = 50; // Words in description suggesting complexity
+    
+    if (topic.usage_count < usageThreshold) {
+      return {
+        shouldSplit: false,
+        reason: 'Insufficient usage to warrant splitting',
+        metrics: { usage_count: topic.usage_count, threshold: usageThreshold }
+      };
+    }
+    
+    const descriptionLength = (topic.description || '').split(/\s+/).length;
+    if (descriptionLength < complexityThreshold) {
+      return {
+        shouldSplit: false,
+        reason: 'Topic appears sufficiently focused',
+        metrics: { description_length: descriptionLength, threshold: complexityThreshold }
+      };
+    }
+    
+    // Calculate split score based on various factors
+    const splitScore = Math.min(1, (topic.usage_count / 100) * (descriptionLength / 100));
+    
+    return {
+      shouldSplit: true,
+      splitScore,
+      expectedImprovement: 'Better topic granularity and user targeting',
+      complexity: splitScore > 0.8 ? 'high' : 'medium'
+    };
+  }
+
+  /**
+   * Get session patterns for a topic
+   */
+  async getTopicSessionPatterns(topicName) {
+    try {
+      const { data: sessions, error } = await supabase
+        .from('sessions')
+        .select('user_id, created_at')
+        .eq('secret_topic', topicName)
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      
+      if (error) throw error;
+      
+      return {
+        totalSessions: sessions.length,
+        uniqueUsers: new Set(sessions.map(s => s.user_id)).size,
+        timeDistribution: this.analyzeTimeDistribution(sessions),
+        userDistribution: this.analyzeUserDistribution(sessions)
+      };
+    } catch (error) {
+      console.warn('Error getting topic session patterns:', error);
+      return { totalSessions: 0, uniqueUsers: 0, timeDistribution: {}, userDistribution: {} };
+    }
+  }
+
+  /**
+   * Generate split suggestions
+   */
+  generateSplitSuggestions(topic, patterns, maxSplits) {
+    const suggestions = [];
+    const words = (topic.description || '').toLowerCase().split(/\s+/);
+    
+    // Simple heuristic-based splitting - could be enhanced with ML
+    const keywords = this.extractKeywords(topic.description || topic.name);
+    const splitCandidates = keywords.slice(0, maxSplits).map((keyword, index) => ({
+      name: `${topic.name}_${keyword}`,
+      description: `Focused on ${keyword} aspects of ${topic.name}`,
+      estimatedUsage: Math.floor(topic.usage_count / maxSplits),
+      confidence: 0.7 - (index * 0.1), // Decreasing confidence
+      rationale: `Split based on ${keyword} keyword analysis`
+    }));
+    
+    return splitCandidates;
+  }
+
+  // Additional helper methods
+  assessUserImpact(topic1, topic2) {
+    const totalUsage = topic1.usage_count + topic2.usage_count;
+    return totalUsage > 50 ? 'high' : totalUsage > 20 ? 'medium' : 'low';
+  }
+
+  generateMergeRecommendations(topic1, topic2, compatibility) {
+    const recommendations = [];
+    
+    if (compatibility > 0.8) {
+      recommendations.push('Proceed with merge - high compatibility');
+    } else if (compatibility > 0.6) {
+      recommendations.push('Consider merge after manual review');
+    } else {
+      recommendations.push('Manual analysis recommended before merge');
+    }
+    
+    return recommendations;
+  }
+
+  determineSplitStrategy(topic, patterns) {
+    if (patterns.totalSessions > 100) {
+      return 'usage_based_split';
+    } else {
+      return 'semantic_split';
+    }
+  }
+
+  generateSplitSteps(topic, suggestions) {
+    return [
+      {
+        step: 1,
+        action: 'create_new_topics',
+        description: `Create ${suggestions.length} new specific topics`
+      },
+      {
+        step: 2,
+        action: 'migrate_sessions',
+        description: 'Migrate existing sessions to appropriate new topics'
+      },
+      {
+        step: 3,
+        action: 'update_classifications',
+        description: 'Update topic classification logic'
+      },
+      {
+        step: 4,
+        action: 'deprecate_original',
+        description: `Mark original topic '${topic.name}' as deprecated`
+      }
+    ];
+  }
+
+  analyzeTimeDistribution(sessions) {
+    // Simple time distribution analysis
+    const timeSlots = {};
+    sessions.forEach(session => {
+      const hour = new Date(session.created_at).getHours();
+      const slot = Math.floor(hour / 6); // 4 time slots per day
+      timeSlots[slot] = (timeSlots[slot] || 0) + 1;
+    });
+    return timeSlots;
+  }
+
+  analyzeUserDistribution(sessions) {
+    const userCounts = {};
+    sessions.forEach(session => {
+      userCounts[session.user_id] = (userCounts[session.user_id] || 0) + 1;
+    });
+    return userCounts;
   }
 }
 
