@@ -22,18 +22,28 @@ class QueryClusteringService {
     const startTime = Date.now();
     
     try {
-      await this.logEvent('INFO', 'Starting query processing', {
+      await this.logEvent('INFO', '🚀 Starting query processing for crowd wisdom clustering', {
+        queryText: queryText.substring(0, 100) + (queryText.length > 100 ? '...' : ''),
         queryLength: queryText.length,
         sessionId,
         userId
       });
 
       // Generate embedding for the query
+      console.log('[CROWD WISDOM CLUSTERING] 📊 Generating embedding vector for query:', queryText.substring(0, 50) + '...');
       const queryEmbedding = await this.embeddingGenerator.generateEmbedding(
         queryText, 
         'query_clustering', 
         sessionId
       );
+      
+      if (queryEmbedding) {
+        console.log('[CROWD WISDOM CLUSTERING] ✅ Embedding generated successfully:', {
+          dimensions: queryEmbedding.length,
+          vectorPreview: queryEmbedding.slice(0, 5),
+          sessionId
+        });
+      }
 
       if (!queryEmbedding) {
         await this.logEvent('ERROR', 'Failed to generate embedding for query', {
@@ -116,18 +126,20 @@ class QueryClusteringService {
    */
   async findOrCreateCluster(queryText, queryEmbedding, sessionId, userId) {
     try {
-      await this.logEvent('INFO', 'Finding best cluster match', {
+      await this.logEvent('INFO', '🔍 Finding best cluster match for query', {
         sessionId,
         userId
       });
 
       // Get all existing clusters
+      console.log('[CROWD WISDOM CLUSTERING] 🗂️ Retrieving existing clusters from database...');
       const { data: clusters, error } = await supabase
         .from('crowd_wisdom_clusters')
         .select('*')
         .order('total_queries', { ascending: false });
 
       if (error) {
+        console.log('[CROWD WISDOM CLUSTERING] ❌ Failed to retrieve clusters:', error.message);
         await this.logEvent('ERROR', 'Failed to retrieve existing clusters', {
           error: error.message,
           sessionId,
@@ -136,20 +148,46 @@ class QueryClusteringService {
         throw error;
       }
 
-      await this.logEvent('DEBUG', `Retrieved ${clusters.length} existing clusters`, {
+      console.log('[CROWD WISDOM CLUSTERING] 📋 Retrieved clusters from database:', {
+        totalClusters: clusters.length,
+        clustersWithData: clusters.map(c => ({
+          id: c.id.substring(0, 8) + '...',
+          name: c.cluster_name,
+          totalQueries: c.total_queries,
+          successRate: c.success_rate,
+          hasPromptEnhancement: !!c.prompt_enhancement
+        })),
+        sessionId,
+        userId
+      });
+
+      await this.logEvent('DEBUG', `📊 Retrieved ${clusters.length} existing clusters for similarity matching`, {
         clusterCount: clusters.length,
+        clusterDetails: clusters.map(c => ({
+          id: c.id,
+          name: c.cluster_name,
+          queries: c.total_queries,
+          successRate: c.success_rate
+        })),
         sessionId,
         userId
       });
 
       // If no clusters exist, create the first one
       if (!clusters || clusters.length === 0) {
-        await this.logEvent('INFO', 'No existing clusters found, creating first cluster', {
+        console.log('[CROWD WISDOM CLUSTERING] 🆕 No existing clusters found - creating the very first cluster!');
+        await this.logEvent('INFO', '🆕 No existing clusters found, creating first cluster', {
+          queryText: queryText.substring(0, 100),
           sessionId,
           userId
         });
         
         const newClusterId = await this.createNewCluster(queryText, queryEmbedding, sessionId, userId);
+        console.log('[CROWD WISDOM CLUSTERING] ✅ First cluster created successfully:', {
+          clusterId: newClusterId.substring(0, 8) + '...',
+          representativeQuery: queryText.substring(0, 50) + '...'
+        });
+        
         return {
           clusterId: newClusterId,
           similarity: 1.0,
@@ -159,6 +197,7 @@ class QueryClusteringService {
       }
 
       // Find the most similar cluster
+      console.log('[CROWD WISDOM CLUSTERING] 🧮 Preparing clusters for similarity comparison...');
       const candidateClusters = clusters.map(cluster => ({
         id: cluster.id,
         embedding: cluster.centroid_embedding,
@@ -168,6 +207,7 @@ class QueryClusteringService {
         successRate: cluster.success_rate
       }));
 
+      console.log('[CROWD WISDOM CLUSTERING] ⚖️ Computing cosine similarity with all clusters...');
       const bestMatch = await this.cosineUtils.findMostSimilar(
         queryEmbedding,
         candidateClusters,
@@ -176,13 +216,18 @@ class QueryClusteringService {
       );
 
       if (!bestMatch) {
-        await this.logEvent('WARN', 'No best match found among clusters, creating new cluster', {
+        console.log('[CROWD WISDOM CLUSTERING] ⚠️ No similarity match found - creating new cluster');
+        await this.logEvent('WARN', '⚠️ No best match found among clusters, creating new cluster', {
           candidateCount: candidateClusters.length,
           sessionId,
           userId
         });
         
         const newClusterId = await this.createNewCluster(queryText, queryEmbedding, sessionId, userId);
+        console.log('[CROWD WISDOM CLUSTERING] ✅ New cluster created due to no similarity match:', {
+          clusterId: newClusterId.substring(0, 8) + '...'
+        });
+        
         return {
           clusterId: newClusterId,
           similarity: 1.0,
@@ -191,19 +236,55 @@ class QueryClusteringService {
         };
       }
 
-      await this.logEvent('INFO', 'Best cluster match found', {
+      console.log('[CROWD WISDOM CLUSTERING] 🎯 Best cluster match found:', {
+        clusterId: bestMatch.id.substring(0, 8) + '...',
+        similarity: bestMatch.similarity,
+        threshold: this.similarityThreshold,
+        clusterName: clusters.find(c => c.id === bestMatch.id)?.cluster_name,
+        representativeQuery: bestMatch.representativeQuery?.substring(0, 80) + '...',
+        clusterStats: {
+          totalQueries: bestMatch.totalQueries,
+          successRate: bestMatch.successRate,
+          hasPromptEnhancement: !!bestMatch.promptEnhancement
+        }
+      });
+
+      await this.logEvent('INFO', '🎯 Best cluster match found with similarity analysis', {
         clusterId: bestMatch.id,
         similarity: bestMatch.similarity,
         threshold: this.similarityThreshold,
         representativeQuery: bestMatch.representativeQuery?.substring(0, 100),
+        clusterMetrics: {
+          totalQueries: bestMatch.totalQueries,
+          successRate: bestMatch.successRate,
+          promptEnhancementLength: bestMatch.promptEnhancement?.length || 0
+        },
         sessionId,
         userId
       });
 
       // Check if similarity meets threshold
-      if (bestMatch.similarity >= this.similarityThreshold) {
+      const similarityMeetsThreshold = bestMatch.similarity >= this.similarityThreshold;
+      
+      console.log('[CROWD WISDOM CLUSTERING] 📏 Similarity threshold decision:', {
+        similarity: bestMatch.similarity,
+        threshold: this.similarityThreshold,
+        meetsThreshold: similarityMeetsThreshold,
+        decision: similarityMeetsThreshold ? 'ASSIGN_TO_EXISTING_CLUSTER' : 'CREATE_NEW_CLUSTER'
+      });
+      
+      if (similarityMeetsThreshold) {
+        console.log('[CROWD WISDOM CLUSTERING] ✅ Similarity above threshold - assigning to existing cluster');
+        console.log('[CROWD WISDOM CLUSTERING] 🔄 Updating cluster centroid with new embedding...');
+        
         // Update cluster centroid with new embedding
         await this.updateClusterCentroid(bestMatch.id, queryEmbedding, sessionId);
+        
+        console.log('[CROWD WISDOM CLUSTERING] 🎉 Query successfully assigned to existing cluster:', {
+          clusterId: bestMatch.id.substring(0, 8) + '...',
+          similarity: bestMatch.similarity,
+          promptEnhancement: bestMatch.promptEnhancement ? 'Present' : 'None'
+        });
         
         return {
           clusterId: bestMatch.id,
@@ -212,15 +293,30 @@ class QueryClusteringService {
           promptEnhancement: bestMatch.promptEnhancement
         };
       } else {
+        console.log('[CROWD WISDOM CLUSTERING] ❌ Similarity below threshold - creating new cluster');
+        console.log('[CROWD WISDOM CLUSTERING] 📊 Similarity gap analysis:', {
+          actualSimilarity: bestMatch.similarity,
+          requiredThreshold: this.similarityThreshold,
+          gap: this.similarityThreshold - bestMatch.similarity,
+          percentBelow: ((this.similarityThreshold - bestMatch.similarity) / this.similarityThreshold * 100).toFixed(2) + '%'
+        });
+        
         // Similarity too low, create new cluster
-        await this.logEvent('INFO', 'Similarity below threshold, creating new cluster', {
+        await this.logEvent('INFO', '❌ Similarity below threshold, creating new cluster', {
           bestSimilarity: bestMatch.similarity,
           threshold: this.similarityThreshold,
+          similarityGap: this.similarityThreshold - bestMatch.similarity,
           sessionId,
           userId
         });
         
         const newClusterId = await this.createNewCluster(queryText, queryEmbedding, sessionId, userId);
+        console.log('[CROWD WISDOM CLUSTERING] ✅ New cluster created due to low similarity:', {
+          clusterId: newClusterId.substring(0, 8) + '...',
+          rejectedSimilarity: bestMatch.similarity,
+          threshold: this.similarityThreshold
+        });
+        
         return {
           clusterId: newClusterId,
           similarity: 1.0,
@@ -507,14 +603,17 @@ class QueryClusteringService {
    */
   async getClusterPromptEnhancement(clusterId, sessionId) {
     try {
+      console.log('[CROWD WISDOM CLUSTERING] 📝 Fetching cluster template/enhancement from database...');
+      
       const { data, error } = await supabase
         .from('crowd_wisdom_clusters')
-        .select('prompt_enhancement')
+        .select('prompt_enhancement, cluster_name, representative_query, total_queries, success_count, success_rate, created_at, updated_at')
         .eq('id', clusterId)
         .single();
 
       if (error) {
-        await this.logEvent('WARN', 'Failed to get cluster prompt enhancement', {
+        console.log('[CROWD WISDOM CLUSTERING] ❌ Failed to retrieve cluster template:', error.message);
+        await this.logEvent('WARN', '❌ Failed to get cluster prompt enhancement', {
           error: error.message,
           clusterId,
           sessionId
@@ -522,10 +621,49 @@ class QueryClusteringService {
         return '';
       }
 
+      const hasEnhancement = Boolean(data.prompt_enhancement && data.prompt_enhancement.trim().length > 0);
+      
+      console.log('[CROWD WISDOM CLUSTERING] 📊 Cluster template information:', {
+        clusterId: clusterId.substring(0, 8) + '...',
+        clusterName: data.cluster_name,
+        representativeQuery: data.representative_query?.substring(0, 70) + '...',
+        clusterAge: Math.floor((Date.now() - new Date(data.created_at).getTime()) / (1000 * 60 * 60 * 24)) + ' days',
+        lastUpdated: Math.floor((Date.now() - new Date(data.updated_at).getTime()) / (1000 * 60 * 60)) + ' hours ago',
+        performance: {
+          totalQueries: data.total_queries,
+          successCount: data.success_count,
+          successRate: (data.success_rate * 100).toFixed(1) + '%'
+        },
+        template: {
+          hasPromptEnhancement: hasEnhancement,
+          enhancementLength: data.prompt_enhancement?.length || 0,
+          enhancementPreview: hasEnhancement ? data.prompt_enhancement.substring(0, 120) + '...' : 'No custom template - using base prompt only'
+        }
+      });
+
+      await this.logEvent('INFO', '📝 Retrieved cluster template with full metadata', {
+        clusterId,
+        clusterName: data.cluster_name,
+        representativeQuery: data.representative_query,
+        clusterMetrics: {
+          totalQueries: data.total_queries,
+          successCount: data.success_count,
+          successRate: data.success_rate,
+          ageInDays: Math.floor((Date.now() - new Date(data.created_at).getTime()) / (1000 * 60 * 60 * 24))
+        },
+        templateInfo: {
+          hasEnhancement: hasEnhancement,
+          enhancementLength: data.prompt_enhancement?.length || 0,
+          lastUpdated: data.updated_at
+        },
+        sessionId
+      });
+
       return data.prompt_enhancement || '';
 
     } catch (error) {
-      await this.logEvent('ERROR', 'Error getting cluster prompt enhancement', {
+      console.log('[CROWD WISDOM CLUSTERING] ❌ Error retrieving cluster template:', error.message);
+      await this.logEvent('ERROR', '❌ Error getting cluster prompt enhancement', {
         error: error.message,
         clusterId,
         sessionId

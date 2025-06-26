@@ -114,7 +114,7 @@ import Supervisor from './managers/Supervisor.js';
 
 // Initialize managers
 const userManager = new UserManager();
-const promptManager = PromptManager;
+const promptManager = new PromptManager(openai); // ← Pass OpenAI client to enable crowd wisdom
 const sessionManager = new SessionManager();
 const supervisor = new Supervisor();
 
@@ -150,13 +150,29 @@ app.post('/api/query', async (req, res) => {
       sessionData = await sessionManager.createSession(tempUserId, preferences);
     }
 
-    // Crowd wisdom system removed - using simplified direct response generation
+    // ✅ CROWD WISDOM SYSTEM ENABLED - Processing query through crowd wisdom for enhanced responses
 
     // Initialize historyMessages array ONCE here
     const historyMessages = []; 
 
-    // Generate the simplified prompt using PromptManager
-    const promptManagerMessages = (await promptManager.generatePrompt(query)).messages;
+    // Generate the enhanced prompt using PromptManager with crowd wisdom integration
+    console.log('[CROWD WISDOM] Starting query processing through crowd wisdom system');
+    const promptManagerResult = await promptManager.generatePrompt(query, userId, sessionData.id);
+    const promptManagerMessages = promptManagerResult.messages;
+    
+    // Log crowd wisdom metadata if available
+    if (promptManagerResult.crowdWisdomData) {
+      console.log('[CROWD WISDOM] Crowd wisdom metadata:', {
+        clusterId: promptManagerResult.crowdWisdomData.clusterId,
+        assignmentId: promptManagerResult.crowdWisdomData.assignmentId,
+        similarity: promptManagerResult.crowdWisdomData.similarity,
+        isNewCluster: promptManagerResult.crowdWisdomData.isNewCluster,
+        hasEnhancement: promptManagerResult.crowdWisdomData.hasEnhancement,
+        processingTimeMs: promptManagerResult.crowdWisdomData.processingTimeMs
+      });
+    } else {
+      console.log('[CROWD WISDOM] No crowd wisdom data returned - system may be disabled or encountered error');
+    }
     const systemContext = promptManagerMessages.find(m => m.role === 'system');
     const userQueryForHistory = promptManagerMessages.find(m => m.role === 'user');
 
@@ -247,7 +263,9 @@ app.post('/api/query', async (req, res) => {
       recap: sections.recap,
       key_takeaways: sections.key_takeaways,
       quiz: sections.quiz,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      // Add crowd wisdom metadata for feedback processing
+      crowdWisdomAssignmentId: promptManagerResult.crowdWisdomData?.assignmentId || null
     };
 
     // Topic Classification - Classify the conversation topic using OpenAI
@@ -375,6 +393,48 @@ TOPIC:`;
 
     // Add secret_topic to response for frontend
     response.secret_topic = secretTopic;
+
+    // ✅ CROWD WISDOM FEEDBACK PROCESSING
+    // Process ALL user queries as potential feedback through the sophisticated SuccessAnalyzer
+    // Let the SuccessAnalyzer (with pattern + GPT-4o analysis) determine if it's feedback
+    if (sessionData.interactions && sessionData.interactions.length > 0) {
+      const lastInteraction = sessionData.interactions[sessionData.interactions.length - 1];
+      if (lastInteraction && lastInteraction.type === 'query' && lastInteraction.response) {
+        const previousResponse = lastInteraction.response;
+        const assignmentId = previousResponse.crowdWisdomAssignmentId;
+        
+        if (assignmentId) {
+          console.log('[CROWD WISDOM FEEDBACK] Processing potential feedback through SuccessAnalyzer for assignment:', assignmentId);
+          
+          try {
+            const feedbackResult = await promptManager.processFeedback(
+              assignmentId,
+              query, // The potential feedback text
+              previousResponse.explanation || previousResponse, // The AI response that was given
+              sessionData.id,
+              userId
+            );
+            
+            if (feedbackResult.processed && feedbackResult.result?.feedbackAnalysis) {
+              console.log('[CROWD WISDOM FEEDBACK] SuccessAnalyzer feedback analysis result:', {
+                isPositive: feedbackResult.result.feedbackAnalysis.isPositive,
+                confidence: feedbackResult.result.feedbackAnalysis.confidence,
+                method: feedbackResult.result.feedbackAnalysis.method,
+                patternMatches: feedbackResult.result.feedbackAnalysis.patterns?.length || 0,
+                gptAnalysis: feedbackResult.result.feedbackAnalysis.gptAnalysis?.reasoning,
+                learningTriggered: feedbackResult.result?.learningResult !== null,
+                assignmentId: assignmentId
+              });
+            }
+            
+          } catch (feedbackError) {
+            console.error('[CROWD WISDOM FEEDBACK] Error processing feedback through SuccessAnalyzer:', feedbackError);
+          }
+        } else {
+          console.log('[CROWD WISDOM FEEDBACK] No assignment ID found in previous response - skipping feedback analysis');
+        }
+      }
+    }
     
     // Add AI response with unique ID for feedback
     const responseId = response.id || Date.now().toString();

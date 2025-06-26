@@ -28,7 +28,15 @@ class CrowdWisdomManager {
     const startTime = Date.now();
     
     try {
-      await this.logEvent('INFO', 'Starting crowd wisdom query processing', {
+      console.log('[CROWD WISDOM MANAGER] 🚀 Starting crowd wisdom query processing:', {
+        query: queryText.substring(0, 80) + (queryText.length > 80 ? '...' : ''),
+        queryLength: queryText.length,
+        sessionId,
+        userId
+      });
+      
+      await this.logEvent('INFO', '🚀 Starting crowd wisdom query processing', {
+        queryText: queryText,
         queryLength: queryText.length,
         sessionId,
         userId
@@ -51,10 +59,18 @@ class CrowdWisdomManager {
       }
 
       // Step 2: Get cluster-specific prompt enhancement
+      console.log('[CROWD WISDOM MANAGER] 📝 Retrieving prompt enhancement for cluster:', clusterResult.clusterId.substring(0, 8) + '...');
       const promptEnhancement = await this.getClusterPromptEnhancement(
         clusterResult.clusterId,
         sessionId
       );
+      
+      console.log('[CROWD WISDOM MANAGER] 🎨 Prompt enhancement retrieved:', {
+        clusterId: clusterResult.clusterId.substring(0, 8) + '...',
+        hasEnhancement: !!promptEnhancement && promptEnhancement.length > 0,
+        enhancementLength: promptEnhancement ? promptEnhancement.length : 0,
+        enhancementPreview: promptEnhancement ? promptEnhancement.substring(0, 100) + '...' : 'None'
+      });
 
       const processingTime = Date.now() - startTime;
 
@@ -139,12 +155,23 @@ class CrowdWisdomManager {
 
       // Step 3: If feedback is positive and confident, trigger learning
       let learningResult = null;
-      if (feedbackAnalysis.isPositive && 
+      const shouldTriggerLearning = feedbackAnalysis.isPositive && 
           feedbackAnalysis.confidence >= this.minFeedbackConfidence &&
-          this.learningEnabled) {
-        
-        await this.logEvent('INFO', 'Positive feedback detected, triggering learning', {
+          this.learningEnabled;
+          
+      console.log('[CROWD WISDOM MANAGER] 🎓 Learning trigger evaluation:', {
+        isPositive: feedbackAnalysis.isPositive,
+        confidence: feedbackAnalysis.confidence,
+        minRequired: this.minFeedbackConfidence,
+        learningEnabled: this.learningEnabled,
+        shouldTriggerLearning: shouldTriggerLearning
+      });
+      
+      if (shouldTriggerLearning) {
+        console.log('[CROWD WISDOM MANAGER] ✅ Positive feedback detected - triggering learning process!');
+        await this.logEvent('INFO', '✅ Positive feedback detected, triggering learning process', {
           confidence: feedbackAnalysis.confidence,
+          feedbackText: feedbackText,
           assignmentId,
           sessionId,
           userId
@@ -158,6 +185,19 @@ class CrowdWisdomManager {
           sessionId,
           userId
         );
+        
+        console.log('[CROWD WISDOM MANAGER] 🎉 Learning process completed:', {
+          success: !!learningResult && !learningResult.error,
+          clusterId: learningResult?.clusterId?.substring(0, 8) + '...' || 'Unknown',
+          promptUpdated: !!learningResult?.promptUpdate,
+          learningEventLogged: learningResult?.learningEventLogged || false
+        });
+      } else {
+        console.log('[CROWD WISDOM MANAGER] ❌ Learning not triggered:', {
+          reason: !feedbackAnalysis.isPositive ? 'Negative feedback' :
+                  feedbackAnalysis.confidence < this.minFeedbackConfidence ? 'Low confidence' :
+                  !this.learningEnabled ? 'Learning disabled' : 'Unknown'
+        });
       }
 
       const processingTime = Date.now() - startTime;

@@ -1172,4 +1172,4 @@ Above all, prioritize clarity and helpfulness in your responses, adapting to the
   }
 }
 
-export default new PromptManager();
+export default PromptManager;

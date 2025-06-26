@@ -40,13 +40,23 @@ class SuccessAnalyzer {
     const startTime = Date.now();
     
     try {
-      await this.logEvent('INFO', 'Starting feedback analysis', {
+      console.log('[CROWD WISDOM SENTIMENT] 🔍 Starting sentiment analysis for feedback:', {
+        feedback: feedbackText,
+        length: feedbackText.length,
+        sessionId,
+        userId
+      });
+      
+      await this.logEvent('INFO', '🔍 Starting comprehensive feedback sentiment analysis', {
+        feedbackText: feedbackText,
         feedbackLength: feedbackText.length,
+        confidenceThreshold: this.confidenceThreshold,
         sessionId,
         userId
       });
 
       if (!feedbackText || feedbackText.trim().length < this.minFeedbackLength) {
+        console.log('[CROWD WISDOM SENTIMENT] ❌ Feedback too short - filtering out');
         return {
           isPositive: false,
           confidence: 0,
@@ -56,16 +66,59 @@ class SuccessAnalyzer {
         };
       }
 
+      console.log('[CROWD WISDOM SENTIMENT] 🔤 Running pattern-based analysis...');
       const patternResult = this.analyzeWithPatterns(feedbackText, sessionId);
+      console.log('[CROWD WISDOM SENTIMENT] 📊 Pattern analysis result:', {
+        confidence: patternResult.confidence,
+        matchedPatterns: patternResult.patterns.length,
+        patterns: patternResult.patterns.map(p => p.match)
+      });
+
+      console.log('[CROWD WISDOM SENTIMENT] 🤖 Running GPT-4o sentiment analysis...');
       const gptResult = await this.analyzeWithGPT(feedbackText, sessionId, userId);
+      console.log('[CROWD WISDOM SENTIMENT] 🧠 GPT analysis result:', {
+        isPositive: gptResult.isPositive,
+        confidence: gptResult.confidence,
+        reasoning: gptResult.reasoning,
+        indicators: gptResult.indicators
+      });
+
+      console.log('[CROWD WISDOM SENTIMENT] ⚖️ Combining analysis results...');
       const combinedConfidence = this.combineAnalysisResults(patternResult, gptResult);
       const isPositive = combinedConfidence >= this.confidenceThreshold;
 
+      console.log('[CROWD WISDOM SENTIMENT] 🎯 Final sentiment decision:', {
+        finalSentiment: isPositive ? 'POSITIVE' : 'NEGATIVE',
+        combinedConfidence: combinedConfidence,
+        threshold: this.confidenceThreshold,
+        meetsThreshold: combinedConfidence >= this.confidenceThreshold,
+        patternConfidence: patternResult.confidence,
+        gptConfidence: gptResult.confidence,
+        breakdown: {
+          patternWeight: '40%',
+          gptWeight: '60%',
+          patternContribution: (patternResult.confidence * 0.4).toFixed(3),
+          gptContribution: (gptResult.confidence * 0.6).toFixed(3)
+        }
+      });
+
       const processingTime = Date.now() - startTime;
 
-      await this.logEvent('INFO', 'Feedback analysis completed', {
-        isPositive,
+      await this.logEvent('INFO', '✅ Feedback sentiment analysis completed', {
+        feedbackText: feedbackText,
+        finalSentiment: isPositive ? 'POSITIVE' : 'NEGATIVE',
         combinedConfidence,
+        patternAnalysis: {
+          confidence: patternResult.confidence,
+          matchedPatterns: patternResult.patterns.length,
+          patterns: patternResult.patterns.map(p => p.match)
+        },
+        gptAnalysis: {
+          isPositive: gptResult.isPositive,
+          confidence: gptResult.confidence,
+          reasoning: gptResult.reasoning,
+          indicators: gptResult.indicators
+        },
         processingTimeMs: processingTime,
         sessionId,
         userId
@@ -81,8 +134,10 @@ class SuccessAnalyzer {
       };
 
     } catch (error) {
-      await this.logEvent('ERROR', 'Feedback analysis failed', {
+      console.log('[CROWD WISDOM SENTIMENT] ❌ Sentiment analysis failed:', error.message);
+      await this.logEvent('ERROR', '❌ Feedback sentiment analysis failed', {
         error: error.message,
+        feedbackText: feedbackText,
         sessionId,
         userId
       });
