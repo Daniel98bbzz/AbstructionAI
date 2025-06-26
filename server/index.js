@@ -5041,12 +5041,8 @@ app.get('/api/admin/clustering/stats', async (req, res) => {
     
     if (noiseError) throw noiseError;
     
-    // Get unique clusters
-    const { data: clusters, error: clustersError } = await supabase
-      .from('semantic_clusters')
-      .select('id, size, representative_query, clustering_version');
-    
-    if (clustersError) throw clustersError;
+    // Note: semantic_clusters table was removed during crowd wisdom cleanup
+    const clusters = [];
     
     // Get clustering version distribution
     const { data: versionStats, error: versionError } = await supabase
@@ -5108,21 +5104,16 @@ app.get('/api/admin/crowd-wisdom/overview', async (req, res) => {
   try {
     console.log('[Admin] Getting crowd wisdom overview...');
     
-    // Get total clusters
-    const { data: clustersData, error: clustersError } = await supabase
-      .from('semantic_clusters')
-      .select('id')
-      .not('is_deleted', 'eq', true);
+    // Note: semantic_clusters table was removed during crowd wisdom cleanup
+    const clustersData = [];
     
     // Get total interactions
     const { data: interactionsData, error: interactionsError } = await supabase
       .from('interactions')
       .select('id, cluster_id');
     
-    // Get template usage count
-    const { data: templateUsageData, error: templateUsageError } = await supabase
-      .from('prompt_template_usage')
-      .select('id, cluster_id');
+    // Note: prompt_template_usage table was removed during crowd wisdom cleanup
+    const templateUsageData = [];
     
     const totalClusters = clustersData?.length || 0;
     const totalInteractions = interactionsData?.length || 0;

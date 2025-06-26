@@ -61,32 +61,7 @@ class FeedbackProcessor {
       result.original = comments;
     }
     
-    // Store feedback in database for learning
-    if (responseData && responseData.crowd_wisdom && responseData.crowd_wisdom.template_id) {
-      console.log('[FeedbackProcessor] Storing feedback for template learning...');
-      
-      try {
-        const { data, error } = await supabase.from('template_feedback_log').insert({
-          template_id: responseData.crowd_wisdom.template_id,
-          response_id: responseId,
-          user_id: userId,
-          rating: rating,
-          feedback_text: comments,
-          feedback_classification: result.classification,
-          query: originalQuery,
-          created_at: new Date().toISOString()
-        });
-        
-        if (error) {
-          console.error('[FeedbackProcessor] Error storing feedback:', error);
-        } else {
-          console.log('[FeedbackProcessor] Feedback stored successfully for template learning');
-          result.stored_for_learning = true;
-        }
-      } catch (dbError) {
-        console.error('[FeedbackProcessor] Database error storing feedback:', dbError);
-      }
-    }
+    // Template feedback logging removed (was part of crowd wisdom system)
     
     return result;
   }

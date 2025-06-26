@@ -753,79 +753,10 @@ class ModernClusterManager {
         return [];
       }
       
-      // Get template usage with high ratings from cluster members
-      const memberIds = clusterMembers.map(member => member.user_id);
-      
-      const { data: templateUsage, error: usageError } = await this.supabase
-        .from('prompt_template_usage')
-        .select('template_id, feedback_score')
-        .in('user_id', memberIds)
-        .gte('feedback_score', 4) // Only consider high ratings
-        .order('feedback_score', { ascending: false });
-      
-      if (usageError) throw usageError;
-      
-      if (!templateUsage || templateUsage.length === 0) {
-        console.log(`[Modern Clusters] No highly-rated templates found for cluster ${clusterId}`);
-        return [];
-      }
-      
-      // Count template frequencies and average ratings
-      const templateStats = {};
-      
-      templateUsage.forEach(usage => {
-        if (!templateStats[usage.template_id]) {
-          templateStats[usage.template_id] = {
-            count: 0,
-            totalRating: 0
-          };
-        }
-        
-        templateStats[usage.template_id].count++;
-        templateStats[usage.template_id].totalRating += usage.feedback_score;
-      });
-      
-      // Calculate average ratings and sort by popularity and rating
-      const rankedTemplates = Object.keys(templateStats).map(templateId => {
-        const stats = templateStats[templateId];
-        return {
-          templateId,
-          count: stats.count,
-          averageRating: stats.totalRating / stats.count
-        };
-      });
-      
-      // Sort by count (desc) and then average rating (desc)
-      rankedTemplates.sort((a, b) => {
-        if (b.count !== a.count) {
-          return b.count - a.count;
-        }
-        return b.averageRating - a.averageRating;
-      });
-      
-      // Get top 5 template IDs
-      const topTemplateIds = rankedTemplates.slice(0, 5).map(t => t.templateId);
-      
-      // Get full template data
-      const { data: templates, error: templateError } = await this.supabase
-        .from('prompt_templates')
-        .select('*')
-        .in('id', topTemplateIds)
-        .eq('topic', topic); // Filter by topic
-      
-      if (templateError) throw templateError;
-      
-      if (!templates || templates.length === 0) {
-        // No matching templates for this topic
-        return [];
-      }
-      
-      // Sort templates according to original ranking
-      return templates.sort((a, b) => {
-        const aIndex = topTemplateIds.indexOf(a.id);
-        const bIndex = topTemplateIds.indexOf(b.id);
-        return aIndex - bIndex;
-      });
+      // Note: Template recommendation system was removed during crowd wisdom cleanup
+      // This method now returns empty array as the prompt_template_usage table no longer exists
+      console.log(`[Modern Clusters] Template recommendation system disabled (crowd wisdom cleanup)`);
+      return [];
     } catch (error) {
       console.error('Error getting recommended templates:', error);
       return [];
