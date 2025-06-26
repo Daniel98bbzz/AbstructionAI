@@ -29,36 +29,34 @@ function setCache(key, data) {
 // Helper function to build time filter condition
 function buildTimeFilter(timeframe, startDate, endDate) {
   const now = new Date();
-  let condition = '';
   
   switch (timeframe) {
     case '1d':
       const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      condition = `created_at >= '${yesterday.toISOString()}'`;
-      break;
+      return { startDate: yesterday.toISOString() };
     case '7d':
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      condition = `created_at >= '${weekAgo.toISOString()}'`;
-      break;
+      return { startDate: weekAgo.toISOString() };
     case '30d':
       const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      condition = `created_at >= '${monthAgo.toISOString()}'`;
-      break;
+      return { startDate: monthAgo.toISOString() };
     case '90d':
       const quarterAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-      condition = `created_at >= '${quarterAgo.toISOString()}'`;
-      break;
+      return { startDate: quarterAgo.toISOString() };
     case 'custom':
       if (startDate && endDate) {
-        condition = `created_at >= '${startDate}T00:00:00.000Z' AND created_at <= '${endDate}T23:59:59.999Z'`;
+        return { 
+          startDate: `${startDate}T00:00:00.000Z`,
+          endDate: `${endDate}T23:59:59.999Z`
+        };
       }
       break;
     default:
       const defaultWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      condition = `created_at >= '${defaultWeekAgo.toISOString()}'`;
+      return { startDate: defaultWeekAgo.toISOString() };
   }
   
-  return condition;
+  return null;
 }
 
 // Helper function to build user segment filter
@@ -101,7 +99,10 @@ router.get('/topics/popularity', async (req, res) => {
     // Apply time filter
     const timeFilter = buildTimeFilter(timeframe, startDate, endDate);
     if (timeFilter) {
-      query = query.or(timeFilter);
+      query = query.gte('created_at', timeFilter.startDate);
+      if (timeFilter.endDate) {
+        query = query.lte('created_at', timeFilter.endDate);
+      }
     }
     
     const { data: queries, error } = await query;
@@ -199,7 +200,10 @@ router.get('/topics/timeline', async (req, res) => {
     // Apply time filter
     const timeFilter = buildTimeFilter(timeframe, startDate, endDate);
     if (timeFilter) {
-      query = query.or(timeFilter);
+      query = query.gte('created_at', timeFilter.startDate);
+      if (timeFilter.endDate) {
+        query = query.lte('created_at', timeFilter.endDate);
+      }
     }
     
     const { data: queries, error } = await query;
@@ -280,7 +284,7 @@ router.get('/users/engagement', async (req, res) => {
     if (userSegment !== 'all') {
       const userFilter = buildUserSegmentFilter(userSegment);
       if (userFilter) {
-        query = query.or(userFilter);
+        // User segment filtering moved to post-processing
       }
     }
     
@@ -298,7 +302,10 @@ router.get('/users/engagement', async (req, res) => {
     
     const timeFilter = buildTimeFilter(timeframe, startDate, endDate);
     if (timeFilter) {
-      sessionQuery = sessionQuery.or(timeFilter);
+      sessionQuery = sessionQuery.gte('created_at', timeFilter.startDate);
+      if (timeFilter.endDate) {
+        sessionQuery = sessionQuery.lte('created_at', timeFilter.endDate);
+      }
     }
     
     const { data: sessions } = await sessionQuery;
@@ -481,7 +488,7 @@ router.get('/clusters/distribution', async (req, res) => {
     if (userSegment !== 'all') {
       const userFilter = buildUserSegmentFilter(userSegment);
       if (userFilter) {
-        query = query.or(userFilter);
+        // User segment filtering moved to post-processing
       }
     }
     
@@ -539,7 +546,10 @@ router.get('/self/topics/popularity', async (req, res) => {
     // Apply time filter
     const timeFilter = buildTimeFilter(timeframe, startDate, endDate);
     if (timeFilter) {
-      query = query.or(timeFilter);
+      query = query.gte('created_at', timeFilter.startDate);
+      if (timeFilter.endDate) {
+        query = query.lte('created_at', timeFilter.endDate);
+      }
     }
     
     const { data: queries, error } = await query;

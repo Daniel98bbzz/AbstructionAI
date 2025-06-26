@@ -12,8 +12,7 @@ import setupClusterRoutes from './api/clusterRoutes.js';
 import feedbackRoutes from './api/feedbackRoutes.js';
 import analyticsRoutes from './api/analyticsRoutes.js';
 import AnalyticsWebSocketServer from './websocketServer.js';
-// Import clustering service
-import { clusteringService } from './utils/clusteringService.js';
+// Clustering service removed - using ModernClusterManager.js instead
 // Import learning algorithms
 import { 
   spacedRepetition, 
@@ -151,68 +150,17 @@ app.post('/api/query', async (req, res) => {
       sessionData = await sessionManager.createSession(tempUserId, preferences);
     }
 
-    let enhancedQuery = query;
-    let usedTemplate = null;
-    let crowdWisdomTopic = null;
-    let selectionMethod = 'none';
-    let systemEnhancement = '';
-    let templateApplied = false;
-    const hasLimitedContext = !sessionData.interactions || sessionData.interactions.length < 2;
-    let clusterIdForUsage = null;
-
-    if (hasLimitedContext && !isRegeneration) {
-      try {
-        console.log('[Crowd Wisdom] User has limited context, applying crowd wisdom enhancement to user query');
-        let useCompositeScore = abTestGroup ? (abTestGroup === 'composite' || abTestGroup === 'new') : (Math.random() < 0.7);
-        const explorationRate = useCompositeScore ? 0.15 : 0.1;
-        const crowdWisdomResult = await supervisor.processQueryWithCrowdWisdom(
-          query, 
-          sessionData.id, 
-          userId, 
-          openai,
-          useCompositeScore,
-          explorationRate
-        );
-        console.log('[DEBUG] crowdWisdomResult returned:', crowdWisdomResult); // <-- Added robust logging
-        enhancedQuery = crowdWisdomResult.enhancedQuery;
-        usedTemplate = crowdWisdomResult.template;
-        crowdWisdomTopic = crowdWisdomResult.topic;
-        selectionMethod = crowdWisdomResult.selectionMethod;
-        clusterIdForUsage = crowdWisdomResult.cluster_id;
-        systemEnhancement = crowdWisdomResult.systemEnhancement || '';
-        templateApplied = crowdWisdomResult.templateApplied || false;
-        
-        // Improved template logging
-        if (usedTemplate && typeof usedTemplate === 'object' && usedTemplate.id) {
-          console.log(`[Crowd Wisdom] Enhanced user query with template ID: ${usedTemplate.id} using ${selectionMethod}`);
-          if (templateApplied) {
-            console.log('[Crowd Wisdom] ✅ Template enhancement applied to system prompt');
-          }
-        } else {
-          console.log(`[Crowd Wisdom] Fallback template used: ${usedTemplate}`);
-        }
-        // Add debug log for clusterIdForUsage type
-        console.log('[DEBUG] clusterIdForUsage =', clusterIdForUsage, 'type:', typeof clusterIdForUsage);
-      } catch (crowdWisdomError) {
-        console.error('[Crowd Wisdom] Error enhancing user query:', crowdWisdomError);
-        enhancedQuery = query;
-      }
-    }
+    // Crowd wisdom system removed - using simplified direct response generation
 
     // Initialize historyMessages array ONCE here
     const historyMessages = []; 
 
     // Generate the simplified prompt using PromptManager
-    const promptManagerMessages = (await promptManager.generatePrompt(enhancedQuery)).messages;
+    const promptManagerMessages = (await promptManager.generatePrompt(query)).messages;
     const systemContext = promptManagerMessages.find(m => m.role === 'system');
     const userQueryForHistory = promptManagerMessages.find(m => m.role === 'user');
 
     if (systemContext) {
-      // APPLY CROWD WISDOM SYSTEM ENHANCEMENT
-      if (systemEnhancement && templateApplied) {
-        console.log('[Crowd Wisdom] 🚀 Applying system enhancement to prompt');
-        systemContext.content = systemContext.content + systemEnhancement;
-      }
       historyMessages.push(systemContext);
     }
 
@@ -299,19 +247,7 @@ app.post('/api/query', async (req, res) => {
       recap: sections.recap,
       key_takeaways: sections.key_takeaways,
       quiz: sections.quiz,
-      timestamp: new Date().toISOString(),
-      // Add Crowd Wisdom metadata
-      crowd_wisdom: usedTemplate ? {
-        applied: true,
-        template_id: usedTemplate.id || 'fallback',
-        topic: crowdWisdomTopic,
-        selection_method: selectionMethod,
-        template_applied: templateApplied,
-        efficacy_score: usedTemplate.efficacy_score || null
-      } : {
-        applied: false,
-        template_applied: false
-      }
+      timestamp: new Date().toISOString()
     };
 
     // Topic Classification - Classify the conversation topic using OpenAI
@@ -458,9 +394,7 @@ TOPIC:`;
       quiz: response.quiz, // Add the quiz to the message
       timestamp: new Date().toISOString(),
       messageId: responseId,
-      secret_topic: secretTopic, // Add topic to message
-      // Add Crowd Wisdom metadata to the message
-      crowd_wisdom: response.crowd_wisdom
+      secret_topic: secretTopic // Add topic to message
     };
 
     // 🆕 GENERATE EXAMPLES, ABSTRACT, QUIZ, AND FLASH CARDS SIMULTANEOUSLY WITH MAIN RESPONSE
@@ -888,154 +822,15 @@ Respond with a valid JSON array of objects:
       };
     }
 
-    // 🚀 ENHANCED: Natural Conversation Analysis for Crowd Wisdom Learning
-    let softSignal = null;
-    const sessionHasHistory = sessionData.interactions?.length > 0;
-    if (sessionHasHistory) {
-      console.log('🧠 Starting natural conversation analysis for crowd wisdom...');
-      const userMessage = query;
-      const lastInteraction = sessionData.interactions.slice(-1)[0];
-      const lastGPTResponse = lastInteraction?.response?.explanation || '';
-      const lastTemplateId = lastInteraction?.response?.crowd_wisdom?.template_id;
-      
-      const classificationPrompt = `
-You are an AI feedback analyzer for an educational system. Analyze the user's follow-up message to determine their satisfaction with the previous AI response.
-
-Previous AI response:
-"""${lastGPTResponse}"""
-
-User's follow-up message:
-"""${userMessage}"""
-
-Classify this follow-up message into one of these categories:
-- satisfaction (user seems satisfied, understood, or appreciative)
-- understanding (user demonstrates they learned something)
-- confusion (user is confused, didn't understand, or needs clarification)
-- question (user has a related follow-up question)
-- dissatisfaction (user is frustrated, disappointed, or critical)
-- neutral (unrelated or no clear sentiment)
-
-Respond only with one of the labels above.`.trim();
-
-      try {
-        const classificationResult = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [{ role: "user", content: classificationPrompt }],
-          temperature: 0,
-          max_tokens: 10
-        });
-        console.log('[Natural Conversation Analysis] GPT response:', classificationResult);
-        softSignal = classificationResult.choices[0].message.content.trim().toLowerCase();
-        
-        // 🎯 CROWD WISDOM LEARNING: Update template performance based on natural conversation
-        if (lastTemplateId && softSignal) {
-          console.log(`[Crowd Wisdom Learning] Analyzing conversation for template ${lastTemplateId.substring(0,8)}...`);
-          
-          // Convert soft signal to rating equivalent
-          let implicitRating = 3; // neutral default
-          switch(softSignal) {
-            case 'satisfaction':
-            case 'understanding':
-              implicitRating = 5; // very positive
-              break;
-            case 'confusion':
-            case 'dissatisfaction':
-              implicitRating = 2; // negative
-              break;
-            case 'question':
-              implicitRating = 4; // positive (shows engagement)
-              break;
-            case 'neutral':
-              implicitRating = 3; // neutral
-              break;
-          }
-          
-          console.log(`[Crowd Wisdom Learning] Implicit rating: ${implicitRating}/5 (${softSignal})`);
-          
-          // Process this as crowd wisdom feedback
-          const cwSuccess = await supervisor.processFeedbackForCrowdWisdom(
-            lastInteraction.response.id,
-            implicitRating,
-            userMessage, // use the natural conversation as feedback
-            lastInteraction.response,
-            openai
-          );
-          
-          console.log(`[Crowd Wisdom Learning] Template learning success: ${cwSuccess}`);
-        }
-        
-      } catch (err) {
-        console.error('[Natural Conversation Analysis] Error analyzing conversation:', err);
-      }
-    }
+    // Natural conversation analysis removed with crowd wisdom system
     await sessionManager.addInteraction(sessionData.id, {
       type: 'query',
       query,
       response,
-      aiMessage, // Include the aiMessage in the interaction
-      soft_signal: softSignal, // Store the soft signal
-      cluster_id: clusterIdForUsage !== undefined ? clusterIdForUsage : null // Pass cluster_id for saving
+      aiMessage // Include the aiMessage in the interaction
     });
     
-    // If Crowd Wisdom was applied, update template usage with the new responseId
-    // (Legacy ResponseClusterManager logic removed)
-    
-    // After generating the response and before sending it, log template usage if a template was used
-    if (usedTemplate) {
-      await supabase
-        .from('prompt_template_usage')
-        .insert({
-          template_id: usedTemplate.id || usedTemplate, // handle both object and string
-          session_id: sessionData.id,
-          user_id: userId,
-          query: enhancedQuery,
-          response_id: response.id,
-          cluster_id: clusterIdForUsage // <-- new field
-        });
-    }
-    
-    // After generating the response and before sending it, log template usage (including fallback)
-    const templateIdForUsage = usedTemplate?.id || usedTemplate || 'fallback';
-    const selectionMethodForUsage = selectionMethod || (usedTemplate ? 'crowd_wisdom' : 'fallback');
-    // Find the most recent interaction for this session/query to get its id
-    let interactionId = null;
-    if (sessionData && sessionData.interactions && sessionData.interactions.length > 0) {
-      // Try to find the interaction matching this query
-      const lastInteraction = sessionData.interactions.slice(-1)[0];
-      if (lastInteraction && lastInteraction.query === query) {
-        interactionId = lastInteraction.id;
-      }
-    }
-    await supabase
-      .from('prompt_template_usage')
-      .insert({
-        template_id: templateIdForUsage,
-        session_id: sessionData.id,
-        user_id: userId,
-        query: enhancedQuery,
-        response_id: response.id,
-        cluster_id: clusterIdForUsage !== undefined && clusterIdForUsage !== null ? Number(clusterIdForUsage) : null,
-        selection_method: selectionMethodForUsage,
-        soft_signal_type: softSignal || null, // Pass the classified soft signal type
-        interaction_id: interactionId || null // Store the interaction id if available
-      });
-    
-    // Automatic template creation on fallback
-    if (selectionMethod === 'fallback' && clusterIdForUsage != null && response.explanation) {
-      try {
-        await supabase.from('prompt_templates').insert({
-          template_text: response.explanation,
-          topic: secretTopic || 'general',
-          source: 'auto_generated',
-          cluster_id: Number(clusterIdForUsage),
-          created_at: new Date().toISOString(),
-          metadata: { inserted_by: 'auto_fallback', query: query }
-        });
-        console.log('[Crowd Wisdom] Auto-created new template for cluster', clusterIdForUsage);
-      } catch (err) {
-        console.error('[Crowd Wisdom] Error auto-creating fallback template:', err);
-      }
-    }
+    // Template usage logging removed with crowd wisdom system
     
     res.json(response);
   } catch (error) {
@@ -2993,9 +2788,8 @@ function startServer(port) {
     analyticsWS.init(server);
     console.log('✅ Analytics WebSocket server initialized');
     
-    // Initialize periodic clustering (run every 24 hours)
-    console.log('📅 Setting up periodic clustering...');
-    clusteringService.schedulePeriodicClustering(24);
+    // Periodic clustering removed - ModernClusterManager handles clustering automatically
+    console.log('✅ Using ModernClusterManager for user preference clustering');
   });
 
   server.on('error', (err) => {
@@ -5219,103 +5013,7 @@ app.get('/api/response-tab-content/:messageId/:tabType', async (req, res) => {
 });
 
 // ==================== CLUSTERING MANAGEMENT ENDPOINTS ====================
-
-// Get clustering service status
-app.get('/api/admin/clustering/status', async (req, res) => {
-  try {
-    const status = clusteringService.getStatus();
-    res.json({
-      success: true,
-      status
-    });
-  } catch (error) {
-    console.error('Error getting clustering status:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to get clustering status',
-      message: error.message 
-    });
-  }
-});
-
-// Trigger clustering manually
-app.post('/api/admin/clustering/run', async (req, res) => {
-  try {
-    const { fullRecluster = false } = req.body;
-    
-    console.log(`🚀 Manual clustering triggered (fullRecluster: ${fullRecluster})`);
-    
-    const result = await clusteringService.runClustering({ 
-      fullRecluster, 
-      background: true 
-    });
-    
-    res.json({
-      success: result.success,
-      message: result.success ? 'Clustering started successfully' : 'Failed to start clustering',
-      ...result
-    });
-  } catch (error) {
-    console.error('Error running clustering:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to run clustering',
-      message: error.message 
-    });
-  }
-});
-
-// Run clustering only if needed (based on new interactions)
-app.post('/api/admin/clustering/run-if-needed', async (req, res) => {
-  try {
-    const { minNewInteractions = 10 } = req.body;
-    
-    console.log(`🔍 Conditional clustering triggered (min ${minNewInteractions} interactions)`);
-    
-    const result = await clusteringService.runClusteringIfNeeded(minNewInteractions);
-    
-    res.json({
-      success: result.success,
-      message: result.message || (result.success ? 'Clustering completed' : 'Clustering failed'),
-      ...result
-    });
-  } catch (error) {
-    console.error('Error running conditional clustering:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to run conditional clustering',
-      message: error.message 
-    });
-  }
-});
-
-// Get cluster export data
-app.get('/api/admin/clustering/export', async (req, res) => {
-  try {
-    const exportData = await clusteringService.loadClusterExport();
-    
-    if (!exportData) {
-      return res.status(404).json({
-        success: false,
-        error: 'No cluster export data found'
-      });
-    }
-    
-    res.json({
-      success: true,
-      clusters: exportData,
-      count: exportData.length,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error getting cluster export:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to get cluster export',
-      message: error.message 
-    });
-  }
-});
+// Note: Python clustering endpoints removed - using ModernClusterManager.js instead
 
 // Get clustering statistics from database
 app.get('/api/admin/clustering/stats', async (req, res) => {
