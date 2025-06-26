@@ -45,11 +45,18 @@ When responding to queries:
             userId
           );
 
-          if (crowdWisdomData && crowdWisdomData.promptEnhancement) {
+          if (crowdWisdomData === null) {
+            console.log('[PromptManager] 🚫 Query identified as user feedback - crowd wisdom clustering skipped', {
+              query: query.substring(0, 50) + '...',
+              reason: 'User feedback detected, not a question',
+              sessionId,
+              userId
+            });
+          } else if (crowdWisdomData && crowdWisdomData.promptEnhancement) {
             // Append crowd wisdom enhancement to system prompt
             systemPromptContent += `\n\n--- Crowd Wisdom Enhancement ---\n${crowdWisdomData.promptEnhancement}`;
             
-            console.log('[PromptManager] Crowd wisdom enhancement applied', {
+            console.log('[PromptManager] ✅ Crowd wisdom enhancement applied', {
               clusterId: crowdWisdomData.clusterId,
               similarity: crowdWisdomData.similarity,
               isNewCluster: crowdWisdomData.isNewCluster,
@@ -57,9 +64,19 @@ When responding to queries:
               sessionId,
               userId
             });
+          } else if (crowdWisdomData) {
+            console.log('[PromptManager] 📝 Crowd wisdom processing completed but no enhancement available', {
+              clusterId: crowdWisdomData.clusterId,
+              assignmentId: crowdWisdomData.assignmentId,
+              similarity: crowdWisdomData.similarity,
+              isNewCluster: crowdWisdomData.isNewCluster,
+              reason: 'New cluster or no template generated yet',
+              sessionId,
+              userId
+            });
           } else {
-            console.log('[PromptManager] No crowd wisdom enhancement available', {
-              crowdWisdomData: crowdWisdomData ? 'partial data' : 'null',
+            console.log('[PromptManager] ⚠️ Crowd wisdom returned unexpected data', {
+              crowdWisdomData: crowdWisdomData,
               sessionId,
               userId
             });

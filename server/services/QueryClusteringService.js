@@ -6,7 +6,7 @@ class QueryClusteringService {
   constructor(openaiClient) {
     this.embeddingGenerator = new EmbeddingGenerator(openaiClient);
     this.cosineUtils = new CosineUtils();
-    this.similarityThreshold = 0.75; // Threshold for cluster assignment
+    this.similarityThreshold = 0.3; // Further reduced - 0.5 was still too high
     this.maxClusters = 50; // Maximum number of clusters to maintain
     this.centroidUpdateRate = 0.1; // How much new embeddings influence centroids
   }
@@ -28,6 +28,23 @@ class QueryClusteringService {
         sessionId,
         userId
       });
+
+      // 🚫 FILTER OUT USER FEEDBACK - Only cluster actual questions!
+      if (this.isFeedbackText(queryText)) {
+        console.log('[CROWD WISDOM CLUSTERING] 🚫 Detected user feedback - skipping clustering:', {
+          feedbackText: queryText.substring(0, 50) + '...',
+          reason: 'User feedback should not create clusters',
+          sessionId
+        });
+        
+        await this.logEvent('INFO', '🚫 Skipped clustering for user feedback', {
+          feedbackText: queryText,
+          sessionId,
+          userId
+        });
+        
+        return null; // Don't cluster feedback
+      }
 
       // Generate embedding for the query
       console.log('[CROWD WISDOM CLUSTERING] 📊 Generating embedding vector for query:', queryText.substring(0, 50) + '...');
@@ -198,14 +215,46 @@ class QueryClusteringService {
 
       // Find the most similar cluster
       console.log('[CROWD WISDOM CLUSTERING] 🧮 Preparing clusters for similarity comparison...');
-      const candidateClusters = clusters.map(cluster => ({
-        id: cluster.id,
-        embedding: cluster.centroid_embedding,
-        promptEnhancement: cluster.prompt_enhancement || '',
-        representativeQuery: cluster.representative_query,
-        totalQueries: cluster.total_queries,
-        successRate: cluster.success_rate
-      }));
+      const candidateClusters = clusters.map(cluster => {
+        // 🔧 FIX: Parse embedding from JSON string to array if needed
+        let embedding = cluster.centroid_embedding;
+        if (typeof embedding === 'string') {
+          try {
+            embedding = JSON.parse(embedding);
+            console.log('[CROWD WISDOM CLUSTERING] 🔧 Converted string embedding to array for cluster:', cluster.id.substring(0, 8));
+          } catch (error) {
+            console.error('[CROWD WISDOM CLUSTERING] ❌ Failed to parse embedding for cluster:', cluster.id.substring(0, 8), error);
+            embedding = null;
+          }
+        }
+        
+        return {
+          id: cluster.id,
+          embedding: embedding,
+          promptEnhancement: cluster.prompt_enhancement || '',
+          representativeQuery: cluster.representative_query,
+          totalQueries: cluster.total_queries,
+          successRate: cluster.success_rate
+        };
+      }).filter(cluster => cluster.embedding !== null); // Remove clusters with invalid embeddings
+
+      // 🔍 DEBUG: Check embedding data integrity
+      console.log('[CROWD WISDOM CLUSTERING] 🔬 Debugging embedding data:', {
+        queryEmbeddingInfo: {
+          isArray: Array.isArray(queryEmbedding),
+          length: queryEmbedding?.length,
+          sampleValues: queryEmbedding?.slice(0, 3),
+          hasNaN: queryEmbedding?.some(v => isNaN(v)),
+          hasNull: queryEmbedding?.includes(null)
+        },
+        clusterEmbeddingsInfo: candidateClusters.map((c, i) => ({
+          clusterId: c.id.substring(0, 8) + '...',
+          embeddingIsArray: Array.isArray(c.embedding),
+          embeddingLength: c.embedding?.length,
+          embeddingSampleValues: c.embedding?.slice(0, 3),
+          representativeQuery: c.representativeQuery?.substring(0, 50) + '...'
+        }))
+      });
 
       console.log('[CROWD WISDOM CLUSTERING] ⚖️ Computing cosine similarity with all clusters...');
       const bestMatch = await this.cosineUtils.findMostSimilar(
@@ -447,7 +496,24 @@ class QueryClusteringService {
       }
 
       // Calculate new centroid using exponential moving average
-      const currentCentroid = cluster.centroid_embedding;
+      let currentCentroid = cluster.centroid_embedding;
+      
+      // 🔧 FIX: Parse centroid from JSON string to array if needed
+      if (typeof currentCentroid === 'string') {
+        try {
+          currentCentroid = JSON.parse(currentCentroid);
+          console.log('[CROWD WISDOM CLUSTERING] 🔧 Converted string centroid to array for update');
+        } catch (error) {
+          console.error('[CROWD WISDOM CLUSTERING] ❌ Failed to parse centroid for update:', error);
+          return false;
+        }
+      }
+      
+      if (!Array.isArray(currentCentroid)) {
+        console.error('[CROWD WISDOM CLUSTERING] ❌ Current centroid is not an array:', typeof currentCentroid);
+        return false;
+      }
+      
       const newCentroid = currentCentroid.map((value, index) => 
         value * (1 - this.centroidUpdateRate) + newEmbedding[index] * this.centroidUpdateRate
       );
@@ -670,6 +736,62 @@ class QueryClusteringService {
       });
       return '';
     }
+  }
+
+  /**
+   * Check if text is user feedback rather than a question
+   * @param {string} text - Text to analyze
+   * @returns {boolean} - True if this is feedback, false if it's a question
+   */
+  isFeedbackText(text) {
+    const textLower = text.toLowerCase().trim();
+    
+    // Common feedback patterns
+    const feedbackPatterns = [
+      // Gratitude
+      /^(thank you|thanks|ty|thx)/,
+      /^(i appreciate|much appreciated|great|excellent|perfect|amazing)/,
+      
+      // Understanding
+      /^(i understand|i get it|got it|makes sense|clear now|i see)/,
+      /^(that helps|that's helpful|very helpful|super helpful)/,
+      
+      // Positive responses
+      /^(awesome|brilliant|fantastic|wonderful|nice|good)/,
+      /^(exactly|precisely|that's right|correct)/,
+      
+      // Negative feedback
+      /^(i don't understand|still confused|unclear|hard to follow)/,
+      /^(doesn't make sense|too complex|too difficult)/,
+      
+      // Short responses (likely feedback)
+      /^(ok|okay|yes|yep|no|nope)$/,
+      /^(cool|nice|wow|oh|ah|hmm)$/
+    ];
+    
+    // Check patterns
+    const matchesPattern = feedbackPatterns.some(pattern => pattern.test(textLower));
+    
+    // Additional heuristics
+    const isShort = text.length < 20;
+    const hasNoQuestionWords = !/\b(what|how|why|when|where|which|who|can|could|would|should|is|are|does|do|explain|tell|show)\b/i.test(text);
+    const endsWithExclamation = text.trim().endsWith('!');
+    
+    // Likely feedback if matches patterns OR (short + no question words + exclamation)
+    const isFeedback = matchesPattern || (isShort && hasNoQuestionWords && endsWithExclamation);
+    
+    if (isFeedback) {
+      console.log('[CROWD WISDOM CLUSTERING] 🔍 Feedback detection analysis:', {
+        text: text.substring(0, 50) + '...',
+        matchesPattern,
+        isShort,
+        hasNoQuestionWords,
+        endsWithExclamation,
+        classification: 'FEEDBACK'
+      });
+    }
+    
+    return isFeedback;
   }
 
   /**

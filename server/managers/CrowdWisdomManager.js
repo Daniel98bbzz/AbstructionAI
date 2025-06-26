@@ -11,10 +11,10 @@ class CrowdWisdomManager {
     this.successAnalyzer = new SuccessAnalyzer(openaiClient);
     this.embeddingGenerator = new EmbeddingGenerator(openaiClient);
     
-    // Configuration
+    // Configuration  
     this.learningEnabled = true;
-    this.minFeedbackConfidence = 0.7;
-    this.promptUpdateThreshold = 3; // Minimum successful responses before updating prompt
+    this.minFeedbackConfidence = 0.7; // Reset to production value
+    this.promptUpdateThreshold = 2; // Reasonable production value
   }
 
   /**
@@ -459,7 +459,7 @@ Respond with JSON:
       // Check if it's been a while since last update
       const lastUpdate = new Date(cluster.updated_at);
       const daysSinceUpdate = (Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24);
-      const hasBeenAWhile = daysSinceUpdate >= 1; // At least 1 day
+      const hasBeenAWhile = daysSinceUpdate >= 0.5; // 12 hours - reasonable production value
 
       const shouldUpdate = hasEnoughSuccesses && hasBeenAWhile;
 
