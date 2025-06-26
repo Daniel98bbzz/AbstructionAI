@@ -1280,7 +1280,7 @@ examplePlaceholder();`
                 </div>
               )}
 
-              {/* FEEDBACK FORM REMOVED: Now using natural conversation analysis for crowd wisdom learning */}
+              {/* Feedback form functionality removed */}
 
               {/* Add feedback button for messages without feedback */}
               {message.role === 'assistant' && 
