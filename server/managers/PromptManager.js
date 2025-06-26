@@ -1,8 +1,9 @@
 import userProfileManager from './UserProfileManager.js';
 import { supabase } from '../lib/supabaseClient.js';
+import CrowdWisdomManager from './CrowdWisdomManager.js';
 
 class PromptManager {
-  constructor() {
+  constructor(openaiClient = null) {
     // Default system prompt template - now conversational
     this.systemPromptTemplate = `You are an AI assistant. Your goal is to engage in a natural, free-flowing, and in-depth conversation.
 
@@ -13,6 +14,10 @@ When responding to queries:
 // 4. Use relatable analogies that connect to previously discussed concepts (Commented out to reduce forced analogies)
 5. Feel free to elaborate, explore tangents if they are relevant, and provide rich, detailed answers. The user wants detailed and expansive responses.
 6. **Formatting:** Please format your entire response using Markdown. Utilize headings (e.g., # Main Title, ## Subtitle), bullet points (- item), numbered lists (1. item), bold text (**bold text**), italic text (*italic text*), and code blocks (using triple backticks) when appropriate to structure the information clearly and improve readability. Ensure the markdown is well-formed.`;
+
+    // Initialize Crowd Wisdom Manager if OpenAI client is provided
+    this.crowdWisdomManager = openaiClient ? new CrowdWisdomManager(openaiClient) : null;
+    this.crowdWisdomEnabled = this.crowdWisdomManager !== null;
   }
 
   /**
@@ -20,27 +25,170 @@ When responding to queries:
    * @param {string} query - The user's query
    * @param {string} userId - The user's ID
    * @param {string} sessionId - The session ID
-   * @returns {Object} - System and user prompts
+   * @returns {Object} - System and user prompts with crowd wisdom enhancement
    */
   async generatePrompt(query, userId, sessionId) {
     try {
-      // Directly use the simplified systemPromptTemplate that was set in the constructor
-      const systemPromptContent = this.systemPromptTemplate;
+      // Start with the base system prompt
+      let systemPromptContent = this.systemPromptTemplate;
+      let crowdWisdomData = null;
 
-      return {
+      // Integrate Crowd Wisdom if enabled
+      if (this.crowdWisdomEnabled && this.crowdWisdomManager) {
+        try {
+          console.log('[PromptManager] Processing query through crowd wisdom system');
+          
+          // Process query through crowd wisdom system
+          crowdWisdomData = await this.crowdWisdomManager.processQuery(
+            query,
+            sessionId,
+            userId
+          );
+
+          if (crowdWisdomData && crowdWisdomData.promptEnhancement) {
+            // Append crowd wisdom enhancement to system prompt
+            systemPromptContent += `\n\n--- Crowd Wisdom Enhancement ---\n${crowdWisdomData.promptEnhancement}`;
+            
+            console.log('[PromptManager] Crowd wisdom enhancement applied', {
+              clusterId: crowdWisdomData.clusterId,
+              similarity: crowdWisdomData.similarity,
+              isNewCluster: crowdWisdomData.isNewCluster,
+              enhancementLength: crowdWisdomData.promptEnhancement.length,
+              sessionId,
+              userId
+            });
+          } else {
+            console.log('[PromptManager] No crowd wisdom enhancement available', {
+              crowdWisdomData: crowdWisdomData ? 'partial data' : 'null',
+              sessionId,
+              userId
+            });
+          }
+        } catch (crowdWisdomError) {
+          console.error('[PromptManager] Crowd wisdom processing failed, continuing without enhancement:', crowdWisdomError);
+          // Continue with base prompt if crowd wisdom fails
+        }
+      }
+
+      const result = {
         messages: [
           { role: "system", content: systemPromptContent },
-          { role: "user", content: query } // The query is passed as an argument
+          { role: "user", content: query }
         ]
       };
+
+      // Include crowd wisdom metadata for tracking
+      if (crowdWisdomData) {
+        result.crowdWisdomData = {
+          clusterId: crowdWisdomData.clusterId,
+          assignmentId: crowdWisdomData.assignmentId,
+          similarity: crowdWisdomData.similarity,
+          isNewCluster: crowdWisdomData.isNewCluster,
+          hasEnhancement: Boolean(crowdWisdomData.promptEnhancement),
+          processingTimeMs: crowdWisdomData.processingTimeMs
+        };
+      }
+
+      return result;
+
     } catch (error) {
       console.error('Error generating prompt in PromptManager:', error);
+      
       // Fallback to a very basic prompt in case of unexpected errors
       return {
         messages: [
           { role: "system", content: "You are a helpful assistant." },
           { role: "user", content: query }
-        ]
+        ],
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Process feedback for crowd wisdom learning
+   * @param {string} assignmentId - Query assignment ID from crowd wisdom
+   * @param {string} feedbackText - User feedback text
+   * @param {string} responseText - AI response that was given
+   * @param {string} sessionId - Session ID
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} - Feedback processing result
+   */
+  async processFeedback(assignmentId, feedbackText, responseText, sessionId, userId) {
+    try {
+      if (!this.crowdWisdomEnabled || !this.crowdWisdomManager) {
+        console.log('[PromptManager] Crowd wisdom not enabled, skipping feedback processing');
+        return { processed: false, reason: 'crowd_wisdom_disabled' };
+      }
+
+      if (!assignmentId) {
+        console.log('[PromptManager] No assignment ID provided, skipping crowd wisdom feedback processing');
+        return { processed: false, reason: 'no_assignment_id' };
+      }
+
+      console.log('[PromptManager] Processing feedback through crowd wisdom system', {
+        assignmentId,
+        feedbackLength: feedbackText?.length || 0,
+        responseLength: responseText?.length || 0,
+        sessionId,
+        userId
+      });
+
+      const result = await this.crowdWisdomManager.processFeedback(
+        assignmentId,
+        feedbackText,
+        responseText,
+        sessionId,
+        userId
+      );
+
+      console.log('[PromptManager] Crowd wisdom feedback processing completed', {
+        isPositive: result.feedbackAnalysis?.isPositive,
+        confidence: result.feedbackAnalysis?.confidence,
+        learningTriggered: result.learningResult !== null,
+        assignmentId,
+        sessionId,
+        userId
+      });
+
+      return {
+        processed: true,
+        result
+      };
+
+    } catch (error) {
+      console.error('[PromptManager] Error processing feedback through crowd wisdom:', error);
+      return {
+        processed: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get crowd wisdom system statistics
+   * @param {string} timeframe - Timeframe for statistics
+   * @returns {Promise<Object>} - System statistics
+   */
+  async getCrowdWisdomStats(timeframe = '24 hours') {
+    try {
+      if (!this.crowdWisdomEnabled || !this.crowdWisdomManager) {
+        return { available: false, reason: 'crowd_wisdom_disabled' };
+      }
+
+      const stats = await this.crowdWisdomManager.getSystemStats(timeframe);
+      
+      return {
+        available: true,
+        stats,
+        timeframe
+      };
+
+    } catch (error) {
+      console.error('[PromptManager] Error getting crowd wisdom statistics:', error);
+      return {
+        available: false,
+        error: error.message
       };
     }
   }
