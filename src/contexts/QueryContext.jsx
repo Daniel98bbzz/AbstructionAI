@@ -1134,6 +1134,140 @@ export function QueryProvider({ children }) {
     }
   };
 
+  // ==================== ENHANCED PROGRESS SYSTEM ====================
+  
+  // Get enhanced progress with adaptive mastery models
+  const getEnhancedProgress = async () => {
+    try {
+      if (!user) {
+        console.error('No user found');
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const response = await fetch(`/api/progress/${user.id}`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching enhanced progress:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Get user streak information
+  const getUserStreak = async () => {
+    try {
+      if (!user) {
+        console.error('No user found');
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const response = await fetch(`/api/progress/streak?user_id=${user.id}`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching user streak:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Get leaderboard
+  const getLeaderboard = async (type = 'total') => {
+    try {
+      const params = user ? `?user_id=${user.id}&type=${type}` : `?type=${type}`;
+      
+      const response = await fetch(`/api/progress/leaderboard${params}`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching leaderboard:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Get adaptive recommendations
+  const getAdaptiveRecommendations = async () => {
+    try {
+      if (!user) {
+        console.error('No user found');
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const response = await fetch(`/api/progress/recommendations/${user.id}`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching adaptive recommendations:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  // Update learning session
+  const updateLearningSession = async (sessionData) => {
+    try {
+      if (!user) {
+        console.error('No user found');
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const response = await fetch('/api/progress/update-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          ...sessionData
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error updating learning session:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
   const value = {
     loading,
     error,
@@ -1159,6 +1293,13 @@ export function QueryProvider({ children }) {
     getUserProgress,
     getLearningPathRecommendations,
     getUserAchievements,
+    
+    // Enhanced Progress System
+    getEnhancedProgress,
+    getUserStreak,
+    getLeaderboard,
+    getAdaptiveRecommendations,
+    updateLearningSession,
   };
 
   return (

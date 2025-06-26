@@ -178,6 +178,10 @@ class ModernClusterManager {
    * @returns {Object} - Normalized vectors and statistics
    */
   normalizeVectors(vectors) {
+    if (!vectors || vectors.length === 0 || !vectors[0]) {
+      throw new Error('Invalid vectors provided for normalization');
+    }
+    
     const numFeatures = vectors[0].length;
     const means = new Array(numFeatures).fill(0);
     const stds = new Array(numFeatures).fill(0);
@@ -1046,6 +1050,481 @@ class ModernClusterManager {
     } catch (error) {
       console.error('Error getting cluster visualization data:', error);
       return null;
+    }
+  }
+
+  /**
+   * Recalculate clusters based on updated user activity and feedback data
+   * @param {Object} options - Configuration options
+   * @param {Array} options.users - Optional array of specific users to include
+   * @param {number} options.numClusters - Number of clusters to generate (default: 5)
+   * @param {boolean} options.includeRecentActivity - Include recent session activity (default: true)
+   * @param {boolean} options.includeFeedback - Include feedback data in clustering (default: true)
+   * @returns {Promise<Object>} - Clustering results with stats
+   */
+  async recalculateClusters(options = {}) {
+    const {
+      users = null,
+      numClusters = 5,
+      includeRecentActivity = true,
+      includeFeedback = true
+    } = options;
+
+    console.log('[Recalculate Clusters] Starting cluster recalculation...');
+    console.log(`[Recalculate Clusters] Target clusters: ${numClusters}, Include activity: ${includeRecentActivity}, Include feedback: ${includeFeedback}`);
+
+    try {
+      // Step 1: Get updated user data from sessions and feedback
+      const updatedUserData = await this.gatherUpdatedUserActivity({
+        users,
+        includeRecentActivity,
+        includeFeedback
+      });
+
+      if (updatedUserData.length < numClusters * 2) {
+        console.log(`[Recalculate Clusters] Insufficient users (${updatedUserData.length}) for ${numClusters} clusters`);
+        return {
+          success: false,
+          error: 'Insufficient user data for clustering',
+          userCount: updatedUserData.length,
+          requiredCount: numClusters * 2
+        };
+      }
+
+      // Step 2: Extract enhanced preference vectors
+      const preferenceVectors = updatedUserData.map(userData => 
+        this.generateEnhancedPreferenceVector(userData)
+      ).filter(vector => vector && vector.length > 0); // Filter out invalid vectors
+
+      if (preferenceVectors.length === 0) {
+        console.log('[Recalculate Clusters] No valid preference vectors found');
+        return {
+          success: false,
+          error: 'No valid preference vectors found',
+          userCount: updatedUserData.length
+        };
+      }
+
+      // Step 3: Normalize vectors
+      const { vectors: normalizedVectors, stats } = this.normalizeVectors(preferenceVectors);
+      this.featureStats = stats;
+
+      // Step 4: Apply UMAP for dimensionality reduction
+      console.log('[Recalculate Clusters] Applying UMAP dimensionality reduction...');
+      const umap = new UMAP(this.umapConfig);
+      const reducedVectors = umap.fit(normalizedVectors);
+      
+      // Store fitted model for future user assignments
+      this.fittedUMAP = umap;
+
+      // Step 5: Apply K-Means clustering
+      console.log('[Recalculate Clusters] Applying K-Means clustering...');
+      const kmeans = mlKmeans.kmeans(reducedVectors, numClusters, this.kmeansConfig);
+      
+      // Step 6: Save new clusters to database
+      const clusterIds = await this.saveClustersToDB(
+        kmeans.centroids,
+        kmeans.clusters,
+        reducedVectors
+      );
+
+      // Step 7: Update user assignments
+      await this.updateUserAssignmentsAfterReclustering(
+        updatedUserData,
+        kmeans.clusters,
+        clusterIds
+      );
+
+      // Step 8: Update cluster prompts
+      console.log('[Recalculate Clusters] Updating cluster prompts...');
+      for (const clusterId of clusterIds) {
+        this.updateClusterPrompt(clusterId).catch(err => 
+          console.error(`Error updating prompt for cluster ${clusterId}:`, err)
+        );
+      }
+
+      const results = {
+        success: true,
+        timestamp: new Date().toISOString(),
+        clustersGenerated: clusterIds.length,
+        usersProcessed: updatedUserData.length,
+        clusterIds,
+        clusteringStats: {
+          averageClusterSize: Math.floor(updatedUserData.length / clusterIds.length),
+          featureCount: preferenceVectors[0].length,
+          umapComponents: this.umapConfig.nComponents,
+          kmeansIterations: kmeans.iterations || 'converged'
+        }
+      };
+
+      console.log('[Recalculate Clusters] Cluster recalculation completed successfully');
+      console.log(`[Recalculate Clusters] Generated ${clusterIds.length} clusters for ${updatedUserData.length} users`);
+
+      return results;
+
+    } catch (error) {
+      console.error('[Recalculate Clusters] Error during cluster recalculation:', error);
+      return {
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  /**
+   * Gather updated user activity data from sessions and feedback
+   * @param {Object} options - Gathering options
+   * @returns {Promise<Array>} - Array of user data with preferences and activity
+   */
+  async gatherUpdatedUserActivity(options = {}) {
+    const { users, includeRecentActivity, includeFeedback } = options;
+    
+    console.log('[Gather User Activity] Collecting user activity data...');
+
+    try {
+      // Get base user assignments (existing preferences)
+      let userQuery = this.supabase
+        .from('user_cluster_assignments')
+        .select('user_id, preferences, cluster_id, similarity, last_updated')
+        .order('last_updated', { ascending: false });
+
+      if (users && users.length > 0) {
+        userQuery = userQuery.in('user_id', users);
+      }
+
+      const { data: userAssignments, error: assignmentError } = await userQuery.limit(1000);
+      
+      if (assignmentError) throw assignmentError;
+
+      if (!userAssignments || userAssignments.length === 0) {
+        console.log('[Gather User Activity] No user assignments found');
+        return [];
+      }
+
+      console.log(`[Gather User Activity] Found ${userAssignments.length} user assignments`);
+
+      // Enhance with recent session activity
+      const enhancedUserData = await Promise.all(
+        userAssignments.map(async (assignment) => {
+          const userData = { ...assignment };
+
+          if (includeRecentActivity) {
+            userData.recentActivity = await this.getRecentUserActivity(assignment.user_id);
+          }
+
+          if (includeFeedback) {
+            userData.feedbackData = await this.getUserFeedbackData(assignment.user_id);
+          }
+
+          return userData;
+        })
+      );
+
+      console.log(`[Gather User Activity] Enhanced ${enhancedUserData.length} user records with activity data`);
+      return enhancedUserData;
+
+    } catch (error) {
+      console.error('[Gather User Activity] Error gathering user activity:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get recent user activity from sessions
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} - Recent activity data
+   */
+  async getRecentUserActivity(userId) {
+    try {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+      // Get recent sessions with topics
+      const { data: sessions, error } = await this.supabase
+        .from('sessions')
+        .select('id, secret_topic, created_at, user_id')
+        .eq('user_id', userId)
+        .gte('created_at', thirtyDaysAgo.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) {
+        console.warn(`[Recent Activity] Error fetching sessions for user ${userId}:`, error);
+        return { sessions: [], topicFrequency: {}, activityLevel: 0 };
+      }
+
+      // Calculate topic frequency
+      const topicFrequency = {};
+      (sessions || []).forEach(session => {
+        if (session.secret_topic) {
+          topicFrequency[session.secret_topic] = (topicFrequency[session.secret_topic] || 0) + 1;
+        }
+      });
+
+      return {
+        sessions: sessions || [],
+        sessionCount: (sessions || []).length,
+        topicFrequency,
+        activityLevel: Math.min(1, (sessions || []).length / 10), // Normalized activity level
+        mostFrequentTopic: Object.keys(topicFrequency).reduce((a, b) => 
+          topicFrequency[a] > topicFrequency[b] ? a : b, null)
+      };
+
+    } catch (error) {
+      console.warn(`[Recent Activity] Error processing activity for user ${userId}:`, error);
+      return { sessions: [], topicFrequency: {}, activityLevel: 0 };
+    }
+  }
+
+  /**
+   * Get user feedback data for clustering enhancement
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} - User feedback patterns
+   */
+  async getUserFeedbackData(userId) {
+    try {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+      // Try to get feedback data (table might not exist in all deployments)
+      const { data: feedback, error } = await this.supabase
+        .from('feedback')
+        .select('rating, feedback_type, query_text, created_at')
+        .eq('user_id', userId)
+        .gte('created_at', thirtyDaysAgo.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        // Table might not exist, return default values
+        console.warn(`[Feedback Data] Feedback table not accessible for user ${userId}:`, error.message);
+        return { averageRating: 3.5, feedbackCount: 0, preferenceAdjustments: {} };
+      }
+
+      if (!feedback || feedback.length === 0) {
+        return { averageRating: 3.5, feedbackCount: 0, preferenceAdjustments: {} };
+      }
+
+      // Calculate feedback patterns
+      const ratings = feedback.map(f => f.rating).filter(r => r && r > 0);
+      const averageRating = ratings.length > 0 
+        ? ratings.reduce((sum, r) => sum + r, 0) / ratings.length 
+        : 3.5;
+
+      // Extract preference adjustments from feedback patterns
+      const preferenceAdjustments = this.extractPreferenceAdjustments(feedback);
+
+      return {
+        averageRating,
+        feedbackCount: feedback.length,
+        preferenceAdjustments,
+        recentRatingTrend: this.calculateRatingTrend(feedback)
+      };
+
+    } catch (error) {
+      console.warn(`[Feedback Data] Error processing feedback for user ${userId}:`, error);
+      return { averageRating: 3.5, feedbackCount: 0, preferenceAdjustments: {} };
+    }
+  }
+
+  /**
+   * Extract preference adjustments from feedback patterns
+   * @param {Array} feedbackData - User feedback data
+   * @returns {Object} - Preference adjustments
+   */
+  extractPreferenceAdjustments(feedbackData) {
+    const adjustments = {
+      technical_depth: 0,
+      visual_learning: 0,
+      practical_examples: 0
+    };
+
+    feedbackData.forEach(feedback => {
+      // Analyze feedback text for preference indicators
+      const text = (feedback.query_text || '').toLowerCase();
+      
+      // Technical depth adjustments
+      if (text.includes('too technical') || text.includes('too complex')) {
+        adjustments.technical_depth -= 0.1;
+      } else if (text.includes('more detail') || text.includes('deeper')) {
+        adjustments.technical_depth += 0.1;
+      }
+
+      // Visual learning adjustments
+      if (text.includes('visual') || text.includes('diagram') || text.includes('chart')) {
+        adjustments.visual_learning += 0.1;
+      }
+
+      // Practical examples adjustments
+      if (text.includes('example') || text.includes('practical') || text.includes('real world')) {
+        adjustments.practical_examples += 0.1;
+      }
+    });
+
+    // Normalize adjustments
+    Object.keys(adjustments).forEach(key => {
+      adjustments[key] = Math.max(-0.5, Math.min(0.5, adjustments[key]));
+    });
+
+    return adjustments;
+  }
+
+  /**
+   * Calculate rating trend from recent feedback
+   * @param {Array} feedbackData - User feedback data
+   * @returns {string} - Trend direction
+   */
+  calculateRatingTrend(feedbackData) {
+    if (feedbackData.length < 3) return 'stable';
+
+    const recentRatings = feedbackData
+      .slice(0, 5)
+      .map(f => f.rating)
+      .filter(r => r && r > 0);
+
+    if (recentRatings.length < 2) return 'stable';
+
+    const avgRecent = recentRatings.reduce((sum, r) => sum + r, 0) / recentRatings.length;
+    const avgOlder = feedbackData
+      .slice(5, 10)
+      .map(f => f.rating)
+      .filter(r => r && r > 0)
+      .reduce((sum, r, _, arr) => sum + (r / arr.length), 0) || avgRecent;
+
+    if (avgRecent > avgOlder + 0.3) return 'improving';
+    if (avgRecent < avgOlder - 0.3) return 'declining';
+    return 'stable';
+  }
+
+  /**
+   * Generate enhanced preference vector incorporating activity and feedback
+   * @param {Object} userData - User data with preferences, activity, and feedback
+   * @returns {Array} - Enhanced feature vector
+   */
+  generateEnhancedPreferenceVector(userData) {
+    // Validate input data
+    if (!userData) {
+      console.warn('[Enhanced Vector] No user data provided, using defaults');
+      return this.preferencesToVector({});
+    }
+    
+    // Start with base preferences
+    const baseVector = this.preferencesToVector(userData.preferences || {});
+
+    // Apply feedback-based adjustments if available
+    if (userData.feedbackData && userData.feedbackData.preferenceAdjustments) {
+      const adjustments = userData.feedbackData.preferenceAdjustments;
+      
+      // Apply adjustments to first three features (technical_depth, visual_learning, practical_examples)
+      if (adjustments.technical_depth) baseVector[0] += adjustments.technical_depth;
+      if (adjustments.visual_learning) baseVector[1] += adjustments.visual_learning;
+      if (adjustments.practical_examples) baseVector[2] += adjustments.practical_examples;
+    }
+
+    // Add activity-based features
+    const activityFeatures = [];
+    
+    if (userData.recentActivity) {
+      const activity = userData.recentActivity;
+      
+      // Activity level (normalized)
+      activityFeatures.push(activity.activityLevel || 0);
+      
+      // Topic diversity (number of different topics / total sessions)
+      const topicDiversity = activity.sessionCount > 0 
+        ? Object.keys(activity.topicFrequency).length / activity.sessionCount 
+        : 0;
+      activityFeatures.push(Math.min(1, topicDiversity));
+      
+      // Dominant topic strength (max topic frequency / total sessions)
+      const dominantTopicStrength = activity.sessionCount > 0 && activity.mostFrequentTopic
+        ? activity.topicFrequency[activity.mostFrequentTopic] / activity.sessionCount
+        : 0;
+      activityFeatures.push(dominantTopicStrength);
+    } else {
+      // Default activity features
+      activityFeatures.push(0.5, 0.5, 0.5);
+    }
+
+    // Add feedback quality features
+    if (userData.feedbackData) {
+      const feedback = userData.feedbackData;
+      
+      // Normalized average rating (0-1 scale)
+      activityFeatures.push((feedback.averageRating - 1) / 4);
+      
+      // Feedback engagement (log normalized)
+      const feedbackEngagement = Math.min(1, Math.log(feedback.feedbackCount + 1) / Math.log(100));
+      activityFeatures.push(feedbackEngagement);
+    } else {
+      // Default feedback features
+      activityFeatures.push(0.625, 0); // Default rating of 3.5/5 normalized
+    }
+
+    // Ensure all values are bounded [0, 1]
+    const enhancedVector = [...baseVector, ...activityFeatures].map(val => 
+      Math.max(0, Math.min(1, val))
+    );
+
+    return enhancedVector;
+  }
+
+  /**
+   * Update user assignments after reclustering
+   * @param {Array} userData - Enhanced user data
+   * @param {Array} clusterAssignments - New cluster assignments
+   * @param {Array} clusterIds - New cluster IDs
+   * @returns {Promise<boolean>} - Success status
+   */
+  async updateUserAssignmentsAfterReclustering(userData, clusterAssignments, clusterIds) {
+    try {
+      console.log('[Update Assignments] Updating user cluster assignments after reclustering...');
+      
+      const updatePromises = [];
+      
+      for (let i = 0; i < userData.length && i < clusterAssignments.length; i++) {
+        const user = userData[i];
+        const clusterIndex = clusterAssignments[i];
+        
+        if (clusterIndex < clusterIds.length) {
+          const clusterId = clusterIds[clusterIndex];
+          
+          // Calculate similarity score (simplified - could be enhanced)
+          const similarity = 0.9; // Assume high similarity from clustering
+          
+          // Update cache
+          this.userClusters.set(user.user_id, {
+            clusterId: clusterId,
+            similarity: similarity,
+            timestamp: Date.now()
+          });
+          
+          // Queue database update
+          updatePromises.push(
+            this.supabase
+              .from('user_cluster_assignments')
+              .update({
+                cluster_id: clusterId,
+                similarity: similarity,
+                last_updated: new Date().toISOString()
+              })
+              .eq('user_id', user.user_id)
+          );
+        }
+      }
+      
+      // Execute updates in batches
+      const batchSize = 50;
+      for (let i = 0; i < updatePromises.length; i += batchSize) {
+        const batch = updatePromises.slice(i, i + batchSize);
+        await Promise.all(batch);
+      }
+      
+      console.log(`[Update Assignments] Updated ${updatePromises.length} user assignments`);
+      return true;
+      
+    } catch (error) {
+      console.error('[Update Assignments] Error updating user assignments after reclustering:', error);
+      return false;
     }
   }
 }

@@ -856,4 +856,104 @@ export default function setupClusterRoutes(app, supabase) {
       });
     }
   });
+
+  /**
+   * Trigger cluster recalculation on demand
+   */
+  app.post('/api/clusters/recluster-now', async (req, res) => {
+    try {
+      const { 
+        numClusters = 5, 
+        includeRecentActivity = true, 
+        includeFeedback = true,
+        users = null 
+      } = req.body;
+
+      console.log(`[Recluster API] Starting cluster recalculation with ${numClusters} clusters`);
+
+      // Validate parameters
+      if (numClusters < 2 || numClusters > 20) {
+        return res.status(400).json({ 
+          error: 'Number of clusters must be between 2 and 20',
+          provided: numClusters
+        });
+      }
+
+      // Trigger reclustering
+      const results = await clusterManager.recalculateClusters({
+        numClusters,
+        includeRecentActivity,
+        includeFeedback,
+        users
+      });
+
+      if (results.success) {
+        console.log(`[Recluster API] Reclustering completed successfully`);
+        res.json({
+          success: true,
+          message: 'Cluster recalculation completed successfully',
+          results
+        });
+      } else {
+        console.log(`[Recluster API] Reclustering failed: ${results.error}`);
+        res.status(500).json({
+          success: false,
+          error: results.error,
+          details: results
+        });
+      }
+
+    } catch (error) {
+      console.error('[Recluster API] Error during cluster recalculation:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to recalculate clusters',
+        details: error.message 
+      });
+    }
+  });
+
+  /**
+   * Get cluster recalculation status and last run info
+   */
+  app.get('/api/clusters/recluster-status', async (req, res) => {
+    try {
+      // Get cluster creation timestamps to determine last clustering
+      const { data: clusters, error } = await clusterManager.supabase
+        .from('user_clusters')
+        .select('created_at, metadata')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+
+      const lastClustering = clusters?.[0];
+      const clusterCount = await clusterManager.supabase
+        .from('user_clusters')
+        .select('id', { count: 'exact' });
+
+      const userCount = await clusterManager.supabase
+        .from('user_cluster_assignments')
+        .select('user_id', { count: 'exact' });
+
+      res.json({
+        success: true,
+        status: {
+          lastClusteringTime: lastClustering?.created_at || null,
+          clusteringMethod: lastClustering?.metadata?.creation_method || 'unknown',
+          currentClusterCount: clusterCount.count || 0,
+          assignedUserCount: userCount.count || 0,
+          canRecluster: (userCount.count || 0) >= 10 // Minimum users for reclustering
+        }
+      });
+
+    } catch (error) {
+      console.error('[Recluster Status] Error fetching reclustering status:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to fetch reclustering status',
+        details: error.message 
+      });
+    }
+  });
 } 

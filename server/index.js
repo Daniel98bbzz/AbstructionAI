@@ -10,8 +10,17 @@ import { promises as fs } from 'fs';
 import setupQuizRoutes from './api/quizRoutes.js';
 import setupClusterRoutes from './api/clusterRoutes.js';
 import feedbackRoutes from './api/feedbackRoutes.js';
+import analyticsRoutes from './api/analyticsRoutes.js';
+import AnalyticsWebSocketServer from './websocketServer.js';
 // Import clustering service
 import { clusteringService } from './utils/clusteringService.js';
+// Import learning algorithms
+import { 
+  spacedRepetition, 
+  masteryCalculator, 
+  recommendationEngine, 
+  learningDecay 
+} from './utils/learningAlgorithms.js';
 
 /**
  * Parse sections from the OpenAI response
@@ -2117,6 +2126,7 @@ app.post('/api/topics', async (req, res) => {
 setupQuizRoutes(app, supabase, openai);
 setupClusterRoutes(app, supabase);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Add a route to fix existing structured templates
 app.post('/api/admin/fix-structured-templates', async (req, res) => {
@@ -2730,11 +2740,18 @@ app.get('/api/user-topics/feed', async (req, res) => {
   }
 });
 
+// Initialize WebSocket server
+const analyticsWS = new AnalyticsWebSocketServer();
+
 // Start the server with port conflict handling
 function startServer(port) {
   const server = app.listen(port, () => {
     console.log(`🚀 Server running on http://localhost:${port}`);
     console.log('✅ Cluster routes successfully initialized');
+    
+    // Initialize WebSocket server for real-time analytics
+    analyticsWS.init(server);
+    console.log('✅ Analytics WebSocket server initialized');
     
     // Initialize periodic clustering (run every 24 hours)
     console.log('📅 Setting up periodic clustering...');
@@ -2749,6 +2766,25 @@ function startServer(port) {
       console.error('❌ Server error:', err);
       process.exit(1);
     }
+  });
+
+  // Graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM received, shutting down gracefully');
+    analyticsWS.shutdown();
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
+  });
+
+  process.on('SIGINT', () => {
+    console.log('SIGINT received, shutting down gracefully');
+    analyticsWS.shutdown();
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
   });
 }
 
@@ -3519,6 +3555,537 @@ app.get('/api/user-achievements', async (req, res) => {
   } catch (error) {
     console.error('[Achievements] Unexpected error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ==================== PROGRESS SYSTEM ENHANCEMENTS ====================
+
+// 🎯 Get Enhanced User Progress with Adaptive Mastery Models
+app.get('/api/progress/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    console.log(`[Enhanced Progress] Fetching enhanced progress for user ${userId}`);
+    
+    // Get user's topic mastery data
+    const { data: topicMastery, error: masteryError } = await supabase
+      .from('topic_mastery')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+    
+    if (masteryError) {
+      console.error('[Enhanced Progress] Error fetching topic mastery:', masteryError);
+    }
+    
+    // Get recent learning sessions
+    const { data: recentSessions, error: sessionsError } = await supabase
+      .from('learning_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('session_date', { ascending: false })
+      .limit(20);
+    
+    if (sessionsError) {
+      console.error('[Enhanced Progress] Error fetching sessions:', sessionsError);
+    }
+    
+    // Calculate enhanced mastery for each topic
+    const enhancedTopics = (topicMastery || []).map(topic => {
+      // Get recent performance data for this topic
+      const topicSessions = (recentSessions || []).filter(s => s.topic_name === topic.topic_name);
+      
+      // Calculate mastery using learning algorithms
+      const learningData = {
+        avgFeedbackScore: topic.avg_feedback_score || 0,
+        quizScores: [], // Would be populated from quiz data
+        timeSpent: topic.total_time_spent || 0,
+        reviewCount: topic.review_count || 0,
+        lastReviewQuality: topic.last_review_quality || 0,
+        correctAnswers: topic.quiz_successes || 0,
+        totalQuestions: topic.quiz_attempts || 0
+      };
+      
+      const masteryInfo = masteryCalculator.calculateMastery(learningData);
+      
+      // Check if due for review
+      const dueForReview = spacedRepetition.isDueForReview({
+        nextReviewDate: topic.next_review_date,
+        lastReviewDate: topic.last_review_date
+      });
+      
+      // Calculate current retention if time has passed
+      let currentRetention = masteryInfo.score;
+      if (topic.last_review_date) {
+        currentRetention = learningDecay.calculateRetention(
+          masteryInfo.score,
+          topic.last_review_date,
+          topic.review_count || 1
+        );
+      }
+      
+      return {
+        ...topic,
+        mastery: masteryInfo,
+        currentRetention,
+        dueForReview,
+        nextReviewDate: spacedRepetition.getNextReviewDate({
+          nextReviewDate: topic.next_review_date
+        }),
+        recentActivity: topicSessions.length,
+        lastActivity: topicSessions[0]?.session_date || topic.updated_at
+      };
+    });
+    
+    // Sort by priority: due for review first, then by mastery level
+    const sortedTopics = enhancedTopics.sort((a, b) => {
+      if (a.dueForReview && !b.dueForReview) return -1;
+      if (!a.dueForReview && b.dueForReview) return 1;
+      return b.mastery.score - a.mastery.score;
+    });
+    
+    // Calculate summary statistics
+    const summary = {
+      totalTopics: enhancedTopics.length,
+      averageMastery: enhancedTopics.reduce((sum, t) => sum + t.mastery.score, 0) / enhancedTopics.length || 0,
+      topicsReady: enhancedTopics.filter(t => !t.dueForReview).length,
+      topicsDue: enhancedTopics.filter(t => t.dueForReview).length,
+      expertLevel: enhancedTopics.filter(t => t.mastery.level === 'expert').length,
+      totalStudyTime: enhancedTopics.reduce((sum, t) => sum + (t.total_time_spent || 0), 0)
+    };
+    
+    res.json({
+      success: true,
+      topics: sortedTopics,
+      summary,
+      nextReviewDue: sortedTopics.find(t => t.dueForReview),
+      algorithm_insights: {
+        spaced_repetition: 'SM-2 Algorithm',
+        mastery_weights: {
+          feedback: '30%',
+          quiz: '40%',
+          retention: '20%',
+          engagement: '10%'
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Enhanced Progress] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch enhanced progress' });
+  }
+});
+
+// 🎮 Get User Streak Information
+app.get('/api/progress/streak', async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    
+    if (!user_id) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    console.log(`[Streak] Fetching streak for user ${user_id}`);
+    
+    // Get current streak data
+    const { data: streakData, error: streakError } = await supabase
+      .from('user_streaks')
+      .select('*')
+      .eq('user_id', user_id)
+      .single();
+    
+    if (streakError && streakError.code !== 'PGRST116') {
+      console.error('[Streak] Error fetching streak:', streakError);
+      return res.status(500).json({ error: 'Failed to fetch streak data' });
+    }
+    
+    // If no streak data exists, return default
+    if (!streakData) {
+      return res.json({
+        success: true,
+        streak: {
+          current: 0,
+          longest: 0,
+          lastActive: null,
+          freezesAvailable: 3
+        },
+        streakMilestones: [
+          { days: 3, name: 'Getting Started', reward: '🔥' },
+          { days: 7, name: 'Week Warrior', reward: '⭐' },
+          { days: 14, name: 'Two Week Titan', reward: '🏆' },
+          { days: 30, name: 'Monthly Master', reward: '💎' }
+        ]
+      });
+    }
+    
+    // Calculate streak milestones
+    const milestones = [
+      { days: 3, name: 'Getting Started', reward: '🔥' },
+      { days: 7, name: 'Week Warrior', reward: '⭐' },
+      { days: 14, name: 'Two Week Titan', reward: '🏆' },
+      { days: 30, name: 'Monthly Master', reward: '💎' },
+      { days: 60, name: 'Learning Legend', reward: '👑' },
+      { days: 100, name: 'Century Scholar', reward: '🌟' }
+    ];
+    
+    const nextMilestone = milestones.find(m => m.days > streakData.current_streak);
+    const lastAchievedMilestone = milestones.filter(m => m.days <= streakData.current_streak).pop();
+    
+    res.json({
+      success: true,
+      streak: {
+        current: streakData.current_streak,
+        longest: streakData.longest_streak,
+        lastActive: streakData.last_active_date,
+        freezesAvailable: 3 - (streakData.streak_freeze_count || 0)
+      },
+      nextMilestone,
+      lastAchievedMilestone,
+      streakMilestones: milestones
+    });
+    
+  } catch (error) {
+    console.error('[Streak] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch streak data' });
+  }
+});
+
+// 🏆 Get Leaderboard
+app.get('/api/progress/leaderboard', async (req, res) => {
+  try {
+    const { user_id, type = 'total' } = req.query;
+    
+    console.log(`[Leaderboard] Fetching ${type} leaderboard`);
+    
+    let orderColumn = 'total_points';
+    if (type === 'weekly') orderColumn = 'weekly_points';
+    if (type === 'monthly') orderColumn = 'monthly_points';
+    
+    // Get top users
+    const { data: leaderboardData, error: leaderboardError } = await supabase
+      .from('leaderboard')
+      .select(`
+        user_id,
+        total_points,
+        weekly_points,
+        monthly_points,
+        rank_tier,
+        achievements_count,
+        users!inner(
+          first_name,
+          last_name
+        )
+      `)
+      .order(orderColumn, { ascending: false })
+      .limit(20);
+    
+    if (leaderboardError) {
+      console.error('[Leaderboard] Error fetching leaderboard:', leaderboardError);
+      return res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    }
+    
+    // Get current user's position if provided
+    let currentUserRank = null;
+    if (user_id) {
+      const { data: userLeaderboard, error: userError } = await supabase
+        .from('leaderboard')
+        .select('*')
+        .eq('user_id', user_id)
+        .single();
+      
+      if (!userError && userLeaderboard) {
+        // Calculate user's rank by counting users with higher points
+        const { count } = await supabase
+          .from('leaderboard')
+          .select('*', { count: 'exact', head: true })
+          .gt(orderColumn, userLeaderboard[orderColumn]);
+        
+        currentUserRank = {
+          ...userLeaderboard,
+          position: (count || 0) + 1
+        };
+      }
+    }
+    
+    // Format leaderboard data
+    const formattedLeaderboard = (leaderboardData || []).map((entry, index) => ({
+      position: index + 1,
+      userId: entry.user_id,
+      name: entry.users ? `${entry.users.first_name} ${entry.users.last_name}`.trim() : 'Anonymous',
+      points: entry[orderColumn] || 0,
+      tier: entry.rank_tier,
+      achievements: entry.achievements_count || 0
+    }));
+    
+    res.json({
+      success: true,
+      leaderboard: formattedLeaderboard,
+      currentUser: currentUserRank,
+      type,
+      tierThresholds: {
+        bronze: 0,
+        silver: 100,
+        gold: 500,
+        platinum: 1000,
+        diamond: 2500
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Leaderboard] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
+// 🧠 Get Adaptive Recommendations
+app.get('/api/progress/recommendations/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    console.log(`[Recommendations] Generating adaptive recommendations for user ${userId}`);
+    
+    // Get user's current topics and performance
+    const { data: userTopics, error: topicsError } = await supabase
+      .from('topic_mastery')
+      .select('*')
+      .eq('user_id', userId);
+    
+    if (topicsError) {
+      console.error('[Recommendations] Error fetching user topics:', topicsError);
+      return res.status(500).json({ error: 'Failed to fetch user data' });
+    }
+    
+    // Get all available topics (simplified - would come from a topics table)
+    const availableTopics = [
+      { name: 'Machine Learning', category: 'AI', difficulty: 'intermediate' },
+      { name: 'Deep Learning', category: 'AI', difficulty: 'advanced' },
+      { name: 'Data Science', category: 'Analytics', difficulty: 'beginner' },
+      { name: 'Statistics', category: 'Math', difficulty: 'intermediate' },
+      { name: 'Linear Algebra', category: 'Math', difficulty: 'intermediate' },
+      { name: 'Python Programming', category: 'Programming', difficulty: 'beginner' },
+      { name: 'Web Development', category: 'Programming', difficulty: 'beginner' },
+      { name: 'Cybersecurity', category: 'Security', difficulty: 'intermediate' }
+    ];
+    
+    // Use recommendation engine to generate suggestions
+    const recommendations = await recommendationEngine.recommendBasedOnFeedback(
+      userId,
+      userTopics || [],
+      availableTopics
+    );
+    
+    // Get spaced repetition recommendations
+    const reviewRecommendations = (userTopics || [])
+      .filter(topic => spacedRepetition.isDueForReview({
+        nextReviewDate: topic.next_review_date,
+        lastReviewDate: topic.last_review_date
+      }))
+      .map(topic => ({
+        ...topic,
+        type: 'review',
+        priority: 1.0,
+        reasoning: `Due for review using spaced repetition algorithm`
+      }));
+    
+    // Combine and prioritize all recommendations
+    const allRecommendations = [...recommendations, ...reviewRecommendations]
+      .sort((a, b) => b.priority - a.priority)
+      .slice(0, 8);
+    
+    res.json({
+      success: true,
+      recommendations: allRecommendations,
+      algorithm_used: 'Enhanced Feedback-Based with SM-2 Spaced Repetition',
+      user_context: {
+        topics_studied: userTopics?.length || 0,
+        topics_due_review: reviewRecommendations.length,
+        readiness_factors: ['mastery_level', 'feedback_quality', 'time_decay', 'cluster_performance']
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Recommendations] Error:', error);
+    res.status(500).json({ error: 'Failed to generate recommendations' });
+  }
+});
+
+// 📊 Update Learning Progress (called after learning sessions)
+app.post('/api/progress/update-session', async (req, res) => {
+  try {
+    const { 
+      userId, 
+      topicName, 
+      sessionType = 'learning',
+      durationSeconds = 0,
+      feedbackScore,
+      completed = true,
+      quizResults 
+    } = req.body;
+    
+    if (!userId || !topicName) {
+      return res.status(400).json({ error: 'User ID and topic name are required' });
+    }
+    
+    console.log(`[Progress Update] Recording session for user ${userId}, topic: ${topicName}`);
+    
+    // Record the learning session
+    const { data: session, error: sessionError } = await supabase
+      .from('learning_sessions')
+      .insert([{
+        user_id: userId,
+        topic_name: topicName,
+        session_type: sessionType,
+        duration_seconds: durationSeconds,
+        avg_feedback_score: feedbackScore,
+        completed_successfully: completed,
+        points_earned: completed ? Math.max(10, Math.round(durationSeconds / 60)) : 5 // 1 point per minute, minimum 10
+      }])
+      .select()
+      .single();
+    
+    if (sessionError) {
+      console.error('[Progress Update] Error recording session:', sessionError);
+      return res.status(500).json({ error: 'Failed to record session' });
+    }
+    
+    // Update or create topic mastery record
+    const { data: existingMastery, error: masteryError } = await supabase
+      .from('topic_mastery')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('topic_name', topicName)
+      .single();
+    
+    let masteryUpdate = {};
+    
+    if (existingMastery) {
+      // Update existing mastery
+      const totalTime = (existingMastery.total_time_spent || 0) + durationSeconds;
+      const reviewCount = (existingMastery.review_count || 0) + 1;
+      
+      // Calculate new average feedback score
+      let newAvgFeedback = existingMastery.avg_feedback_score || 0;
+      if (feedbackScore) {
+        const totalFeedbackScore = (existingMastery.avg_feedback_score || 0) * (reviewCount - 1) + feedbackScore;
+        newAvgFeedback = totalFeedbackScore / reviewCount;
+      }
+      
+      // Update spaced repetition data
+      const quality = feedbackScore ? Math.round(feedbackScore) : 3; // Convert 1-5 to 0-5 scale
+      const updatedCard = spacedRepetition.updateCard({
+        easinessFactor: existingMastery.easiness_factor || 2.5,
+        interval: existingMastery.interval_days || 1,
+        repetitions: existingMastery.repetitions || 0,
+        lastReviewDate: existingMastery.last_review_date
+      }, quality);
+      
+      // Calculate new mastery score
+      const learningData = {
+        avgFeedbackScore: newAvgFeedback,
+        quizScores: quizResults ? [quizResults.score] : [],
+        timeSpent: totalTime,
+        reviewCount: reviewCount,
+        lastReviewQuality: quality,
+        correctAnswers: quizResults?.correctAnswers || existingMastery.quiz_successes || 0,
+        totalQuestions: quizResults?.totalQuestions || existingMastery.quiz_attempts || 0
+      };
+      
+      const masteryInfo = masteryCalculator.calculateMastery(learningData);
+      
+      masteryUpdate = {
+        total_time_spent: totalTime,
+        review_count: reviewCount,
+        avg_feedback_score: newAvgFeedback,
+        mastery_score: masteryInfo.score,
+        mastery_level: masteryInfo.level,
+        confidence_score: masteryInfo.confidence,
+        easiness_factor: updatedCard.easinessFactor,
+        interval_days: updatedCard.interval,
+        repetitions: updatedCard.repetitions,
+        last_review_date: updatedCard.lastReviewDate,
+        next_review_date: updatedCard.nextReviewDate,
+        last_review_quality: quality
+      };
+      
+      if (quizResults) {
+        masteryUpdate.quiz_attempts = (existingMastery.quiz_attempts || 0) + 1;
+        masteryUpdate.quiz_successes = (existingMastery.quiz_successes || 0) + (quizResults.passed ? 1 : 0);
+      }
+      
+      await supabase
+        .from('topic_mastery')
+        .update(masteryUpdate)
+        .eq('user_id', userId)
+        .eq('topic_name', topicName);
+        
+    } else {
+      // Create new mastery record
+      const initialCard = spacedRepetition.updateCard({}, feedbackScore ? Math.round(feedbackScore) : 3);
+      const learningData = {
+        avgFeedbackScore: feedbackScore || 0,
+        quizScores: quizResults ? [quizResults.score] : [],
+        timeSpent: durationSeconds,
+        reviewCount: 1,
+        lastReviewQuality: feedbackScore ? Math.round(feedbackScore) : 3,
+        correctAnswers: quizResults?.correctAnswers || 0,
+        totalQuestions: quizResults?.totalQuestions || 0
+      };
+      
+      const masteryInfo = masteryCalculator.calculateMastery(learningData);
+      
+      await supabase
+        .from('topic_mastery')
+        .insert([{
+          user_id: userId,
+          topic_name: topicName,
+          mastery_score: masteryInfo.score,
+          mastery_level: masteryInfo.level,
+          confidence_score: masteryInfo.confidence,
+          total_time_spent: durationSeconds,
+          review_count: 1,
+          avg_feedback_score: feedbackScore || 0,
+          easiness_factor: initialCard.easinessFactor,
+          interval_days: initialCard.interval,
+          repetitions: initialCard.repetitions,
+          last_review_date: initialCard.lastReviewDate,
+          next_review_date: initialCard.nextReviewDate,
+          last_review_quality: feedbackScore ? Math.round(feedbackScore) : 3,
+          quiz_attempts: quizResults ? 1 : 0,
+          quiz_successes: quizResults?.passed ? 1 : 0
+        }]);
+    }
+    
+    // Update user streak
+    const { data: streakResult } = await supabase.rpc('update_user_streak', {
+      user_uuid: userId
+    });
+    
+    // Update leaderboard
+    const pointsEarned = session.points_earned + (streakResult?.[0]?.points_earned || 0);
+    await supabase
+      .from('leaderboard')
+      .upsert([{
+        user_id: userId,
+        total_points: supabase.sql`COALESCE(total_points, 0) + ${pointsEarned}`,
+        weekly_points: supabase.sql`COALESCE(weekly_points, 0) + ${pointsEarned}`,
+        monthly_points: supabase.sql`COALESCE(monthly_points, 0) + ${pointsEarned}`,
+        last_point_activity: new Date().toISOString()
+      }], {
+        onConflict: 'user_id',
+        ignoreDuplicates: false
+      });
+    
+    res.json({
+      success: true,
+      session: session,
+      streak: streakResult?.[0] || { current_streak: 0, points_earned: 0 },
+      points_earned: pointsEarned,
+      mastery_updated: true
+    });
+    
+  } catch (error) {
+    console.error('[Progress Update] Error:', error);
+    res.status(500).json({ error: 'Failed to update progress' });
   }
 });
 
@@ -4777,4 +5344,308 @@ async function getBestTemplateByClusterUCB(clusterId) {
     return null;
   }
   return data?.template_id || null;
+}
+
+// Topic Curation Admin API Endpoints
+app.get('/api/admin/similar-topics', async (req, res) => {
+  try {
+    const { 
+      similarityThreshold = 0.7, 
+      minUsageCount = 2 
+    } = req.query;
+
+    console.log('[Admin Topics] Fetching similar topics...');
+
+    const similarTopics = await PromptManager.getSimilarTopics({
+      similarityThreshold: parseFloat(similarityThreshold),
+      minUsageCount: parseInt(minUsageCount)
+    });
+
+    res.json({
+      success: true,
+      similarTopics,
+      count: similarTopics.length,
+      criteria: {
+        similarityThreshold: parseFloat(similarityThreshold),
+        minUsageCount: parseInt(minUsageCount)
+      }
+    });
+
+  } catch (error) {
+    console.error('[Admin Topics] Error fetching similar topics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch similar topics',
+      details: error.message
+    });
+  }
+});
+
+app.post('/api/admin/merge-topics', async (req, res) => {
+  try {
+    const { topic1, topic2, executeImmediately = false } = req.body;
+
+    if (!topic1 || !topic2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Both topic1 and topic2 are required'
+      });
+    }
+
+    console.log(`[Admin Topics] Analyzing merge for: ${topic1} + ${topic2}`);
+
+    // Get merge suggestions
+    const mergeAnalysis = await PromptManager.suggestTopicMerge(topic1, topic2);
+
+    if (executeImmediately && mergeAnalysis.canMerge) {
+      // Execute the merge
+      const mergeResult = await executeMerge(topic1, topic2, mergeAnalysis);
+      
+      res.json({
+        success: true,
+        executed: true,
+        analysis: mergeAnalysis,
+        result: mergeResult
+      });
+    } else {
+      // Return analysis only
+      res.json({
+        success: true,
+        executed: false,
+        analysis: mergeAnalysis
+      });
+    }
+
+  } catch (error) {
+    console.error('[Admin Topics] Error analyzing topic merge:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to analyze topic merge',
+      details: error.message
+    });
+  }
+});
+
+app.post('/api/admin/split-topic', async (req, res) => {
+  try {
+    const { topicName, maxSuggestedSplits = 4, executeImmediately = false } = req.body;
+
+    if (!topicName) {
+      return res.status(400).json({
+        success: false,
+        error: 'topicName is required'
+      });
+    }
+
+    console.log(`[Admin Topics] Analyzing split for: ${topicName}`);
+
+    // Get split suggestions
+    const splitAnalysis = await PromptManager.suggestTopicSplit(topicName, {
+      maxSuggestedSplits: parseInt(maxSuggestedSplits)
+    });
+
+    if (executeImmediately && splitAnalysis.shouldSplit) {
+      // Execute the split
+      const splitResult = await executeSplit(topicName, splitAnalysis);
+      
+      res.json({
+        success: true,
+        executed: true,
+        analysis: splitAnalysis,
+        result: splitResult
+      });
+    } else {
+      // Return analysis only
+      res.json({
+        success: true,
+        executed: false,
+        analysis: splitAnalysis
+      });
+    }
+
+  } catch (error) {
+    console.error('[Admin Topics] Error analyzing topic split:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to analyze topic split',
+      details: error.message
+    });
+  }
+});
+
+app.get('/api/admin/topic-curation-stats', async (req, res) => {
+  try {
+    console.log('[Admin Topics] Fetching topic curation statistics...');
+
+    // Get overall topic statistics
+    const { data: allTopics, error: topicsError } = await supabase
+      .from('topics')
+      .select('name, usage_count, is_active, created_at')
+      .order('usage_count', { ascending: false });
+
+    if (topicsError) throw topicsError;
+
+    // Calculate statistics
+    const activeTopics = allTopics.filter(t => t.is_active);
+    const inactiveTopics = allTopics.filter(t => !t.is_active);
+    
+    const totalUsage = activeTopics.reduce((sum, topic) => sum + topic.usage_count, 0);
+    const averageUsage = activeTopics.length > 0 ? totalUsage / activeTopics.length : 0;
+    
+    // Find topics with low usage (candidates for merging)
+    const lowUsageTopics = activeTopics.filter(t => t.usage_count < averageUsage * 0.5);
+    
+    // Find topics with high usage (candidates for splitting)
+    const highUsageTopics = activeTopics.filter(t => t.usage_count > averageUsage * 2);
+
+    // Get recent similar topics analysis
+    const recentSimilarPairs = await PromptManager.getSimilarTopics({
+      similarityThreshold: 0.8,
+      minUsageCount: 1
+    });
+
+    const stats = {
+      overview: {
+        totalTopics: allTopics.length,
+        activeTopics: activeTopics.length,
+        inactiveTopics: inactiveTopics.length,
+        totalUsage,
+        averageUsage: Math.round(averageUsage * 100) / 100
+      },
+      curationOpportunities: {
+        lowUsageTopics: lowUsageTopics.length,
+        highUsageTopics: highUsageTopics.length,
+        similarPairs: recentSimilarPairs.length,
+        mergeCandidates: recentSimilarPairs.filter(p => p.mergeRecommendation.confidence === 'high').length,
+        splitCandidates: highUsageTopics.filter(t => t.usage_count > 50).length
+      },
+      topTopics: activeTopics.slice(0, 10),
+      mergeCandidates: recentSimilarPairs.slice(0, 5),
+      splitCandidates: highUsageTopics.slice(0, 5)
+    };
+
+    res.json({
+      success: true,
+      stats,
+      lastUpdated: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[Admin Topics] Error fetching curation stats:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch topic curation statistics',
+      details: error.message
+    });
+  }
+});
+
+// Helper functions for topic operations
+async function executeMerge(topic1Name, topic2Name, mergeAnalysis) {
+  try {
+    console.log(`[Topic Merge] Executing merge: ${topic1Name} -> ${topic2Name}`);
+    
+    // Get the topics to determine which is primary
+    const { data: topics, error } = await supabase
+      .from('topics')
+      .select('*')
+      .in('name', [topic1Name, topic2Name]);
+    
+    if (error) throw error;
+    
+    const topic1 = topics.find(t => t.name === topic1Name);
+    const topic2 = topics.find(t => t.name === topic2Name);
+    const primaryTopic = topic1.usage_count > topic2.usage_count ? topic1 : topic2;
+    const secondaryTopic = topic1.usage_count > topic2.usage_count ? topic2 : topic1;
+
+    // Step 1: Update all sessions to use primary topic
+    const { error: sessionUpdateError, count: updatedSessions } = await supabase
+      .from('sessions')
+      .update({ secret_topic: primaryTopic.name })
+      .eq('secret_topic', secondaryTopic.name);
+
+    if (sessionUpdateError) throw sessionUpdateError;
+
+    // Step 2: Update primary topic usage count
+    const { error: usageUpdateError } = await supabase
+      .from('topics')
+      .update({ 
+        usage_count: topic1.usage_count + topic2.usage_count,
+        updated_at: new Date().toISOString()
+      })
+      .eq('name', primaryTopic.name);
+
+    if (usageUpdateError) throw usageUpdateError;
+
+    // Step 3: Deactivate secondary topic
+    const { error: deactivateError } = await supabase
+      .from('topics')
+      .update({ 
+        is_active: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('name', secondaryTopic.name);
+
+    if (deactivateError) throw deactivateError;
+
+    return {
+      success: true,
+      primaryTopic: primaryTopic.name,
+      secondaryTopic: secondaryTopic.name,
+      updatedSessions,
+      newUsageCount: topic1.usage_count + topic2.usage_count
+    };
+
+  } catch (error) {
+    console.error('Error executing merge:', error);
+    throw error;
+  }
+}
+
+async function executeSplit(topicName, splitAnalysis) {
+  try {
+    console.log(`[Topic Split] Executing split for: ${topicName}`);
+    
+    // For now, this is a placeholder - actual implementation would require
+    // sophisticated session reassignment logic
+    
+    // Step 1: Create new topics
+    const newTopics = [];
+    for (const suggestion of splitAnalysis.suggestedSplits) {
+      const { data: newTopic, error } = await supabase
+        .from('topics')
+        .insert({
+          name: suggestion.name,
+          description: suggestion.description,
+          usage_count: 0,
+          is_active: true
+        })
+        .select()
+        .single();
+      
+      if (!error) {
+        newTopics.push(newTopic);
+      }
+    }
+    
+    // Step 2: Mark original topic as deprecated (not inactive, for safety)
+    await supabase
+      .from('topics')
+      .update({ 
+        description: `[DEPRECATED] ${splitAnalysis.originalTopic.description}`,
+        updated_at: new Date().toISOString()
+      })
+      .eq('name', topicName);
+
+    return {
+      success: true,
+      originalTopic: topicName,
+      newTopics: newTopics.map(t => ({ name: t.name, description: t.description })),
+      note: 'New topics created. Manual session reassignment recommended.'
+    };
+
+  } catch (error) {
+    console.error('Error executing split:', error);
+    throw error;
+  }
 }
