@@ -686,6 +686,12 @@ Respond with a valid JSON array of objects:
       if (quizResult.status === 'fulfilled') {
         quizContent = quizResult.value;
         console.log('[Tab Content Generation] Quiz generated successfully');
+        
+        // ✅ ADD QUIZ TO MAIN RESPONSE
+        if (quizContent && !response.quiz) {
+          response.quiz = quizContent;
+          console.log('[Tab Content Generation] Quiz added to main response');
+        }
       } else {
         console.error('[Tab Content Generation] Quiz generation failed:', quizResult.reason);
       }
