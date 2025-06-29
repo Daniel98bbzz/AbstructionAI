@@ -1,4 +1,4 @@
-import { generateEmbedding } from '../../src/utils/embedding.js';
+// Removed embedding import - no longer needed after crowd wisdom cleanup
 
 class SessionManager {
   constructor() {
@@ -293,34 +293,7 @@ class SessionManager {
       }
     }
     
-    // Check if this is a follow-up question to a previous AI response
-    if (interaction.type === 'query' && session.interactions.length > 0) {
-      // Find the most recent AI response interaction
-      const lastInteractions = [...session.interactions].reverse();
-      const lastAIResponse = lastInteractions.find(i => i.type === 'ai_response');
-      
-      if (lastAIResponse && lastAIResponse.response_id) {
-        console.log(`[Crowd Wisdom] Detected potential follow-up question for response: ${lastAIResponse.response_id}`);
-        
-        // Mark the template usage as having a follow-up
-        if (this.supabase) {
-          try {
-            const { error } = await this.supabase
-              .from('prompt_template_usage')
-              .update({ had_follow_up: true })
-              .eq('response_id', lastAIResponse.response_id);
-              
-            if (error) {
-              console.error('[Crowd Wisdom] Error marking follow-up:', error);
-            } else {
-              console.log(`[Crowd Wisdom] Marked follow-up for response: ${lastAIResponse.response_id}`);
-            }
-          } catch (e) {
-            console.error('[Crowd Wisdom] Error updating follow-up status:', e);
-          }
-        }
-      }
-    }
+    // Follow-up tracking functionality removed (was part of crowd wisdom system)
     
     const contextMemory = this.contextMemory.get(sessionId);
     if (!contextMemory && session) { // if session was just created, contextMemory might not exist yet for it
@@ -487,18 +460,6 @@ class SessionManager {
             console.log(`[BACKEND DEBUG] Storing interaction in database: ${interaction.type} for session ${sessionId}`);
             
             // Prepare the interaction data
-            let embedding = await generateEmbedding(interaction.query);
-            // Ensure embedding is a JS array of floats
-            console.log('[CHECK TYPE] Is array:', Array.isArray(embedding), '| First 3 values:', embedding?.slice(0,3));
-            if (!Array.isArray(embedding) && typeof embedding === 'string') {
-              try {
-                embedding = JSON.parse(embedding);
-                console.log('[CHECK TYPE] Parsed embedding from string to array:', Array.isArray(embedding), '| First 3 values:', embedding?.slice(0,3));
-              } catch (e) {
-                console.error('[CHECK TYPE] Failed to parse embedding string:', e);
-                embedding = null;
-              }
-            }
             const interactionData = {
               session_id: sessionId,
               type: interaction.type,
@@ -507,7 +468,6 @@ class SessionManager {
               message_id: interaction.messageId || interaction.id || null,
               feedback_content: interaction.type === 'feedback' ? interaction : null,
               user_id: session.userId,
-              embedding: embedding || null, // Always pass as array
               soft_signal: interaction.soft_signal || null,
               cluster_id: interaction.cluster_id || null
             };
