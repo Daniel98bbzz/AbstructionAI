@@ -7,7 +7,8 @@ import { useAuth } from '../contexts/AuthContext';
 function SimpleFeedbackQueryPage() {
   const { responseId } = useParams();
   const { user } = useAuth();
-  const sessionId = user ? localStorage.getItem(`sessionId_${user.id}`) : localStorage.getItem('sessionId');
+  // Generate a test session ID since sessions are now conversation-specific
+  const sessionId = 'test-session-' + Date.now();
   
   const handleFeedbackSubmitted = () => {
     console.log('Feedback was submitted successfully');

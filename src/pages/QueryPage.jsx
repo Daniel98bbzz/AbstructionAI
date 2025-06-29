@@ -16,6 +16,15 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { saveProjects, loadProjects } from '../utils/userDataManager';
 
+// Helper function to generate consistent session IDs
+const generateSessionId = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 function QueryPage() {
   const [quizMode, setQuizMode] = useState(false);
   const [quizQuestions, setQuizQuestions] = useState([]);
@@ -65,34 +74,6 @@ function QueryPage() {
   const [regenerating, setRegenerating] = useState(false);
   const messagesEndRef = useRef(null);
   const { submitQuery, loading, error, regenerateAnswer, currentSession } = useQuery();
-  
-  // Set sessionId from the current session in the QueryContext or from localStorage
-  const [sessionId, setSessionId] = useState(() => {
-    if (user) {
-      // First try to load from localStorage
-      const savedSessionId = localStorage.getItem(`sessionId_${user.id}`);
-      // Fall back to currentSession from context if available
-      return savedSessionId || currentSession?.id || null;
-    }
-    return currentSession?.id || null;
-  });
-  
-  // Update sessionId when currentSession changes
-  useEffect(() => {
-    if (currentSession?.id) {
-      console.log('Setting sessionId from currentSession:', currentSession.id);
-      setSessionId(currentSession.id);
-    }
-  }, [currentSession]);
-  
-  // Persist sessionId to localStorage whenever it changes
-  useEffect(() => {
-    if (user && sessionId) {
-      localStorage.setItem(`sessionId_${user.id}`, sessionId);
-    } else if (user) {
-      localStorage.removeItem(`sessionId_${user.id}`);
-    }
-  }, [sessionId, user]);
   
   // Persist preferences whenever they change
   useEffect(() => {
@@ -231,12 +212,6 @@ function QueryPage() {
         if (savedFeedbackFor) {
           setShowFeedbackFor(savedFeedbackFor);
         }
-        
-        // Load session ID
-        const savedSessionId = localStorage.getItem(`sessionId_${user.id}`);
-        if (savedSessionId) {
-          setSessionId(savedSessionId);
-        }
       }
     };
 
@@ -250,19 +225,30 @@ function QueryPage() {
       if (savedConversations) {
         const conversations = JSON.parse(savedConversations);
         if (conversations.length > 0) {
+          // Generate session IDs for conversations that don't have them
+          const conversationsWithSessionIds = conversations.map(conv => ({
+            ...conv,
+            sessionId: conv.sessionId || generateSessionId()
+          }));
+          
           const defaultProject = {
             id: 'default',
             name: 'My Conversations',
-            conversations: conversations,
+            conversations: conversationsWithSessionIds,
             createdAt: Date.now(),
             lastModified: Date.now()
           };
           setProjects([defaultProject]);
           setActiveProject(defaultProject.id);
-          if (conversations[0]) {
-            setActiveConversation(conversations[0].id);
-            setMessages(conversations[0].messages || []);
+          if (conversationsWithSessionIds[0]) {
+            setActiveConversation(conversationsWithSessionIds[0].id);
+            setMessages(conversationsWithSessionIds[0].messages || []);
           }
+          
+          console.log('[FRONTEND DEBUG] Migrated conversations with session IDs:', {
+            conversationCount: conversationsWithSessionIds.length,
+            sessionIds: conversationsWithSessionIds.map(c => ({ id: c.id, sessionId: c.sessionId }))
+          });
         }
       }
     }
@@ -430,8 +416,15 @@ function QueryPage() {
       id: Date.now().toString(),
       title: 'New Conversation',
       messages: [],
-      lastMessageTime: Date.now()
+      lastMessageTime: Date.now(),
+      sessionId: generateSessionId() // Each conversation gets its own session ID
     };
+    
+    console.log('[FRONTEND DEBUG] Creating new conversation with unique session ID:', {
+      conversationId: newConversation.id,
+      sessionId: newConversation.sessionId,
+      projectId
+    });
     
     setProjects(prev => prev.map(project => {
       if (project.id === projectId) {
@@ -465,6 +458,12 @@ function QueryPage() {
       // Ensure we have a messages array
       const conversationMessages = conversation.messages || [];
       setMessages(conversationMessages);
+      
+      console.log('[FRONTEND DEBUG] Switched to conversation with session ID:', {
+        conversationId: conversation.id,
+        sessionId: conversation.sessionId,
+        messageCount: conversationMessages.length
+      });
       
       // Reset states
       setShowFeedbackFor(null);
@@ -537,15 +536,19 @@ function QueryPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!query.trim()) return;
+    if (!query.trim() || loading) return;
 
-    // Get the active project's preferences
+    if (!activeProject || !activeConversation) {
+      toast.error('Please create a project and conversation first');
+      return;
+    }
+
+    // Find the active project and conversation
     const activeProjectData = projects.find(p => p.id === activeProject);
-    console.log('Active Project Data:', {
-      projectId: activeProject,
-      projectName: activeProjectData?.name,
-      projectPreferences: activeProjectData?.preferences
-    });
+    if (!activeProjectData) {
+      toast.error('Active project not found');
+      return;
+    }
 
     // Merge project preferences with global preferences to ensure no values are empty
     const queryPreferences = {
@@ -569,11 +572,43 @@ function QueryPage() {
       isUsingProjectPreferences: !!activeProjectData?.preferences
     });
 
-    // Retrieve the current session ID for this conversation
+    // Get the session ID for this specific conversation
     const currentConversation = activeProjectData?.conversations.find(c => c.id === activeConversation);
-    const conversationSessionId = currentConversation?.sessionId || sessionId;
+    const conversationSessionId = currentConversation?.sessionId;
     
-    console.log('[FRONTEND DEBUG] Using session ID for query:', conversationSessionId);
+    // If conversation doesn't have a session ID, generate one
+    if (!conversationSessionId) {
+      const newSessionId = generateSessionId();
+      
+      // Update the conversation with the new session ID
+      setProjects(prev => prev.map(project => {
+        if (project.id === activeProject) {
+          return {
+            ...project,
+            conversations: project.conversations.map(conv => {
+              if (conv.id === activeConversation) {
+                return { ...conv, sessionId: newSessionId };
+              }
+              return conv;
+            })
+          };
+        }
+        return project;
+      }));
+      
+      console.log('[FRONTEND DEBUG] Generated new session ID for existing conversation:', {
+        conversationId: activeConversation,
+        newSessionId
+      });
+    }
+    
+    const effectiveSessionId = conversationSessionId || currentConversation?.sessionId;
+    
+    console.log('[FRONTEND DEBUG] Using conversation-specific session ID for query:', {
+      conversationId: activeConversation,
+      sessionId: effectiveSessionId,
+      hasExistingSessionId: !!conversationSessionId
+    });
 
     const userMessage = {
       id: Date.now().toString(),
@@ -582,74 +617,37 @@ function QueryPage() {
       timestamp: Date.now()
     };
 
-    // Process the user message for secret feedback (non-blocking)
-    if (user) {
-      processUserMessage(user.id, query, conversationSessionId).then(result => {
-        console.log('Secret feedback processed:', result);
-        // Optionally, you could store the result or trigger analytics
-      }).catch(error => {
-        console.error('Error processing secret feedback:', error);
-        // Fail silently to not interrupt the user experience
-      });
-    }
-
-    // Update local messages state
+    // Add user message to conversation
     setMessages(prev => [...prev, userMessage]);
 
-    // Add a temporary "thinking" message
+    // Add thinking message
     const thinkingMessage = {
-      id: 'thinking-' + Date.now().toString(),
-      content: 'Crafting an answer for you...',
+      id: `thinking-${Date.now()}`,
+      content: 'Thinking...',
       role: 'thinking',
       timestamp: Date.now()
     };
-    
-    // Add the thinking message
     setMessages(prev => [...prev, thinkingMessage]);
 
-    // Update project conversation
-    setProjects(prev => prev.map(project => {
-      if (project.id === activeProject) {
-        return {
-          ...project,
-          conversations: project.conversations.map(conv => {
-            if (conv.id === activeConversation) {
-              const updatedMessages = conv.messages || [];
-              return {
-                ...conv,
-                messages: [...updatedMessages, userMessage],
-                lastMessageTime: Date.now()
-              };
-            }
-            return conv;
-          }),
-          lastModified: Date.now()
-        };
-      }
-      return project;
-    }));
-
+    // Clear the input
     setQuery('');
 
     try {
-      // Get the current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-
-      // Call submitQuery with project-specific preferences
-      console.log('Submitting query with preferences:', {
+      // Call submitQuery with project-specific preferences and conversation session ID
+      console.log('Submitting query with conversation-specific session:', {
         query,
         preferences: queryPreferences,
         projectId: activeProject,
-        sessionId: conversationSessionId  // Use the session ID from the conversation
+        conversationId: activeConversation,
+        sessionId: effectiveSessionId
       });
       
-      const response = await submitQuery(query, queryPreferences, conversationSessionId);
+      const response = await submitQuery(query, queryPreferences, effectiveSessionId);
       
-      console.log('Received response with preferences:', {
+      console.log('Received response for conversation:', {
         responseId: response.id,
-        usedPreferences: queryPreferences,
-        sessionId: response.sessionId || conversationSessionId
+        conversationId: activeConversation,
+        sessionId: response.sessionId || effectiveSessionId
       });
       
       // Create a message object, treating all responses as conversational
@@ -669,20 +667,20 @@ function QueryPage() {
       // Remove the thinking message and add the AI response
       setMessages(prev => prev.filter(msg => msg.role !== 'thinking').concat(aiMessage));
       
-      // Update project conversation
+      // Update project conversation with the response session ID
       setProjects(prev => prev.map(project => {
         if (project.id === activeProject) {
           return {
             ...project,
             conversations: project.conversations.map(conv => {
               if (conv.id === activeConversation) {
-                const updatedMessages = conv.messages || [];
+                const updatedMessages = [...(conv.messages || []), userMessage, aiMessage];
                 return {
                   ...conv,
-                  messages: [...updatedMessages, aiMessage],
+                  messages: updatedMessages,
                   lastMessageTime: Date.now(),
                   title: conv.title === 'New Conversation' ? generateTitle(query) : conv.title,
-                  sessionId: response.sessionId || conv.sessionId || conversationSessionId,
+                  sessionId: response.sessionId || conv.sessionId || effectiveSessionId,
                   // Store current preferences at the conversation level as well
                   currentPreferences: queryPreferences
                 };
@@ -694,15 +692,6 @@ function QueryPage() {
         }
         return project;
       }));
-      
-      // Also update the local sessionId state for future queries
-      if (response.sessionId) {
-        setSessionId(response.sessionId);
-        // Save in localStorage
-        if (user) {
-          localStorage.setItem(`sessionId_${user.id}`, response.sessionId);
-        }
-      }
       
     } catch (error) {
       console.error('Error processing query:', error);
@@ -1214,11 +1203,17 @@ examplePlaceholder();`
                       {/* Use ResponseTabs component for tabbed interface */}
                       <ResponseTabs
                         messageId={message.id}
-                        mainContent={message.content}
-                        originalQuery={messages.find(m => m.role === 'user' && m.timestamp < message.timestamp)?.content || ''}
-                        sessionId={sessionId}
-                        preferences={message.preferences || preferences}
-                        userId={user?.id}
+                                                  mainContent={message.content}
+                          originalQuery={messages.find(m => m.role === 'user' && m.timestamp < message.timestamp)?.content || ''}
+                          sessionId={
+                            (() => {
+                              const activeProjectData = projects.find(p => p.id === activeProject);
+                              const currentConversation = activeProjectData?.conversations.find(c => c.id === activeConversation);
+                              return currentConversation?.sessionId || null;
+                            })()
+                          }
+                          preferences={message.preferences || preferences}
+                          userId={user?.id}
                         tabContent={message.tab_content}
                       />
                     </div>
