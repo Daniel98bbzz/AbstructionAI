@@ -11,10 +11,18 @@ class CrowdWisdomManager {
     this.successAnalyzer = new SuccessAnalyzer(openaiClient);
     this.embeddingGenerator = new EmbeddingGenerator(openaiClient);
     
-    // Configuration  
+    // Enhanced Configuration for Improved Learning
     this.learningEnabled = true;
-    this.minFeedbackConfidence = 0.7; // Reset to production value
-    this.promptUpdateThreshold = 1; // Temporarily reduced for testing (production: 2)
+    this.minFeedbackConfidence = 0.65; // Slightly lowered to capture more learning opportunities
+    this.promptUpdateThreshold = 1; // Allow updates after each positive feedback for faster learning
+    this.enhancedLearningMode = true; // Enable new domain-specific enhancements
+    
+    console.log('[CROWD WISDOM MANAGER] 🧠 Initialized with enhanced learning capabilities:', {
+      learningEnabled: this.learningEnabled,
+      minFeedbackConfidence: this.minFeedbackConfidence,
+      promptUpdateThreshold: this.promptUpdateThreshold,
+      enhancedLearningMode: this.enhancedLearningMode
+    });
   }
 
   /**
@@ -288,9 +296,13 @@ class CrowdWisdomManager {
       );
 
       if (shouldUpdate) {
-        await this.logEvent('INFO', 'Updating cluster prompt based on learning', {
+        await this.logEvent('INFO', '🎓 Triggering enhanced learning - building upon previous patterns', {
           clusterId: assignment.cluster_id,
           assignmentId,
+          enhancedLearningMode: this.enhancedLearningMode,
+          identifiedDomain: successFactors.identifiedDomain,
+          extractedTechniques: successFactors.teachingTechniques?.length || 0,
+          specificStrengths: successFactors.specificStrengths?.length || 0,
           sessionId,
           userId
         });
@@ -303,7 +315,7 @@ class CrowdWisdomManager {
           userId
         );
 
-        // Step 4: Log the learning event
+        // Step 4: Log the learning event with enhanced context
         await this.logLearningEvent(
           assignment.cluster_id,
           assignmentId,
@@ -313,11 +325,21 @@ class CrowdWisdomManager {
           sessionId
         );
 
+        console.log('[CROWD WISDOM MANAGER] 🌟 Enhanced learning completed successfully:', {
+          clusterId: assignment.cluster_id.substring(0, 8) + '...',
+          domain: successFactors.identifiedDomain,
+          techniques: successFactors.teachingTechniques?.slice(0, 2),
+          promptLength: promptUpdate?.length || 0,
+          confidenceScore: feedbackAnalysis.confidence
+        });
+
         return {
           clusterId: assignment.cluster_id,
           successFactors,
           promptUpdate,
-          learningEventLogged: true
+          learningEventLogged: true,
+          enhancedLearning: true,
+          domain: successFactors.identifiedDomain
         };
       } else {
         await this.logEvent('DEBUG', 'Cluster prompt update not needed at this time', {
@@ -350,7 +372,7 @@ class CrowdWisdomManager {
   }
 
   /**
-   * Analyze what factors made the response successful
+   * Analyze what factors made the response successful with enhanced detail
    * @param {string} feedbackText - User feedback
    * @param {string} responseText - AI response
    * @param {string} queryText - Original query
@@ -360,26 +382,55 @@ class CrowdWisdomManager {
    */
   async analyzeSuccessFactors(feedbackText, responseText, queryText, sessionId, userId) {
     try {
-      const prompt = `Analyze why this AI response was successful based on user feedback.
+      // Identify the domain for context-aware analysis
+      const domain = this.identifyDomain(queryText, '');
+      
+      const prompt = `You are an expert educational consultant analyzing a successful teaching interaction in the ${domain} domain.
 
-Query: "${queryText}"
-AI Response: "${responseText.substring(0, 1000)}..."
-User Feedback: "${feedbackText}"
+CONTEXT:
+- Subject Domain: ${domain}
+- Original Query: "${queryText}"
+- User's Positive Feedback: "${feedbackText}"
 
-Identify the key factors that made this response effective and suggest how to replicate this success for similar queries.
+AI RESPONSE TO ANALYZE:
+"${responseText.substring(0, 1200)}..."
 
-Respond with JSON:
+ANALYSIS TASK:
+Conduct a deep analysis of why this response was effective for ${domain} topics. Extract specific, actionable patterns that can be replicated.
+
+Respond with detailed JSON:
 {
   "successFactors": {
     "usedAnalogy": boolean,
     "clearStructure": boolean,
     "appropriateLevel": boolean,
     "goodExamples": boolean,
-    "stepByStep": boolean
+    "stepByStep": boolean,
+    "visualElements": boolean,
+    "realWorldApplications": boolean,
+    "conceptualConnections": boolean
   },
-  "specificStrengths": ["list specific things that worked well"],
-  "teachingTechniques": ["effective teaching methods used"],
-  "promptGuidance": "brief instruction for how AI should handle similar queries"
+  "specificStrengths": [
+    "Exactly what worked well - be specific about content, structure, examples, etc.",
+    "Focus on ${domain}-specific strengths"
+  ],
+  "teachingTechniques": [
+    "Specific pedagogical methods used effectively",
+    "Domain-appropriate teaching strategies"
+  ],
+  "domainSpecificApproaches": [
+    "What worked specifically for ${domain} topics",
+    "Subject-matter-specific techniques"
+  ],
+  "exampleTypes": [
+    "Types of examples that were effective",
+    "How examples were structured and presented"
+  ],
+  "promptGuidance": "Detailed instruction for how AI should handle similar ${domain} queries, incorporating the successful patterns identified",
+  "replicablePatterns": [
+    "Specific patterns that can be applied to other ${domain} questions",
+    "Structural or content approaches that worked"
+  ]
 }`;
 
       const response = await this.openai.chat.completions.create({
@@ -387,25 +438,48 @@ Respond with JSON:
         messages: [
           { 
             role: 'system', 
-            content: 'You are an expert educator analyzing successful teaching interactions to extract replicable patterns.' 
+            content: `You are an expert educational consultant specializing in ${domain} pedagogy. You analyze successful teaching interactions to extract detailed, domain-specific patterns that can improve future responses.` 
           },
           { role: 'user', content: prompt }
         ],
-        max_tokens: 400,
-        temperature: 0.1,
+        max_tokens: 600,
+        temperature: 0.05,
         response_format: { type: "json_object" }
       });
 
       const analysis = JSON.parse(response.choices[0].message.content);
       
-      await this.logEvent('DEBUG', 'Success factors analyzed', {
-        analysis,
+      // Ensure all expected fields exist with defaults
+      const enhancedAnalysis = {
+        successFactors: {
+          usedAnalogy: false,
+          clearStructure: false,
+          appropriateLevel: false,
+          goodExamples: false,
+          stepByStep: false,
+          visualElements: false,
+          realWorldApplications: false,
+          conceptualConnections: false,
+          ...analysis.successFactors
+        },
+        specificStrengths: analysis.specificStrengths || [],
+        teachingTechniques: analysis.teachingTechniques || [],
+        domainSpecificApproaches: analysis.domainSpecificApproaches || [],
+        exampleTypes: analysis.exampleTypes || [],
+        promptGuidance: analysis.promptGuidance || '',
+        replicablePatterns: analysis.replicablePatterns || [],
+        identifiedDomain: domain
+      };
+      
+      await this.logEvent('DEBUG', 'Enhanced success factors analyzed', {
+        domain,
+        analysis: enhancedAnalysis,
         tokensUsed: response.usage?.total_tokens || 0,
         sessionId,
         userId
       });
 
-      return analysis;
+      return enhancedAnalysis;
 
     } catch (error) {
       await this.logEvent('ERROR', 'Success factor analysis failed', {
@@ -420,11 +494,18 @@ Respond with JSON:
           clearStructure: false,
           appropriateLevel: false,
           goodExamples: false,
-          stepByStep: false
+          stepByStep: false,
+          visualElements: false,
+          realWorldApplications: false,
+          conceptualConnections: false
         },
         specificStrengths: [],
         teachingTechniques: [],
-        promptGuidance: ''
+        domainSpecificApproaches: [],
+        exampleTypes: [],
+        promptGuidance: '',
+        replicablePatterns: [],
+        identifiedDomain: 'unknown'
       };
     }
   }
@@ -495,10 +576,10 @@ Respond with JSON:
    */
   async updateClusterPrompt(clusterId, successFactors, responseText, sessionId, userId) {
     try {
-      // Get current prompt enhancement
+      // Get current cluster data including recent learning history
       const { data: cluster, error } = await supabase
         .from('crowd_wisdom_clusters')
-        .select('prompt_enhancement, representative_query')
+        .select('prompt_enhancement, representative_query, cluster_name')
         .eq('id', clusterId)
         .single();
 
@@ -511,21 +592,39 @@ Respond with JSON:
         return '';
       }
 
-      // Generate improved prompt enhancement
-      const newPromptEnhancement = await this.generatePromptEnhancement(
+      // Get recent learning patterns for this cluster to build upon
+      const { data: recentLearning, error: learningError } = await supabase
+        .from('crowd_wisdom_learning_logs')
+        .select('extracted_patterns, prompt_update, created_at')
+        .eq('cluster_id', clusterId)
+        .order('created_at', { ascending: false })
+        .limit(3); // Get last 3 learning events
+
+      if (learningError) {
+        await this.logEvent('WARN', 'Failed to get recent learning history', {
+          error: learningError.message,
+          clusterId,
+          sessionId
+        });
+      }
+
+      // Generate enhanced prompt building upon previous learning
+      const enhancedPrompt = await this.generateEnhancedPromptTemplate(
         cluster.representative_query,
+        cluster.cluster_name,
         cluster.prompt_enhancement,
         successFactors,
         responseText,
+        recentLearning || [],
         sessionId,
         userId
       );
 
-      // Update cluster with new prompt enhancement
+      // Update cluster with enhanced prompt
       const { error: updateError } = await supabase
         .from('crowd_wisdom_clusters')
         .update({
-          prompt_enhancement: newPromptEnhancement,
+          prompt_enhancement: enhancedPrompt,
           updated_at: new Date().toISOString()
         })
         .eq('id', clusterId);
@@ -539,15 +638,16 @@ Respond with JSON:
         return cluster.prompt_enhancement || '';
       }
 
-      await this.logEvent('INFO', 'Cluster prompt updated successfully', {
+      await this.logEvent('INFO', 'Cluster prompt enhanced successfully', {
         clusterId,
         previousPromptLength: cluster.prompt_enhancement?.length || 0,
-        newPromptLength: newPromptEnhancement.length,
+        newPromptLength: enhancedPrompt.length,
+        learningEventsConsidered: recentLearning?.length || 0,
         sessionId,
         userId
       });
 
-      return newPromptEnhancement;
+      return enhancedPrompt;
 
     } catch (error) {
       await this.logEvent('ERROR', 'Error updating cluster prompt', {
@@ -561,64 +661,190 @@ Respond with JSON:
   }
 
   /**
-   * Generate new prompt enhancement based on successful patterns
+   * Generate enhanced prompt template that builds upon previous learning
    * @param {string} representativeQuery - Cluster's representative query
+   * @param {string} clusterName - Name/theme of the cluster
    * @param {string} currentPrompt - Current prompt enhancement
    * @param {Object} successFactors - Success factors analysis
    * @param {string} successfulResponse - The successful response
+   * @param {Array} recentLearning - Recent learning events for this cluster
    * @param {string} sessionId - Session ID
    * @param {string} userId - User ID
-   * @returns {Promise<string>} - New prompt enhancement
+   * @returns {Promise<string>} - Enhanced prompt template
    */
-  async generatePromptEnhancement(representativeQuery, currentPrompt, successFactors, successfulResponse, sessionId, userId) {
+  async generateEnhancedPromptTemplate(representativeQuery, clusterName, currentPrompt, successFactors, successfulResponse, recentLearning, sessionId, userId) {
     try {
-      const prompt = `Create an improved prompt enhancement for queries similar to: "${representativeQuery}"
+      // Extract domain/subject from representative query and cluster name
+      const domain = this.identifyDomain(representativeQuery, clusterName);
+      
+      // Compile previous learning patterns
+      const previousPatterns = recentLearning.map(log => ({
+        techniques: log.extracted_patterns?.teachingTechniques || [],
+        strengths: log.extracted_patterns?.specificStrengths || [],
+        guidance: log.extracted_patterns?.promptGuidance || ''
+      }));
 
-Current prompt enhancement: "${currentPrompt || 'None'}"
+      // Build comprehensive learning history
+      const learningHistory = previousPatterns.length > 0 
+        ? `Previous successful patterns from this cluster:
+${previousPatterns.map((p, i) => `
+Learning Event ${i + 1}:
+- Teaching Techniques: ${p.techniques.join('; ')}
+- What Worked: ${p.strengths.slice(0, 2).join('; ')}
+- Guidance: ${p.guidance}
+`).join('')}` 
+        : 'No previous learning history for this cluster.';
 
-Based on this successful interaction analysis:
+      const prompt = `You are creating a domain-specific prompt enhancement for an AI assistant that specializes in ${domain} topics.
+
+CLUSTER CONTEXT:
+- Domain: ${domain}
+- Representative Query: "${representativeQuery}"
+- Cluster Theme: ${clusterName || 'General'}
+
+CURRENT PROMPT ENHANCEMENT:
+"${currentPrompt || 'None - this is the first enhancement for this cluster'}"
+
+LATEST SUCCESS ANALYSIS:
 ${JSON.stringify(successFactors, null, 2)}
 
-Successful response excerpt: "${successfulResponse.substring(0, 500)}..."
+SUCCESSFUL RESPONSE TECHNIQUES (excerpt):
+"${successfulResponse.substring(0, 800)}..."
 
-Generate a concise prompt enhancement (2-3 sentences max) that instructs the AI on how to handle similar queries effectively. Focus on the specific techniques that worked well.
+${learningHistory}
 
-The enhancement should be actionable and specific to this type of query.`;
+TASK: Create an enhanced prompt template that:
+1. BUILDS UPON the current enhancement (don't replace, enhance)
+2. Incorporates the specific teaching techniques that worked
+3. Is tailored to ${domain} subject matter
+4. Uses the detailed patterns from successful interactions
+5. Provides actionable, specific guidance for similar queries
+
+Format as a cohesive prompt enhancement that preserves previous learning while adding new insights. Focus on domain-specific teaching approaches that work for ${domain} topics.
+
+Maximum 4-5 sentences. Be specific, not generic.`;
 
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [
           { 
             role: 'system', 
-            content: 'You are an expert at creating concise, actionable prompt enhancements that improve AI responses based on successful patterns.' 
+            content: 'You are an expert educational consultant who creates domain-specific teaching prompts. You build upon existing knowledge rather than replacing it, and you focus on specific techniques that work for particular subject areas.' 
           },
           { role: 'user', content: prompt }
         ],
-        max_tokens: 150,
-        temperature: 0.2
+        max_tokens: 250,
+        temperature: 0.1
       });
 
-      const enhancement = response.choices[0].message.content.trim();
+      const enhancedTemplate = response.choices[0].message.content.trim();
       
-      await this.logEvent('DEBUG', 'Prompt enhancement generated', {
+      await this.logEvent('DEBUG', 'Enhanced prompt template generated', {
+        domain,
         representativeQuery: representativeQuery.substring(0, 100),
         currentPromptLength: currentPrompt?.length || 0,
-        newPromptLength: enhancement.length,
+        enhancedTemplateLength: enhancedTemplate.length,
+        previousLearningEvents: recentLearning.length,
         tokensUsed: response.usage?.total_tokens || 0,
         sessionId,
         userId
       });
 
-      return enhancement;
+      return enhancedTemplate;
 
     } catch (error) {
-      await this.logEvent('ERROR', 'Failed to generate prompt enhancement', {
+      await this.logEvent('ERROR', 'Failed to generate enhanced prompt template', {
         error: error.message,
         sessionId,
         userId
       });
       return currentPrompt || '';
     }
+  }
+
+  /**
+   * Identify the domain/subject area from query and cluster context
+   * @param {string} representativeQuery - The representative query
+   * @param {string} clusterName - Cluster name/theme
+   * @returns {string} - Identified domain
+   */
+  identifyDomain(representativeQuery, clusterName) {
+    const text = (representativeQuery + ' ' + (clusterName || '')).toLowerCase();
+    
+    // Enhanced domain keywords mapping with priority weights
+    const domains = {
+      'mathematics': {
+        keywords: ['math', 'calculus', 'algebra', 'geometry', 'derivative', 'integral', 'equation', 'theorem', 'formula', 'statistics', 'trigonometry', 'logarithm', 'matrix', 'vector'],
+        priority: 1
+      },
+      'signal processing': {
+        keywords: ['signal', 'frequency', 'fourier', 'transform', 'filter', 'audio', 'processing', 'spectrum', 'fft', 'frequency domain', 'time domain'],
+        priority: 2 // Higher priority for specific domains
+      },
+      'computer science': {
+        keywords: ['programming', 'algorithm', 'data structure', 'software', 'code', 'computing', 'database', 'ai', 'machine learning', 'python', 'javascript', 'programming language'],
+        priority: 1
+      },
+      'physics': {
+        keywords: ['physics', 'quantum', 'mechanics', 'energy', 'force', 'momentum', 'wave', 'particle', 'electromagnetic', 'thermodynamics', 'relativity'],
+        priority: 1
+      },
+      'engineering': {
+        keywords: ['engineering', 'circuit', 'system design', 'mechanical', 'electrical', 'structural', 'control system', 'automation'],
+        priority: 1
+      },
+      'cloud computing': {
+        keywords: ['aws', 'gcp', 'azure', 'cloud', 'kubernetes', 'docker', 'serverless', 'microservices', 'devops'],
+        priority: 2
+      },
+      'blockchain': {
+        keywords: ['blockchain', 'cryptocurrency', 'bitcoin', 'ethereum', 'smart contract', 'decentralized', 'web3', 'crypto'],
+        priority: 2
+      },
+      'biology': {
+        keywords: ['biology', 'cell', 'dna', 'protein', 'organism', 'evolution', 'genetics', 'molecular', 'ecosystem'],
+        priority: 1
+      },
+      'chemistry': {
+        keywords: ['chemistry', 'molecule', 'reaction', 'compound', 'element', 'bond', 'catalyst', 'organic', 'inorganic'],
+        priority: 1
+      },
+      'data science': {
+        keywords: ['data science', 'analytics', 'visualization', 'pandas', 'numpy', 'statistics', 'data analysis', 'big data'],
+        priority: 2
+      }
+    };
+
+    // Find the domain with the best weighted score
+    let maxScore = 0;
+    let identifiedDomain = 'general academic';
+    let detectedKeywords = [];
+
+    for (const [domain, config] of Object.entries(domains)) {
+      const matches = config.keywords.filter(keyword => text.includes(keyword));
+      const score = matches.length * config.priority;
+      
+      if (score > maxScore) {
+        maxScore = score;
+        identifiedDomain = domain;
+        detectedKeywords = matches;
+      }
+    }
+
+    // If no strong domain match, try to identify based on question type
+    if (maxScore === 0) {
+      if (text.includes('explain') || text.includes('what is') || text.includes('how does')) {
+        if (text.includes('work') || text.includes('function')) {
+          identifiedDomain = 'technical explanation';
+        } else {
+          identifiedDomain = 'conceptual explanation';
+        }
+      }
+    }
+
+    console.log(`[DOMAIN IDENTIFICATION] Query: "${representativeQuery.substring(0, 60)}..." → Domain: ${identifiedDomain} (keywords: ${detectedKeywords.join(', ')})`);
+
+    return identifiedDomain;
   }
 
   /**
@@ -774,25 +1000,57 @@ The enhancement should be actionable and specific to this type of query.`;
   }
 
   /**
-   * Log learning event to database
+   * Log learning event to database with previous prompt enhancement
    * @param {string} clusterId - Cluster ID
    * @param {string} assignmentId - Assignment ID
    * @param {Object} successFactors - Success factors
-   * @param {string} promptUpdate - Prompt update
+   * @param {string} promptUpdate - New prompt update
    * @param {number} confidence - Confidence score
    * @param {string} sessionId - Session ID
    * @returns {Promise<boolean>} - Success status
    */
   async logLearningEvent(clusterId, assignmentId, successFactors, promptUpdate, confidence, sessionId) {
     try {
+      // Get the previous prompt enhancement to track learning progression
+      const { data: cluster, error: clusterError } = await supabase
+        .from('crowd_wisdom_clusters')
+        .select('prompt_enhancement')
+        .eq('id', clusterId)
+        .single();
+
+      if (clusterError) {
+        await this.logEvent('WARN', 'Could not retrieve previous prompt for learning log', {
+          error: clusterError.message,
+          clusterId,
+          sessionId
+        });
+      }
+
+      // Get the associated response text for this learning event
+      const { data: assignment, error: assignmentError } = await supabase
+        .from('crowd_wisdom_query_assignments')
+        .select('response_text')
+        .eq('id', assignmentId)
+        .single();
+
+      if (assignmentError) {
+        await this.logEvent('WARN', 'Could not retrieve response text for learning log', {
+          error: assignmentError.message,
+          assignmentId,
+          sessionId
+        });
+      }
+
       const { error } = await supabase
         .from('crowd_wisdom_learning_logs')
         .insert([
           {
             cluster_id: clusterId,
             query_assignment_id: assignmentId,
+            successful_response: assignment?.response_text || null,
             extracted_patterns: successFactors,
             prompt_update: promptUpdate,
+            previous_prompt_enhancement: cluster?.prompt_enhancement || null,
             confidence_score: confidence,
             learning_trigger: 'positive_feedback'
           }
@@ -808,10 +1066,13 @@ The enhancement should be actionable and specific to this type of query.`;
         return false;
       }
 
-      await this.logEvent('DEBUG', 'Learning event logged successfully', {
+      await this.logEvent('DEBUG', 'Learning event logged with full context', {
         clusterId,
         assignmentId,
         confidence,
+        hasPreviousPrompt: !!(cluster?.prompt_enhancement),
+        hasResponseText: !!(assignment?.response_text),
+        extractedPatternsKeys: Object.keys(successFactors || {}),
         sessionId
       });
 
