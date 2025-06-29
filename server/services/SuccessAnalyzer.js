@@ -280,6 +280,60 @@ Respond with only a JSON object containing:
     return combinedConfidence;
   }
 
+  /**
+   * Update query assignment with feedback results
+   * @param {string} assignmentId - Assignment ID
+   * @param {Object} feedbackAnalysis - Feedback analysis result
+   * @param {string} sessionId - Session ID
+   * @returns {Promise<boolean>} - Success status
+   */
+  async updateQueryAssignmentWithFeedback(assignmentId, feedbackAnalysis, sessionId) {
+    try {
+      await this.logEvent('DEBUG', 'Updating query assignment with feedback results', {
+        assignmentId,
+        isPositive: feedbackAnalysis.isPositive,
+        confidence: feedbackAnalysis.confidence,
+        method: feedbackAnalysis.method,
+        sessionId
+      });
+
+      // Update the query assignment with feedback data
+      const { error } = await supabase
+        .from('crowd_wisdom_query_assignments')
+        .update({
+          user_feedback_positive: feedbackAnalysis.isPositive,
+          feedback_confidence: feedbackAnalysis.confidence
+        })
+        .eq('id', assignmentId);
+
+      if (error) {
+        await this.logEvent('ERROR', 'Failed to update query assignment with feedback', {
+          error: error.message,
+          assignmentId,
+          sessionId
+        });
+        return false;
+      }
+
+      await this.logEvent('INFO', 'Query assignment updated successfully with feedback', {
+        assignmentId,
+        isPositive: feedbackAnalysis.isPositive,
+        confidence: feedbackAnalysis.confidence,
+        sessionId
+      });
+
+      return true;
+
+    } catch (error) {
+      await this.logEvent('ERROR', 'Error updating query assignment with feedback', {
+        error: error.message,
+        assignmentId,
+        sessionId
+      });
+      return false;
+    }
+  }
+
   async logEvent(level, message, metadata = {}) {
     try {
       await supabase.rpc('log_crowd_wisdom_event', {

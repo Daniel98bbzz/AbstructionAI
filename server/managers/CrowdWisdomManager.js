@@ -14,7 +14,7 @@ class CrowdWisdomManager {
     // Configuration  
     this.learningEnabled = true;
     this.minFeedbackConfidence = 0.7; // Reset to production value
-    this.promptUpdateThreshold = 2; // Reasonable production value
+    this.promptUpdateThreshold = 1; // Temporarily reduced for testing (production: 2)
   }
 
   /**
@@ -459,7 +459,7 @@ Respond with JSON:
       // Check if it's been a while since last update
       const lastUpdate = new Date(cluster.updated_at);
       const daysSinceUpdate = (Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24);
-      const hasBeenAWhile = daysSinceUpdate >= 0.5; // 12 hours - reasonable production value
+      const hasBeenAWhile = daysSinceUpdate >= 0; // Temporarily removed for testing (production: 0.5 = 12 hours)
 
       const shouldUpdate = hasEnoughSuccesses && hasBeenAWhile;
 
@@ -700,37 +700,63 @@ The enhancement should be actionable and specific to this type of query.`;
         .eq('id', assignmentId)
         .single();
 
-      if (assignmentError) return false;
-
-      // Increment cluster success count
-      const { error: updateError } = await supabase.rpc('increment_cluster_success', {
-        cluster_id: assignment.cluster_id
-      });
-
-      if (updateError) {
-        // Fallback to manual update
-        const { error: fallbackError } = await supabase
-          .from('crowd_wisdom_clusters')
-          .update({
-            success_count: supabase.raw('success_count + 1'),
-            success_rate: supabase.raw('success_count::float / total_queries'),
-            last_success_at: new Date().toISOString()
-          })
-          .eq('id', assignment.cluster_id);
-
-        if (fallbackError) {
-          await this.logEvent('ERROR', 'Failed to increment cluster success count', {
-            error: fallbackError.message,
-            clusterId: assignment.cluster_id,
-            assignmentId,
-            sessionId
-          });
-          return false;
-        }
+      if (assignmentError) {
+        await this.logEvent('ERROR', 'Failed to get cluster ID for success count increment', {
+          error: assignmentError.message,
+          assignmentId,
+          sessionId
+        });
+        return false;
       }
 
-      await this.logEvent('DEBUG', 'Cluster success count incremented', {
+      // Get current cluster data first
+      const { data: currentCluster, error: selectError } = await supabase
+        .from('crowd_wisdom_clusters')
+        .select('success_count, total_queries')
+        .eq('id', assignment.cluster_id)
+        .single();
+
+      if (selectError) {
+        await this.logEvent('ERROR', 'Failed to get current cluster data for increment', {
+          error: selectError.message,
+          clusterId: assignment.cluster_id,
+          assignmentId,
+          sessionId
+        });
+        return false;
+      }
+
+      // Calculate new values
+      const newSuccessCount = (currentCluster.success_count || 0) + 1;
+      const newSuccessRate = currentCluster.total_queries > 0 
+        ? newSuccessCount / currentCluster.total_queries 
+        : 0;
+
+      // Update cluster with incremented success count
+      const { error: updateError } = await supabase
+        .from('crowd_wisdom_clusters')
+        .update({
+          success_count: newSuccessCount,
+          success_rate: newSuccessRate,
+          last_success_at: new Date().toISOString()
+        })
+        .eq('id', assignment.cluster_id);
+
+      if (updateError) {
+        await this.logEvent('ERROR', 'Failed to increment cluster success count', {
+          error: updateError.message,
+          clusterId: assignment.cluster_id,
+          assignmentId,
+          sessionId
+        });
+        return false;
+      }
+
+      await this.logEvent('INFO', 'Cluster success count incremented successfully', {
         clusterId: assignment.cluster_id,
+        previousSuccessCount: currentCluster.success_count || 0,
+        newSuccessCount: newSuccessCount,
+        newSuccessRate: newSuccessRate.toFixed(2),
         assignmentId,
         sessionId
       });
