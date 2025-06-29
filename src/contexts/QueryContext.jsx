@@ -14,14 +14,7 @@ export function QueryProvider({ children }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [currentSession, setCurrentSession] = useState(() => {
-    // Try to load session from localStorage on init
-    if (user) {
-      const savedSession = localStorage.getItem(`currentSession_${user.id}`);
-      return savedSession ? JSON.parse(savedSession) : null;
-    }
-    return null;
-  });
+  const [currentSession, setCurrentSession] = useState(null);
   const [currentResponse, setCurrentResponse] = useState(null);
   const [messageHistory, setMessageHistory] = useState(() => {
     // Try to load message history from localStorage on init
@@ -32,135 +25,74 @@ export function QueryProvider({ children }) {
     return [];
   });
   
-  // Save session to localStorage whenever it changes
-  useEffect(() => {
-    if (user && currentSession) {
-      localStorage.setItem(`currentSession_${user.id}`, JSON.stringify(currentSession));
-      // Also save just the session ID for easy access
-      localStorage.setItem(`sessionId_${user.id}`, currentSession.id);
-    } else if (user) {
-      localStorage.removeItem(`currentSession_${user.id}`);
-      localStorage.removeItem(`sessionId_${user.id}`);
-    }
-  }, [currentSession, user]);
-  
   // Save message history to localStorage whenever it changes
   useEffect(() => {
-    if (user && messageHistory && messageHistory.length > 0) {
+    if (user && messageHistory.length > 0) {
       localStorage.setItem(`messageHistory_${user.id}`, JSON.stringify(messageHistory));
     } else if (user) {
       localStorage.removeItem(`messageHistory_${user.id}`);
     }
   }, [messageHistory, user]);
 
-  // Load user-specific data when user changes
-  useEffect(() => {
-    if (user) {
-      // Load session
-      const savedSession = localStorage.getItem(`currentSession_${user.id}`);
-      if (savedSession) {
-        setCurrentSession(JSON.parse(savedSession));
-      } else {
-        setCurrentSession(null);
-      }
-      
-      // Load message history
-      const savedMessages = localStorage.getItem(`messageHistory_${user.id}`);
-      if (savedMessages) {
-        setMessageHistory(JSON.parse(savedMessages));
-      } else {
-        setMessageHistory([]);
-      }
-    } else {
-      // Clear state when user logs out
-      setCurrentSession(null);
-      setMessageHistory([]);
-    }
-  }, [user?.id]);
+  // Add user message to history
+  const addUserMessage = (message) => {
+    const userMessage = {
+      role: 'user',
+      content: message,
+      timestamp: new Date().toISOString()
+    };
+    setMessageHistory(prev => [...prev, userMessage]);
+  };
 
-  // Ensure user exists in the users table
+  // Ensure user exists in database
   const ensureUserExists = async () => {
-    if (!user) return;
+    if (!user) return false;
     
     try {
-      // Check if user exists in users table
-      const { data: existingUser, error: checkError } = await supabase
+      const { data, error } = await supabase
         .from('users')
         .select('id')
         .eq('id', user.id)
         .single();
         
-      if (checkError && checkError.code !== 'PGRST116') {
-        console.error('Error checking if user exists:', checkError);
-        // Continue anyway - the trigger should handle user creation
+      if (error && error.code === 'PGRST116') {
+        // User doesn't exist, create them
+        const { error: insertError } = await supabase
+          .from('users')
+          .insert([
+            { 
+              id: user.id,
+              email: user.email || '',
+              created_at: new Date().toISOString()
+            }
+          ]);
+          
+        if (insertError) throw insertError;
+        console.log('Created new user in database:', user.id);
       }
       
-      // If user doesn't exist, create a new user record
-      if (!existingUser) {
-        // Use RPC call to bypass RLS
-        const { error: insertError } = await supabase.rpc('create_user_record', {
-          user_id: user.id,
-          first_name: user.user_metadata?.first_name || '',
-          last_name: user.user_metadata?.last_name || '',
-          field_study: user.user_metadata?.field_of_study || '',
-          education_lvl: user.user_metadata?.education_level || ''
-        });
-        
-        if (insertError) {
-          console.error('Error creating user via RPC:', insertError);
-          // Fall back to direct insert
-          const { error: directInsertError } = await supabase
-            .from('users')
-            .insert([
-              { 
-                id: user.id,
-                first_name: user.user_metadata?.first_name || '',
-                last_name: user.user_metadata?.last_name || '',
-                field_of_study: user.user_metadata?.field_of_study || '',
-                education_level: user.user_metadata?.education_level || ''
-              }
-            ]);
-            
-          if (directInsertError) throw directInsertError;
-        }
-      }
+      return true;
     } catch (err) {
       console.error('Error ensuring user exists:', err);
-      // Don't throw the error - try to continue with the session creation
+      return false;
     }
   };
 
-  // Submit a query to the AI
-  const submitQuery = async (query, preferences = {}, sessionId = null) => {
+  // Submit a query to the AI with conversation-specific session
+  const submitQuery = async (query, preferences = {}, conversationSessionId = null) => {
     try {
       setLoading(true);
       setError(null);
       
-      // Add user logging to debug session persistence
-      const savedSessionId = user ? localStorage.getItem(`sessionId_${user.id}`) : null;
-      const currentSessionId = sessionId || currentSession?.id || savedSessionId;
-      
-      console.log('[FRONTEND DEBUG] Submitting query with session info:', {
-        currentSessionId,
-        savedSessionId,
-        hasCurrentSession: !!currentSession,
+      console.log('[FRONTEND DEBUG] Submitting query with conversation session:', {
+        conversationSessionId,
+        hasSession: !!conversationSessionId,
         userId: user?.id
       });
       
-      // Get or create a session if needed
-      if (!currentSession && !currentSessionId) {
-        try {
-          console.log('[FRONTEND DEBUG] No active session, creating a new one');
-          const newSession = await startNewSession(preferences);
-          console.log('[FRONTEND DEBUG] Created new session:', newSession?.id);
-        } catch (sessionError) {
-          console.error('Error creating session:', sessionError);
-          // Continue with query without a session as fallback
-        }
-      } else {
-        console.log(`[FRONTEND DEBUG] Using existing session: ${currentSessionId}`);
-      }
-      
+      // Add user message to history
+      addUserMessage(query);
+
       // Format query request for backend API
       let responseData;
       try {
@@ -170,13 +102,12 @@ export function QueryProvider({ children }) {
           email: user.email || 'not available'
         } : 'not logged in');
         
-        const effectiveSessionId = sessionId || currentSession?.id || (user ? localStorage.getItem(`sessionId_${user.id}`) : null);
-        console.log(`[FRONTEND DEBUG] Effective session ID for API call: ${effectiveSessionId}`);
+        console.log(`[FRONTEND DEBUG] Using conversation session ID for API call: ${conversationSessionId}`);
         
         try {
           const response = await axios.post(`${API_URL}/api/query`, {
             query,
-            sessionId: effectiveSessionId, 
+            sessionId: conversationSessionId, // Use conversation-specific session ID
             preferences,
             userId: user?.id  // Explicitly include user ID
           });
@@ -192,37 +123,29 @@ export function QueryProvider({ children }) {
           };
           setMessageHistory(prev => [...prev, aiMessage]);
           
-          // Set current session if not already set
-          if (responseData.sessionId && (!currentSession || currentSession.id !== responseData.sessionId)) {
-            setCurrentSession({ id: responseData.sessionId });
-            // Also save to localStorage for persistence
-            if (user) {
-              localStorage.setItem(`sessionId_${user.id}`, responseData.sessionId);
-              localStorage.setItem(`currentSession_${user.id}`, JSON.stringify({ id: responseData.sessionId }));
-            }
-          }
-        } catch (axiosError) {
-          console.error('Axios error details:', {
-            message: axiosError.message,
-            status: axiosError.response?.status,
-            statusText: axiosError.response?.statusText,
-            data: axiosError.response?.data
+          // Don't update currentSession since sessions are conversation-specific now
+          console.log('[FRONTEND DEBUG] Query processed with conversation session:', {
+            responseSessionId: responseData.sessionId,
+            conversationSessionId
           });
           
-          // Show more detailed error to help debugging
-          throw new Error(`API request failed: ${axiosError.message}${axiosError.response?.data?.error ? ` - ${axiosError.response.data.error}` : ''}`);
+        } catch (axiosError) {
+          console.error('Error with axios request:', axiosError);
+          // Re-throw the error to be handled by the outer catch block
+          throw axiosError;
         }
-      } catch (err) {
-        console.error('Error calling backend API:', err);
-        console.error('Error details:', err.response?.data || err.message);
-        throw err;
+        
+      } catch (apiError) {
+        console.error('API Error details:', apiError);
+        throw apiError;
       }
-      
+
       setCurrentResponse(responseData);
       return responseData;
+
     } catch (err) {
       console.error('Error submitting query:', err);
-      setError('Failed to process query. Please try again.');
+      setError('Failed to get response. Please try again.');
       throw err;
     } finally {
       setLoading(false);
@@ -972,7 +895,7 @@ export function QueryProvider({ children }) {
     }
   };
 
-  // Start a new learning session
+  // Start a new learning session (Legacy - sessions are now conversation-specific)
   const startNewSession = async (preferences = {}) => {
     try {
       setLoading(true);
@@ -985,22 +908,7 @@ export function QueryProvider({ children }) {
       // Ensure user exists in the database
       await ensureUserExists();
       
-      // End current session if exists
-      if (currentSession) {
-        try {
-          const { error: directUpdateError } = await supabase
-            .from('sessions')
-            .update({ status: 'completed' })
-            .eq('id', currentSession.id);
-            
-          if (directUpdateError) throw directUpdateError;
-        } catch (err) {
-          console.error('Error ending session:', err);
-          // Continue anyway
-        }
-      }
-      
-      // Create new session
+      // Create new session in database (for legacy compatibility)
       try {
         const { data, error } = await supabase
           .from('sessions')
@@ -1017,6 +925,8 @@ export function QueryProvider({ children }) {
         if (error) throw error;
         setCurrentSession(data);
         setCurrentResponse(null);
+        
+        console.log('[FRONTEND DEBUG] Created legacy session:', data.id);
         return data;
       } catch (err) {
         console.error('Error creating session:', err);
@@ -1042,8 +952,6 @@ export function QueryProvider({ children }) {
     
     // Clear localStorage items related to chat
     if (user) {
-      localStorage.removeItem(`currentSession_${user.id}`);
-      localStorage.removeItem(`sessionId_${user.id}`);
       localStorage.removeItem(`messageHistory_${user.id}`);
     }
   };
