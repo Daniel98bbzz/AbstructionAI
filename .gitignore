@@ -9,3 +9,4 @@ mcp.json
 .cursor
 **/.cursor
 *.cursor
+.mcp.json
