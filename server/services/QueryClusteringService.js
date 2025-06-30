@@ -326,12 +326,25 @@ class QueryClusteringService {
         console.log('[CROWD WISDOM CLUSTERING] ✅ Similarity above threshold - assigning to existing cluster');
         console.log('[CROWD WISDOM CLUSTERING] 🔄 Updating cluster centroid with new embedding...');
         
-        // Update cluster centroid with new embedding
-        await this.updateClusterCentroid(bestMatch.id, queryEmbedding, sessionId);
+        // 🎯 FIX: Check if this is an instructional query vs follow-up before updating metrics
+        console.log('[CROWD WISDOM CLUSTERING] 🔍 Analyzing query type for success rate calculation...');
+        const isInstructional = await this.isInstructionalQuery(queryText, queryEmbedding, sessionId, userId);
+        
+        console.log('[CROWD WISDOM CLUSTERING] 📊 Query classification result:', {
+          queryText: queryText.substring(0, 60) + '...',
+          classification: isInstructional ? 'INSTRUCTIONAL' : 'FOLLOW-UP',
+          willIncrementTotalQueries: isInstructional,
+          clusterId: bestMatch.id.substring(0, 8) + '...',
+          sessionId
+        });
+        
+        // Update cluster centroid with new embedding - only increment total_queries for instructional queries
+        await this.updateClusterCentroid(bestMatch.id, queryEmbedding, sessionId, isInstructional);
         
         console.log('[CROWD WISDOM CLUSTERING] 🎉 Query successfully assigned to existing cluster:', {
           clusterId: bestMatch.id.substring(0, 8) + '...',
           similarity: bestMatch.similarity,
+          queryType: isInstructional ? 'INSTRUCTIONAL' : 'FOLLOW-UP',
           promptEnhancement: bestMatch.promptEnhancement ? 'Present' : 'None'
         });
         
@@ -470,13 +483,15 @@ class QueryClusteringService {
    * @param {string} clusterId - Cluster ID
    * @param {Array} newEmbedding - New embedding to incorporate
    * @param {string} sessionId - Session ID
+   * @param {boolean} shouldIncrementQueries - Whether to increment total_queries (only for instructional queries)
    * @returns {Promise<boolean>} - Success status
    */
-  async updateClusterCentroid(clusterId, newEmbedding, sessionId) {
+  async updateClusterCentroid(clusterId, newEmbedding, sessionId, shouldIncrementQueries = true) {
     try {
       await this.logEvent('DEBUG', 'Updating cluster centroid', {
         clusterId,
-        sessionId
+        sessionId,
+        shouldIncrementQueries
       });
 
       // Get current cluster data
@@ -518,14 +533,31 @@ class QueryClusteringService {
         value * (1 - this.centroidUpdateRate) + newEmbedding[index] * this.centroidUpdateRate
       );
 
-      // Update cluster with new centroid and increment total queries
+      // Prepare update object - only increment total_queries for instructional queries
+      const updateData = {
+        centroid_embedding: newCentroid,
+        updated_at: new Date().toISOString()
+      };
+
+      if (shouldIncrementQueries) {
+        updateData.total_queries = cluster.total_queries + 1;
+        console.log('[CROWD WISDOM CLUSTERING] ✅ Incrementing total_queries for INSTRUCTIONAL query:', {
+          clusterId: clusterId.substring(0, 8) + '...',
+          previousCount: cluster.total_queries,
+          newCount: cluster.total_queries + 1
+        });
+      } else {
+        console.log('[CROWD WISDOM CLUSTERING] ⏭️ Skipping total_queries increment for FOLLOW-UP query:', {
+          clusterId: clusterId.substring(0, 8) + '...',
+          currentCount: cluster.total_queries,
+          reason: 'Query classified as follow-up, not instructional'
+        });
+      }
+
+      // Update cluster with new centroid and conditionally increment total queries
       const { error: updateError } = await supabase
         .from('crowd_wisdom_clusters')
-        .update({
-          centroid_embedding: newCentroid,
-          total_queries: cluster.total_queries + 1,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', clusterId);
 
       if (updateError) {
@@ -539,7 +571,8 @@ class QueryClusteringService {
 
       await this.logEvent('DEBUG', 'Cluster centroid updated successfully', {
         clusterId,
-        totalQueries: cluster.total_queries + 1,
+        totalQueries: shouldIncrementQueries ? cluster.total_queries + 1 : cluster.total_queries,
+        incrementedQueries: shouldIncrementQueries,
         updateRate: this.centroidUpdateRate,
         sessionId
       });
@@ -901,6 +934,280 @@ class QueryClusteringService {
     } catch (error) {
       console.error('[QueryClusteringService] Failed to log event:', error);
     }
+  }
+
+  /**
+   * Detect if a query is a new instructional query or a follow-up in the same session
+   * @param {string} queryText - Current query text
+   * @param {Array} queryEmbedding - Current query embedding
+   * @param {string} sessionId - Session ID
+   * @param {string} userId - User ID
+   * @returns {Promise<boolean>} - True if instructional, false if follow-up
+   */
+  async isInstructionalQuery(queryText, queryEmbedding, sessionId, userId) {
+    try {
+      // Get recent queries from the same session (last 30 minutes)
+      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      
+      const { data: recentQueries, error } = await supabase
+        .from('crowd_wisdom_query_assignments')
+        .select('query_text, query_embedding, created_at')
+        .eq('session_id', sessionId)
+        .gte('created_at', thirtyMinutesAgo)
+        .order('created_at', { ascending: false })
+        .limit(5); // Check last 5 queries max
+
+      if (error) {
+        console.log('[CROWD WISDOM CLUSTERING] ⚠️ Error fetching recent queries, assuming instructional:', error.message);
+        await this.logEvent('WARN', 'Error fetching recent queries for instructional detection', {
+          error: error.message,
+          sessionId,
+          userId
+        });
+        return true; // Default to instructional if we can't check
+      }
+
+      // If no recent queries, this is definitely instructional
+      if (!recentQueries || recentQueries.length === 0) {
+        console.log('[CROWD WISDOM CLUSTERING] ✅ No recent queries in session - marking as INSTRUCTIONAL');
+        await this.logEvent('DEBUG', 'No recent queries found - classified as instructional', {
+          sessionId,
+          userId
+        });
+        return true;
+      }
+
+      console.log('[CROWD WISDOM CLUSTERING] 🔍 Analyzing query type against recent session queries:', {
+        currentQuery: queryText.substring(0, 50) + '...',
+        recentQueriesCount: recentQueries.length,
+        sessionId
+      });
+
+      // Check each recent query for follow-up patterns
+      for (const recentQuery of recentQueries) {
+        const timeDiff = Date.now() - new Date(recentQuery.created_at).getTime();
+        const minutesAgo = Math.floor(timeDiff / (1000 * 60));
+
+        // If recent query is within 10 minutes, check for follow-up patterns
+        if (minutesAgo <= 10) {
+          // Check semantic similarity if embeddings exist
+          let similarity = 0;
+          if (recentQuery.query_embedding) {
+            let recentEmbedding = recentQuery.query_embedding;
+            if (typeof recentEmbedding === 'string') {
+              try {
+                recentEmbedding = JSON.parse(recentEmbedding);
+              } catch (e) {
+                console.log('[CROWD WISDOM CLUSTERING] ⚠️ Failed to parse recent query embedding');
+                continue;
+              }
+            }
+            
+            if (Array.isArray(recentEmbedding) && recentEmbedding.length === queryEmbedding.length) {
+              similarity = await this.cosineUtils.calculateCosineSimilarity(queryEmbedding, recentEmbedding);
+            }
+          }
+
+          // Check for textual follow-up patterns
+          const isHighSimilarity = similarity > 0.6; // Lowered from 0.8 - more realistic threshold
+          const hasFollowUpKeywords = this.hasFollowUpKeywords(queryText, recentQuery.query_text);
+          const isRecentlyAsked = minutesAgo <= 5; // Within 5 minutes
+          
+          console.log('[CROWD WISDOM CLUSTERING] 🔍 Follow-up analysis:', {
+            recentQuery: recentQuery.query_text.substring(0, 50) + '...',
+            minutesAgo,
+            similarity: similarity.toFixed(3),
+            hasFollowUpKeywords,
+            isHighSimilarity,
+            isRecentlyAsked
+          });
+
+          // If high similarity + recent + follow-up keywords = likely follow-up
+          if (isRecentlyAsked && (isHighSimilarity || hasFollowUpKeywords)) {
+            console.log('[CROWD WISDOM CLUSTERING] 🔄 Detected FOLLOW-UP query:', {
+              currentQuery: queryText.substring(0, 50) + '...',
+              recentQuery: recentQuery.query_text.substring(0, 50) + '...',
+              similarity,
+              minutesAgo,
+              hasFollowUpKeywords,
+              sessionId
+            });
+            
+            await this.logEvent('INFO', 'Query classified as follow-up', {
+              queryText: queryText.substring(0, 100),
+              recentQuery: recentQuery.query_text.substring(0, 100),
+              similarity,
+              minutesAgo,
+              hasFollowUpKeywords,
+              sessionId,
+              userId
+            });
+            
+            return false; // This is a follow-up
+          }
+        }
+      }
+
+      // If we get here, no follow-up patterns detected
+      console.log('[CROWD WISDOM CLUSTERING] ✅ No follow-up patterns detected - marking as INSTRUCTIONAL');
+      await this.logEvent('DEBUG', 'Query classified as instructional (no follow-up patterns)', {
+        queryText: queryText.substring(0, 100),
+        recentQueriesAnalyzed: recentQueries.length,
+        sessionId,
+        userId
+      });
+      
+      return true; // This is an instructional query
+
+    } catch (error) {
+      console.log('[CROWD WISDOM CLUSTERING] ⚠️ Error in instructional query detection, defaulting to instructional:', error.message);
+      await this.logEvent('ERROR', 'Error in instructional query detection', {
+        error: error.message,
+        queryText: queryText.substring(0, 100),
+        sessionId,
+        userId
+      });
+      return true; // Default to instructional on error
+    }
+  }
+
+  /**
+   * Check if current query has follow-up keywords related to recent query
+   * @param {string} currentQuery - Current query text
+   * @param {string} recentQuery - Recent query text
+   * @returns {boolean} - True if follow-up patterns detected
+   */
+  hasFollowUpKeywords(currentQuery, recentQuery) {
+    const currentLower = currentQuery.toLowerCase();
+    const recentLower = recentQuery.toLowerCase();
+
+    // Direct follow-up patterns - expanded list
+    const followUpPatterns = [
+      /^(and |also |what about |how about |can you also |could you also )/,
+      /^(but |however |though |although )/,
+      /^(wait |actually |oh |hmm )/,
+      /^(so |then |next |after that )/,
+      /(more detail|more specific|more about|elaborate|expand)/,
+      /(example|examples|instance|for instance)/,
+      /(clarify|clarification|explain better|explain more)/,
+      /(difference|compare|comparison|vs|versus)/,
+      // Additional chemistry-specific patterns
+      /^(can you explain|what makes|why do|how do)/,
+      /(polar|nonpolar|ionic|covalent|bond|bonds|molecule|molecules)/
+    ];
+
+    const hasFollowUpPattern = followUpPatterns.some(pattern => pattern.test(currentLower));
+
+    // Enhanced shared key terms analysis with stemming-like approach
+    const currentWords = this.extractKeyWords(currentLower);
+    const recentWords = this.extractKeyWords(recentLower);
+    
+    // Find shared terms (including word stems)
+    const sharedWords = currentWords.filter(word => {
+      return recentWords.some(recentWord => {
+        // Exact match
+        if (word === recentWord) return true;
+        
+        // Handle plurals and common variations
+        const wordStem = this.getWordStem(word);
+        const recentStem = this.getWordStem(recentWord);
+        return wordStem === recentStem;
+      });
+    });
+
+    const hasSharedTerms = sharedWords.length >= 2;
+
+    // Check for pronoun references (it, that, this, they, etc.)
+    const hasPronouns = /(^|\s)(it|that|this|they|them|those|these|which)(\s|$)/i.test(currentQuery);
+
+    // More inclusive logic for related topics
+    const isTopicContinuation = this.isTopicContinuation(currentLower, recentLower);
+
+    console.log('[CROWD WISDOM CLUSTERING] 🔬 Enhanced follow-up analysis:', {
+      currentQuery: currentQuery.substring(0, 50) + '...',
+      recentQuery: recentQuery.substring(0, 50) + '...',
+      hasFollowUpPattern,
+      sharedWords: sharedWords.slice(0, 5), // Show first 5 shared words
+      sharedWordsCount: sharedWords.length,
+      hasSharedTerms,
+      hasPronouns,
+      isTopicContinuation,
+      finalDecision: hasFollowUpPattern || (hasSharedTerms && hasPronouns) || isTopicContinuation
+    });
+
+    return hasFollowUpPattern || (hasSharedTerms && hasPronouns) || isTopicContinuation;
+  }
+
+  /**
+   * Extract meaningful keywords from text
+   * @param {string} text - Text to extract keywords from
+   * @returns {Array} - Array of keywords
+   */
+  extractKeyWords(text) {
+    // Remove common stop words and extract meaningful terms
+    const stopWords = ['what', 'how', 'why', 'when', 'where', 'which', 'who', 'can', 'could', 'would', 'should', 'do', 'does', 'did', 'is', 'are', 'was', 'were', 'the', 'and', 'or', 'but', 'for', 'with', 'from', 'you', 'explain', 'tell', 'show', 'make', 'makes'];
+    
+    return text.split(/\s+/)
+      .filter(word => word.length > 3)
+      .filter(word => !stopWords.includes(word))
+      .map(word => word.replace(/[^\w]/g, '')) // Remove punctuation
+      .filter(word => word.length > 0);
+  }
+
+  /**
+   * Get word stem for basic stemming (handle plurals and common variations)
+   * @param {string} word - Word to stem
+   * @returns {string} - Word stem
+   */
+  getWordStem(word) {
+    // Handle common plurals and variations
+    if (word.endsWith('s') && word.length > 4) {
+      return word.slice(0, -1); // bonds -> bond
+    }
+    if (word.endsWith('es') && word.length > 5) {
+      return word.slice(0, -2); // molecules -> molecule
+    }
+    if (word.endsWith('ing') && word.length > 6) {
+      return word.slice(0, -3); // bonding -> bond
+    }
+    if (word.endsWith('ed') && word.length > 5) {
+      return word.slice(0, -2); // bonded -> bond
+    }
+    return word;
+  }
+
+  /**
+   * Check if current query continues the same topic as recent query
+   * @param {string} currentLower - Current query (lowercase)
+   * @param {string} recentLower - Recent query (lowercase)
+   * @returns {boolean} - True if same topic continuation
+   */
+  isTopicContinuation(currentLower, recentLower) {
+    // Define topic domains
+    const topics = {
+      chemistry: ['bond', 'bonds', 'covalent', 'ionic', 'polar', 'nonpolar', 'molecule', 'molecules', 'atom', 'atoms', 'electron', 'electrons', 'chemical', 'chemistry'],
+      math: ['equation', 'derivative', 'integral', 'function', 'variable', 'algebra', 'calculus'],
+      programming: ['code', 'function', 'variable', 'algorithm', 'programming', 'software'],
+      physics: ['force', 'energy', 'momentum', 'velocity', 'physics', 'quantum']
+    };
+
+    // Check if both queries belong to the same topic domain
+    for (const [topicName, keywords] of Object.entries(topics)) {
+      const currentMatches = keywords.filter(keyword => currentLower.includes(keyword)).length;
+      const recentMatches = keywords.filter(keyword => recentLower.includes(keyword)).length;
+      
+      // If both queries have significant matches in the same domain
+      if (currentMatches >= 2 && recentMatches >= 2) {
+        console.log(`[CROWD WISDOM CLUSTERING] 📚 Topic continuation detected: ${topicName}`, {
+          currentMatches,
+          recentMatches,
+          matchingKeywords: keywords.filter(k => currentLower.includes(k) || recentLower.includes(k))
+        });
+        return true;
+      }
+    }
+
+    return false;
   }
 }
 
