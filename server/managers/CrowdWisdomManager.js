@@ -566,20 +566,20 @@ Respond with detailed JSON:
   }
 
   /**
-   * Update cluster prompt based on learning
+   * Update cluster prompt with enhanced template
    * @param {string} clusterId - Cluster ID
    * @param {Object} successFactors - Success factors analysis
-   * @param {string} responseText - Successful response
+   * @param {string} responseText - Successful response text
    * @param {string} sessionId - Session ID
    * @param {string} userId - User ID
-   * @returns {Promise<string>} - New prompt enhancement
+   * @returns {Promise<string>} - Enhanced prompt template
    */
   async updateClusterPrompt(clusterId, successFactors, responseText, sessionId, userId) {
     try {
       // Get current cluster data including recent learning history
       const { data: cluster, error } = await supabase
         .from('crowd_wisdom_clusters')
-        .select('prompt_enhancement, representative_query, cluster_name')
+        .select('prompt_enhancement, representative_query, cluster_name, success_count, total_queries')
         .eq('id', clusterId)
         .single();
 
@@ -608,6 +608,29 @@ Respond with detailed JSON:
         });
       }
 
+      // Log the pre-enhancement state
+      await this.logEvent('INFO', '🔄 STARTING CLUSTER PROMPT UPDATE PROCESS', {
+        clusterId,
+        clusterInfo: {
+          name: cluster.cluster_name,
+          representativeQuery: cluster.representative_query?.substring(0, 100) + '...',
+          successCount: cluster.success_count,
+          totalQueries: cluster.total_queries,
+          successRate: cluster.total_queries > 0 ? (cluster.success_count / cluster.total_queries * 100).toFixed(1) + '%' : '0%'
+        },
+        currentPromptState: {
+          exists: !!(cluster.prompt_enhancement && cluster.prompt_enhancement.trim().length > 0),
+          length: cluster.prompt_enhancement?.length || 0,
+          content: cluster.prompt_enhancement || 'No enhancement yet'
+        },
+        learningHistory: {
+          previousEnhancements: recentLearning?.length || 0,
+          lastLearningDate: recentLearning?.[0]?.created_at || 'Never'
+        },
+        sessionId,
+        userId
+      });
+
       // Generate enhanced prompt building upon previous learning
       const enhancedPrompt = await this.generateEnhancedPromptTemplate(
         cluster.representative_query,
@@ -630,27 +653,81 @@ Respond with detailed JSON:
         .eq('id', clusterId);
 
       if (updateError) {
-        await this.logEvent('ERROR', 'Failed to update cluster prompt', {
+        await this.logEvent('ERROR', '❌ Failed to save enhanced prompt to database', {
           error: updateError.message,
           clusterId,
+          enhancedPromptLength: enhancedPrompt.length,
           sessionId
         });
         return cluster.prompt_enhancement || '';
       }
 
-      await this.logEvent('INFO', 'Cluster prompt enhanced successfully', {
+      // Calculate improvement metrics for database update logging
+      const improvementMetrics = {
+        wasEmpty: !cluster.prompt_enhancement || cluster.prompt_enhancement.trim().length === 0,
+        previousLength: cluster.prompt_enhancement?.length || 0,
+        newLength: enhancedPrompt.length,
+        growthAmount: enhancedPrompt.length - (cluster.prompt_enhancement?.length || 0),
+        enhancementNumber: (recentLearning?.length || 0) + 1
+      };
+
+      // Log successful database update with detailed before/after
+      await this.logEvent('INFO', '✅ CLUSTER PROMPT SUCCESSFULLY UPDATED IN DATABASE', {
         clusterId,
-        previousPromptLength: cluster.prompt_enhancement?.length || 0,
-        newPromptLength: enhancedPrompt.length,
-        learningEventsConsidered: recentLearning?.length || 0,
+        clusterName: cluster.cluster_name,
+        DATABASE_UPDATE: {
+          BEFORE: {
+            promptExists: !!cluster.prompt_enhancement,
+            promptLength: cluster.prompt_enhancement?.length || 0,
+            promptContent: cluster.prompt_enhancement || 'Empty'
+          },
+          AFTER: {
+            promptLength: enhancedPrompt.length,
+            promptContent: enhancedPrompt
+          },
+          CHANGES: {
+            type: improvementMetrics.wasEmpty ? 'FIRST_CREATION' : 'ENHANCEMENT',
+            lengthChange: improvementMetrics.growthAmount,
+            enhancementNumber: improvementMetrics.enhancementNumber,
+            percentageGrowth: improvementMetrics.previousLength > 0 
+              ? ((improvementMetrics.growthAmount / improvementMetrics.previousLength) * 100).toFixed(1) + '%'
+              : 'New prompt'
+          }
+        },
+        CLUSTER_PERFORMANCE: {
+          successCount: cluster.success_count,
+          totalQueries: cluster.total_queries,
+          successRate: cluster.total_queries > 0 ? (cluster.success_count / cluster.total_queries * 100).toFixed(1) + '%' : '0%',
+          learningEvents: improvementMetrics.enhancementNumber
+        },
         sessionId,
         userId
       });
 
+      // Enhanced console logging for database updates
+      console.log('\n' + '🗄️'.repeat(25) + ' DATABASE UPDATE ' + '🗄️'.repeat(25));
+      console.log('✅ CLUSTER PROMPT SAVED TO DATABASE');
+      console.log('━'.repeat(80));
+      console.log('🏷️  Cluster:', cluster.cluster_name);
+      console.log('🔢 Enhancement #:', improvementMetrics.enhancementNumber);
+      console.log('📊 Performance:', cluster.success_count + '/' + cluster.total_queries, 'successes');
+      
+      if (improvementMetrics.wasEmpty) {
+        console.log('🎉 STATUS: FIRST PROMPT CREATED!');
+        console.log('📏 Length:', enhancedPrompt.length, 'characters');
+      } else {
+        console.log('🔄 STATUS: PROMPT ENHANCED!');
+        console.log('📏 Length change:', improvementMetrics.previousLength, '→', enhancedPrompt.length);
+        console.log('📈 Growth:', '+' + improvementMetrics.growthAmount, 'characters');
+      }
+      
+      console.log('💾 Saved at:', new Date().toISOString());
+      console.log('━'.repeat(80));
+
       return enhancedPrompt;
 
     } catch (error) {
-      await this.logEvent('ERROR', 'Error updating cluster prompt', {
+      await this.logEvent('ERROR', '❌ Error in cluster prompt update process', {
         error: error.message,
         clusterId,
         sessionId,
@@ -677,59 +754,312 @@ Respond with detailed JSON:
       // Extract domain/subject from representative query and cluster name
       const domain = this.identifyDomain(representativeQuery, clusterName);
       
-      // Compile previous learning patterns
-      const previousPatterns = recentLearning.map(log => ({
-        techniques: log.extracted_patterns?.teachingTechniques || [],
-        strengths: log.extracted_patterns?.specificStrengths || [],
-        guidance: log.extracted_patterns?.promptGuidance || ''
-      }));
+      // If there's no current prompt, create the first one
+      if (!currentPrompt || currentPrompt.trim().length === 0) {
+        const initialTemplate = await this.generateInitialPromptTemplate(domain, representativeQuery, successFactors, successfulResponse, sessionId, userId);
+        
+        await this.logEvent('INFO', '🎯 FIRST PROMPT TEMPLATE CREATED for cluster', {
+          domain,
+          representativeQuery: representativeQuery.substring(0, 100) + '...',
+          initialTemplate,
+          templateLength: initialTemplate.length,
+          triggerFactors: {
+            usedAnalogy: successFactors.successFactors?.usedAnalogy || false,
+            clearStructure: successFactors.successFactors?.clearStructure || false,
+            goodExamples: successFactors.successFactors?.goodExamples || false,
+            stepByStep: successFactors.successFactors?.stepByStep || false
+          },
+          sessionId,
+          userId
+        });
+        
+        console.log('[CROWD WISDOM] 🎯 FIRST PROMPT TEMPLATE CREATED:');
+        console.log('Domain:', domain);
+        console.log('Template:', initialTemplate);
+        console.log('Length:', initialTemplate.length, 'characters');
+        
+        return initialTemplate;
+      }
 
-      // Build comprehensive learning history
-      const learningHistory = previousPatterns.length > 0 
-        ? `Previous successful patterns from this cluster:
-${previousPatterns.map((p, i) => `
-Learning Event ${i + 1}:
-- Teaching Techniques: ${p.techniques.join('; ')}
-- What Worked: ${p.strengths.slice(0, 2).join('; ')}
-- Guidance: ${p.guidance}
-`).join('')}` 
-        : 'No previous learning history for this cluster.';
+      // Check if prompt is getting too long (prevent infinite growth)
+      const MAX_PROMPT_LENGTH = 1200; // Reasonable limit for prompt enhancement
+      if (currentPrompt.length > MAX_PROMPT_LENGTH) {
+        await this.logEvent('INFO', '📏 Prompt reached maximum length, creating condensed version', {
+          currentLength: currentPrompt.length,
+          maxLength: MAX_PROMPT_LENGTH,
+          clusterId: 'unknown',
+          sessionId
+        });
+        
+        const condensedPrompt = await this.condenseAndExtendPrompt(currentPrompt, domain, successFactors, sessionId, userId);
+        
+        await this.logEvent('INFO', '🔄 PROMPT CONDENSED AND ENHANCED', {
+          domain,
+          previousPrompt: currentPrompt,
+          previousLength: currentPrompt.length,
+          condensedPrompt,
+          newLength: condensedPrompt.length,
+          spaceSaved: currentPrompt.length - condensedPrompt.length,
+          compressionRatio: ((currentPrompt.length - condensedPrompt.length) / currentPrompt.length * 100).toFixed(1) + '%',
+          sessionId,
+          userId
+        });
+        
+        console.log('[CROWD WISDOM] 🔄 PROMPT CONDENSED AND ENHANCED:');
+        console.log('Previous length:', currentPrompt.length, '→ New length:', condensedPrompt.length);
+        console.log('Space saved:', currentPrompt.length - condensedPrompt.length, 'characters');
+        
+        return condensedPrompt;
+      }
+      
+      // Compile key insights from latest success
+      const newInsights = this.extractKeyInsights(successFactors, domain);
 
-      const prompt = `You are creating a domain-specific prompt enhancement for an AI assistant that specializes in ${domain} topics.
+      await this.logEvent('INFO', '🧠 ANALYZING SUCCESS FOR PROMPT ENHANCEMENT', {
+        domain,
+        currentPromptLength: currentPrompt.length,
+        extractedInsights: newInsights,
+        successFactors: {
+          usedAnalogy: successFactors.successFactors?.usedAnalogy || false,
+          clearStructure: successFactors.successFactors?.clearStructure || false,
+          goodExamples: successFactors.successFactors?.goodExamples || false,
+          stepByStep: successFactors.successFactors?.stepByStep || false,
+          realWorldApplications: successFactors.successFactors?.realWorldApplications || false
+        },
+        teachingTechniques: successFactors.teachingTechniques || [],
+        specificStrengths: successFactors.specificStrengths || [],
+        sessionId,
+        userId
+      });
 
-CLUSTER CONTEXT:
-- Domain: ${domain}
-- Representative Query: "${representativeQuery}"
-- Cluster Theme: ${clusterName || 'General'}
+      // Ask GPT-4o to generate ONLY new content to append
+      const prompt = `You are improving a teaching prompt by adding NEW insights based on recent successful interactions.
 
-CURRENT PROMPT ENHANCEMENT:
-"${currentPrompt || 'None - this is the first enhancement for this cluster'}"
+DOMAIN: ${domain}
+REPRESENTATIVE QUERY: "${representativeQuery}"
+
+EXISTING PROMPT ENHANCEMENT (DO NOT REPEAT THIS):
+"${currentPrompt}"
 
 LATEST SUCCESS ANALYSIS:
 ${JSON.stringify(successFactors, null, 2)}
 
-SUCCESSFUL RESPONSE TECHNIQUES (excerpt):
-"${successfulResponse.substring(0, 800)}..."
+KEY NEW INSIGHTS TO INCORPORATE:
+${newInsights.join('\n')}
 
-${learningHistory}
+TASK: Generate ONLY new content to APPEND to the existing prompt enhancement. 
 
-TASK: Create an enhanced prompt template that:
-1. BUILDS UPON the current enhancement (don't replace, enhance)
-2. Incorporates the specific teaching techniques that worked
-3. Is tailored to ${domain} subject matter
-4. Uses the detailed patterns from successful interactions
-5. Provides actionable, specific guidance for similar queries
+Requirements:
+1. Do NOT repeat any content from the existing prompt
+2. Add 1-2 NEW specific techniques or insights that complement what's already there
+3. Focus on what specifically worked in this latest success
+4. Keep additions concise but specific to ${domain}
+5. Start with a connecting phrase like "Additionally," or "Furthermore," or "Building on this,"
 
-Format as a cohesive prompt enhancement that preserves previous learning while adding new insights. Focus on domain-specific teaching approaches that work for ${domain} topics.
-
-Maximum 4-5 sentences. Be specific, not generic.`;
+Generate ONLY the new content to append (1-2 sentences max):`;
 
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [
           { 
             role: 'system', 
-            content: 'You are an expert educational consultant who creates domain-specific teaching prompts. You build upon existing knowledge rather than replacing it, and you focus on specific techniques that work for particular subject areas.' 
+            content: 'You generate concise additions to existing teaching prompts. You never repeat existing content, only add new insights. Be specific and actionable.' 
+          },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 150, // Smaller limit for just the addition
+        temperature: 0.2 // Slightly higher for more variation
+      });
+
+      const newContent = response.choices[0].message.content.trim();
+      
+      // Combine existing prompt with new content
+      const enhancedTemplate = `${currentPrompt} ${newContent}`;
+      
+      // Calculate improvement metrics
+      const improvementMetrics = {
+        previousLength: currentPrompt.length,
+        additionLength: newContent.length,
+        finalLength: enhancedTemplate.length,
+        growthPercentage: ((newContent.length / currentPrompt.length) * 100).toFixed(1) + '%',
+        newInsightsCount: newInsights.length,
+        tokensUsed: response.usage?.total_tokens || 0
+      };
+      
+      await this.logEvent('INFO', '✨ PROMPT TEMPLATE SUCCESSFULLY ENHANCED', {
+        domain,
+        representativeQuery: representativeQuery.substring(0, 80) + '...',
+        BEFORE: {
+          prompt: currentPrompt,
+          length: currentPrompt.length
+        },
+        ADDITION: {
+          newContent: newContent,
+          length: newContent.length,
+          insights: newInsights
+        },
+        AFTER: {
+          enhancedPrompt: enhancedTemplate,
+          length: enhancedTemplate.length
+        },
+        IMPROVEMENT_SUMMARY: {
+          contentGrowth: improvementMetrics.growthPercentage,
+          newTechniquesAdded: newInsights.length,
+          specificImprovements: this.analyzeImprovementType(successFactors),
+          cumulativeLearning: `This is enhancement #${recentLearning.length + 1} for this cluster`
+        },
+        sessionId,
+        userId
+      });
+
+      // Enhanced console logging for easy monitoring
+      console.log('\n' + '='.repeat(80));
+      console.log('✨ CROWD WISDOM: PROMPT TEMPLATE ENHANCED');
+      console.log('='.repeat(80));
+      console.log('📍 Domain:', domain);
+      console.log('📝 Query:', representativeQuery.substring(0, 60) + '...');
+      console.log('\n📜 BEFORE (', currentPrompt.length, 'chars):');
+      console.log('"' + currentPrompt + '"');
+      console.log('\n➕ NEW ADDITION (', newContent.length, 'chars):');
+      console.log('"' + newContent + '"');
+      console.log('\n📜 AFTER (', enhancedTemplate.length, 'chars):');
+      console.log('"' + enhancedTemplate + '"');
+      console.log('\n📊 IMPROVEMENT METRICS:');
+      console.log('   • Growth:', improvementMetrics.growthPercentage);
+      console.log('   • New insights:', newInsights.length);
+      console.log('   • Enhancement #:', recentLearning.length + 1, 'for this cluster');
+      console.log('   • Key improvement:', this.analyzeImprovementType(successFactors));
+      console.log('='.repeat(80) + '\n');
+      
+      return enhancedTemplate;
+
+    } catch (error) {
+      await this.logEvent('ERROR', '❌ Failed to extend prompt template', {
+        error: error.message,
+        currentPromptLength: currentPrompt?.length || 0,
+        domain,
+        sessionId,
+        userId
+      });
+      return currentPrompt || '';
+    }
+  }
+
+  /**
+   * Analyze what type of improvement was made based on success factors
+   * @param {Object} successFactors - Success factors analysis
+   * @returns {string} - Description of the improvement type
+   */
+  analyzeImprovementType(successFactors) {
+    const factors = successFactors.successFactors || {};
+    const techniques = successFactors.teachingTechniques || [];
+    const strengths = successFactors.specificStrengths || [];
+    
+    // Determine primary improvement type
+    if (factors.usedAnalogy) return 'Better analogies and metaphors';
+    if (factors.stepByStep) return 'Improved step-by-step guidance';
+    if (factors.goodExamples) return 'Enhanced examples and illustrations';
+    if (factors.clearStructure) return 'Better content organization';
+    if (factors.realWorldApplications) return 'More practical applications';
+    if (techniques.length > 0) return `Teaching technique: ${techniques[0].substring(0, 50)}...`;
+    if (strengths.length > 0) return `Strength: ${strengths[0].substring(0, 50)}...`;
+    
+    return 'General teaching effectiveness improvements';
+  }
+
+  /**
+   * Generate initial prompt template for new clusters
+   * @param {string} domain - Identified domain
+   * @param {string} representativeQuery - Representative query
+   * @param {Object} successFactors - Success factors analysis
+   * @param {string} successfulResponse - Successful response
+   * @param {string} sessionId - Session ID
+   * @param {string} userId - User ID
+   * @returns {Promise<string>} - Initial prompt template
+   */
+  async generateInitialPromptTemplate(domain, representativeQuery, successFactors, successfulResponse, sessionId, userId) {
+    try {
+      const prompt = `Create a concise teaching prompt enhancement for an AI assistant specializing in ${domain} topics.
+
+DOMAIN: ${domain}
+REPRESENTATIVE QUERY: "${representativeQuery}"
+
+SUCCESS ANALYSIS:
+${JSON.stringify(successFactors, null, 2)}
+
+SUCCESSFUL RESPONSE EXCERPT:
+"${successfulResponse.substring(0, 600)}..."
+
+Create a specific 2-3 sentence prompt enhancement that captures what made this response effective for ${domain} topics. Focus on concrete teaching techniques, not generic advice.`;
+
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { 
+            role: 'system', 
+            content: `You create specific, actionable teaching prompts for ${domain} education. Be concrete and domain-specific.` 
+          },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 200,
+        temperature: 0.1
+      });
+
+      const initialTemplate = response.choices[0].message.content.trim();
+      
+      await this.logEvent('DEBUG', 'Initial prompt template created', {
+        domain,
+        templateLength: initialTemplate.length,
+        tokensUsed: response.usage?.total_tokens || 0,
+        sessionId,
+        userId
+      });
+
+      return initialTemplate;
+
+    } catch (error) {
+      await this.logEvent('ERROR', 'Failed to create initial prompt template', {
+        error: error.message,
+        sessionId,
+        userId
+      });
+      return '';
+    }
+  }
+
+  /**
+   * Condense an overly long prompt while adding new insights
+   * @param {string} currentPrompt - Current prompt that's too long
+   * @param {string} domain - Domain
+   * @param {Object} successFactors - Success factors
+   * @param {string} sessionId - Session ID
+   * @param {string} userId - User ID
+   * @returns {Promise<string>} - Condensed and enhanced prompt
+   */
+  async condenseAndExtendPrompt(currentPrompt, domain, successFactors, sessionId, userId) {
+    try {
+      const newInsights = this.extractKeyInsights(successFactors, domain);
+
+      const prompt = `The following teaching prompt for ${domain} has grown too long. Create a condensed version that preserves the key teaching techniques while incorporating new insights.
+
+CURRENT PROMPT (TOO LONG):
+"${currentPrompt}"
+
+NEW INSIGHTS TO INCORPORATE:
+${newInsights.join('\n')}
+
+Create a condensed prompt (3-4 sentences max) that:
+1. Preserves the most effective techniques from the current prompt
+2. Incorporates the new insights
+3. Remains specific to ${domain} teaching
+4. Is actionable and concrete`;
+
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { 
+            role: 'system', 
+            content: 'You condense teaching prompts while preserving key insights and adding new ones. Keep prompts actionable and domain-specific.' 
           },
           { role: 'user', content: prompt }
         ],
@@ -737,29 +1067,64 @@ Maximum 4-5 sentences. Be specific, not generic.`;
         temperature: 0.1
       });
 
-      const enhancedTemplate = response.choices[0].message.content.trim();
+      const condensedTemplate = response.choices[0].message.content.trim();
       
-      await this.logEvent('DEBUG', 'Enhanced prompt template generated', {
+      await this.logEvent('INFO', 'Prompt condensed and enhanced', {
+        originalLength: currentPrompt.length,
+        condensedLength: condensedTemplate.length,
         domain,
-        representativeQuery: representativeQuery.substring(0, 100),
-        currentPromptLength: currentPrompt?.length || 0,
-        enhancedTemplateLength: enhancedTemplate.length,
-        previousLearningEvents: recentLearning.length,
         tokensUsed: response.usage?.total_tokens || 0,
         sessionId,
         userId
       });
 
-      return enhancedTemplate;
+      return condensedTemplate;
 
     } catch (error) {
-      await this.logEvent('ERROR', 'Failed to generate enhanced prompt template', {
+      await this.logEvent('ERROR', 'Failed to condense prompt', {
         error: error.message,
         sessionId,
         userId
       });
-      return currentPrompt || '';
+      return currentPrompt;
     }
+  }
+
+  /**
+   * Extract key insights from success factors for domain-specific improvements
+   * @param {Object} successFactors - Success factors analysis
+   * @param {string} domain - Domain
+   * @returns {Array<string>} - Key insights to incorporate
+   */
+  extractKeyInsights(successFactors, domain) {
+    const insights = [];
+    
+    // Extract domain-specific techniques that worked
+    if (successFactors.domainSpecificApproaches && successFactors.domainSpecificApproaches.length > 0) {
+      insights.push(`Domain-specific approach: ${successFactors.domainSpecificApproaches[0]}`);
+    }
+    
+    // Extract successful teaching techniques
+    if (successFactors.teachingTechniques && successFactors.teachingTechniques.length > 0) {
+      insights.push(`Effective technique: ${successFactors.teachingTechniques[0]}`);
+    }
+    
+    // Extract what specifically worked well
+    if (successFactors.specificStrengths && successFactors.specificStrengths.length > 0) {
+      insights.push(`What worked: ${successFactors.specificStrengths[0]}`);
+    }
+    
+    // Extract successful factors
+    const factors = successFactors.successFactors || {};
+    const workingFactors = Object.entries(factors)
+      .filter(([key, value]) => value === true)
+      .map(([key, value]) => key);
+    
+    if (workingFactors.length > 0) {
+      insights.push(`Successful elements: ${workingFactors.slice(0, 2).join(', ')}`);
+    }
+    
+    return insights.length > 0 ? insights : [`New successful pattern identified for ${domain} topics`];
   }
 
   /**
@@ -1014,7 +1379,7 @@ Maximum 4-5 sentences. Be specific, not generic.`;
       // Get the previous prompt enhancement to track learning progression
       const { data: cluster, error: clusterError } = await supabase
         .from('crowd_wisdom_clusters')
-        .select('prompt_enhancement')
+        .select('prompt_enhancement, cluster_name, success_count, total_queries')
         .eq('id', clusterId)
         .single();
 
@@ -1029,7 +1394,7 @@ Maximum 4-5 sentences. Be specific, not generic.`;
       // Get the associated response text for this learning event
       const { data: assignment, error: assignmentError } = await supabase
         .from('crowd_wisdom_query_assignments')
-        .select('response_text')
+        .select('response_text, query_text, similarity_score')
         .eq('id', assignmentId)
         .single();
 
@@ -1040,6 +1405,40 @@ Maximum 4-5 sentences. Be specific, not generic.`;
           sessionId
         });
       }
+
+      // Get count of previous learning events for this cluster
+      const { count: previousLearningCount } = await supabase
+        .from('crowd_wisdom_learning_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('cluster_id', clusterId);
+
+      const learningEventNumber = (previousLearningCount || 0) + 1;
+
+      // Log pre-insertion state
+      await this.logEvent('INFO', '📚 PREPARING TO LOG LEARNING EVENT', {
+        clusterId,
+        assignmentId,
+        learningEventDetails: {
+          eventNumber: learningEventNumber,
+          clusterName: cluster?.cluster_name || 'Unknown',
+          confidenceScore: confidence,
+          queryText: assignment?.query_text?.substring(0, 100) + '...' || 'Unknown',
+          similarityScore: assignment?.similarity_score || 0
+        },
+        promptEvolution: {
+          previousPromptExists: !!(cluster?.prompt_enhancement),
+          previousPromptLength: cluster?.prompt_enhancement?.length || 0,
+          newPromptLength: promptUpdate?.length || 0,
+          isFirstPromptCreation: !cluster?.prompt_enhancement || cluster.prompt_enhancement.trim().length === 0
+        },
+        extractedPatterns: {
+          hasSuccessFactors: !!(successFactors?.successFactors),
+          hasTeachingTechniques: !!(successFactors?.teachingTechniques?.length > 0),
+          hasSpecificStrengths: !!(successFactors?.specificStrengths?.length > 0),
+          hasDomainApproaches: !!(successFactors?.domainSpecificApproaches?.length > 0)
+        },
+        sessionId
+      });
 
       const { error } = await supabase
         .from('crowd_wisdom_learning_logs')
@@ -1057,32 +1456,116 @@ Maximum 4-5 sentences. Be specific, not generic.`;
         ]);
 
       if (error) {
-        await this.logEvent('ERROR', 'Failed to log learning event', {
+        await this.logEvent('ERROR', '❌ Failed to log learning event to database', {
           error: error.message,
           clusterId,
           assignmentId,
+          confidenceScore: confidence,
           sessionId
         });
         return false;
       }
 
-      await this.logEvent('DEBUG', 'Learning event logged with full context', {
+      // Log successful learning event with comprehensive details
+      await this.logEvent('INFO', '🎓 LEARNING EVENT SUCCESSFULLY LOGGED TO DATABASE', {
         clusterId,
         assignmentId,
-        confidence,
-        hasPreviousPrompt: !!(cluster?.prompt_enhancement),
-        hasResponseText: !!(assignment?.response_text),
-        extractedPatternsKeys: Object.keys(successFactors || {}),
+        LEARNING_EVENT_SUMMARY: {
+          eventNumber: learningEventNumber,
+          clusterName: cluster?.cluster_name || 'Unknown',
+          confidenceScore: confidence,
+          trigger: 'positive_feedback'
+        },
+        QUERY_CONTEXT: {
+          queryText: assignment?.query_text?.substring(0, 150) + '...' || 'Unknown',
+          similarityScore: assignment?.similarity_score || 0,
+          responseLength: assignment?.response_text?.length || 0
+        },
+        PROMPT_EVOLUTION_LOGGED: {
+          previousPrompt: {
+            existed: !!(cluster?.prompt_enhancement && cluster.prompt_enhancement.trim().length > 0),
+            length: cluster?.prompt_enhancement?.length || 0,
+            content: cluster?.prompt_enhancement?.substring(0, 200) + '...' || 'Empty'
+          },
+          newPrompt: {
+            length: promptUpdate?.length || 0,
+            content: promptUpdate?.substring(0, 200) + '...' || 'Empty'
+          },
+          evolutionType: (!cluster?.prompt_enhancement || cluster.prompt_enhancement.trim().length === 0) 
+            ? 'FIRST_CREATION' 
+            : 'ENHANCEMENT',
+          growthAmount: (promptUpdate?.length || 0) - (cluster?.prompt_enhancement?.length || 0)
+        },
+        PATTERNS_CAPTURED: {
+          successFactors: Object.keys(successFactors?.successFactors || {}),
+          teachingTechniques: successFactors?.teachingTechniques?.length || 0,
+          specificStrengths: successFactors?.specificStrengths?.length || 0,
+          domainApproaches: successFactors?.domainSpecificApproaches?.length || 0,
+          identifiedDomain: successFactors?.identifiedDomain || 'Unknown'
+        },
+        CLUSTER_LEARNING_PROGRESS: {
+          totalLearningEvents: learningEventNumber,
+          clusterSuccessCount: cluster?.success_count || 0,
+          clusterTotalQueries: cluster?.total_queries || 0,
+          clusterSuccessRate: cluster?.total_queries > 0 
+            ? ((cluster.success_count / cluster.total_queries) * 100).toFixed(1) + '%'
+            : '0%'
+        },
         sessionId
       });
+
+      // Enhanced console logging for learning events
+      console.log('\n' + '📚'.repeat(25) + ' LEARNING EVENT ' + '📚'.repeat(25));
+      console.log('🎓 CROWD WISDOM LEARNING EVENT LOGGED');
+      console.log('━'.repeat(80));
+      console.log('🏷️  Cluster:', cluster?.cluster_name || 'Unknown');
+      console.log('🔢 Learning Event #:', learningEventNumber);
+      console.log('📊 Confidence Score:', confidence.toFixed(2));
+      console.log('🎯 Query Similarity:', (assignment?.similarity_score || 0).toFixed(3));
+      
+      const evolutionType = (!cluster?.prompt_enhancement || cluster.prompt_enhancement.trim().length === 0) 
+        ? 'FIRST PROMPT CREATION' 
+        : 'PROMPT ENHANCEMENT';
+      
+      console.log('🔄 Evolution Type:', evolutionType);
+      
+      if (evolutionType === 'PROMPT ENHANCEMENT') {
+        console.log('📏 Prompt Growth:', 
+          (cluster?.prompt_enhancement?.length || 0), 
+          '→', 
+          (promptUpdate?.length || 0), 
+          'chars (+' + ((promptUpdate?.length || 0) - (cluster?.prompt_enhancement?.length || 0)) + ')'
+        );
+      } else {
+        console.log('📏 Initial Prompt Length:', promptUpdate?.length || 0, 'characters');
+      }
+      
+      console.log('🧠 Patterns Captured:');
+      console.log('   • Teaching Techniques:', successFactors?.teachingTechniques?.length || 0);
+      console.log('   • Specific Strengths:', successFactors?.specificStrengths?.length || 0);
+      console.log('   • Domain Approaches:', successFactors?.domainSpecificApproaches?.length || 0);
+      console.log('   • Domain:', successFactors?.identifiedDomain || 'Unknown');
+      
+      console.log('📈 Cluster Progress:', 
+        cluster?.success_count || 0, 
+        '/', 
+        cluster?.total_queries || 0, 
+        'successes (',
+        cluster?.total_queries > 0 ? ((cluster.success_count / cluster.total_queries) * 100).toFixed(1) : '0',
+        '%)'
+      );
+      
+      console.log('💾 Logged at:', new Date().toISOString());
+      console.log('━'.repeat(80));
 
       return true;
 
     } catch (error) {
-      await this.logEvent('ERROR', 'Error logging learning event', {
+      await this.logEvent('ERROR', '❌ Error in learning event logging process', {
         error: error.message,
         clusterId,
         assignmentId,
+        confidenceScore: confidence,
         sessionId
       });
       return false;
