@@ -1,12 +1,23 @@
 import { OpenAI } from 'openai';
 import { supabase } from '../lib/supabaseClient.js';
+import CachedOpenAI from './cachedOpenAI.js';
 
 class EmbeddingGenerator {
   constructor(openaiClient) {
-    this.openai = openaiClient;
+    // Use cached OpenAI client if provided with API key, otherwise use provided client
+    if (typeof openaiClient === 'string') {
+      this.openai = new CachedOpenAI(openaiClient);
+    } else if (openaiClient instanceof CachedOpenAI) {
+      this.openai = openaiClient;
+    } else {
+      // Wrap existing OpenAI client with caching
+      this.openai = new CachedOpenAI(process.env.OPENAI_API_KEY);
+    }
+    
     this.modelName = 'text-embedding-3-small';
     this.embeddingDimensions = 1536;
     this.rateLimitDelay = 100; // ms between requests to avoid rate limits
+    this.cachingEnabled = true; // Enable caching for embeddings
   }
 
   /**

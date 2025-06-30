@@ -6,9 +6,65 @@ class QueryClusteringService {
   constructor(openaiClient) {
     this.embeddingGenerator = new EmbeddingGenerator(openaiClient);
     this.cosineUtils = new CosineUtils();
-    this.similarityThreshold = 0.3; // Further reduced - 0.5 was still too high
+    this.baseSimilarityThreshold = 0.3; // Base threshold
     this.maxClusters = 50; // Maximum number of clusters to maintain
     this.centroidUpdateRate = 0.1; // How much new embeddings influence centroids
+    
+    // Confidence-weighted threshold parameters
+    this.lowVarianceThreshold = 0.25; // Lower threshold for high-confidence embeddings
+    this.highVarianceThreshold = 0.35; // Higher threshold for low-confidence embeddings
+    this.lowVarianceCutoff = 0.01; // Variance below this = high confidence
+    this.highVarianceCutoff = 0.05; // Variance above this = low confidence
+  }
+
+  /**
+   * Calculate embedding variance to determine confidence level
+   * @param {Array} embedding - The embedding vector
+   * @returns {number} - Variance score
+   */
+  calculateEmbeddingVariance(embedding) {
+    if (!embedding || embedding.length === 0) return 1.0; // High variance for invalid embeddings
+    
+    // Calculate variance across embedding dimensions
+    const mean = embedding.reduce((sum, val) => sum + val, 0) / embedding.length;
+    const variance = embedding.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / embedding.length;
+    
+    return variance;
+  }
+
+  /**
+   * Determine dynamic similarity threshold based on embedding confidence
+   * @param {Array} embedding - The embedding vector
+   * @param {string} sessionId - Session ID for logging
+   * @returns {Object} - Threshold info with value and reasoning
+   */
+  calculateDynamicThreshold(embedding, sessionId) {
+    const variance = this.calculateEmbeddingVariance(embedding);
+    let threshold = this.baseSimilarityThreshold;
+    let reasoning = 'Base threshold (medium confidence)';
+    
+    if (variance < this.lowVarianceCutoff) {
+      // Low variance = high confidence = lower threshold (easier to match)
+      threshold = this.lowVarianceThreshold;
+      reasoning = 'Low variance (high confidence) - lowered threshold';
+    } else if (variance > this.highVarianceCutoff) {
+      // High variance = low confidence = higher threshold (harder to match)
+      threshold = this.highVarianceThreshold;
+      reasoning = 'High variance (low confidence) - raised threshold';
+    }
+    
+    console.log('[CROWD WISDOM CLUSTERING] 🎯 Dynamic threshold calculated:', {
+      variance: variance.toFixed(6),
+      threshold: threshold,
+      reasoning,
+      sessionId
+    });
+    
+    return {
+      threshold,
+      variance,
+      reasoning
+    };
   }
 
   /**
@@ -71,10 +127,14 @@ class QueryClusteringService {
         return null;
       }
 
+      // Calculate dynamic threshold based on embedding confidence
+      const thresholdInfo = this.calculateDynamicThreshold(queryEmbedding, sessionId);
+
       // Find or create appropriate cluster
       const clusterResult = await this.findOrCreateCluster(
         queryText, 
         queryEmbedding, 
+        thresholdInfo,
         sessionId, 
         userId
       );
@@ -94,6 +154,8 @@ class QueryClusteringService {
         queryEmbedding,
         clusterResult.clusterId,
         clusterResult.similarity,
+        thresholdInfo,
+        clusterResult.explorationMode,
         sessionId,
         userId
       );
@@ -134,14 +196,28 @@ class QueryClusteringService {
   }
 
   /**
+   * Check if cluster should use ε-greedy exploration
+   * @param {Object} cluster - Cluster data
+   * @returns {boolean} - Whether to ignore enhancement for exploration
+   */
+  shouldUseExploration(cluster) {
+    // ε-greedy: if success rate < 0.5, add 10% chance to ignore enhancement
+    if (cluster.successRate < 0.5) {
+      return Math.random() < 0.1; // 10% exploration chance
+    }
+    return false;
+  }
+
+  /**
    * Find the best matching cluster or create a new one
    * @param {string} queryText - The query text
    * @param {Array} queryEmbedding - The query embedding
+   * @param {Object} thresholdInfo - Dynamic threshold information
    * @param {string} sessionId - Session ID
    * @param {string} userId - User ID
    * @returns {Promise<Object>} - Cluster result
    */
-  async findOrCreateCluster(queryText, queryEmbedding, sessionId, userId) {
+  async findOrCreateCluster(queryText, queryEmbedding, thresholdInfo, sessionId, userId) {
     try {
       await this.logEvent('INFO', '🔍 Finding best cluster match for query', {
         sessionId,
@@ -209,7 +285,8 @@ class QueryClusteringService {
           clusterId: newClusterId,
           similarity: 1.0,
           isNewCluster: true,
-          promptEnhancement: '' // New clusters start with no enhancement
+          promptEnhancement: '', // New clusters start with no enhancement
+          explorationMode: false
         };
       }
 
@@ -281,44 +358,60 @@ class QueryClusteringService {
           clusterId: newClusterId,
           similarity: 1.0,
           isNewCluster: true,
-          promptEnhancement: ''
+          promptEnhancement: '',
+          explorationMode: false
         };
       }
+
+      // Check for ε-greedy exploration  
+      const clusterData = clusters.find(c => c.id === bestMatch.id);
+      const useExploration = this.shouldUseExploration({
+        successRate: clusterData?.success_rate || 0
+      });
 
       console.log('[CROWD WISDOM CLUSTERING] 🎯 Best cluster match found:', {
         clusterId: bestMatch.id.substring(0, 8) + '...',
         similarity: bestMatch.similarity,
-        threshold: this.similarityThreshold,
-        clusterName: clusters.find(c => c.id === bestMatch.id)?.cluster_name,
+        dynamicThreshold: thresholdInfo.threshold,
+        thresholdReasoning: thresholdInfo.reasoning,
+        variance: thresholdInfo.variance.toFixed(6),
+        clusterName: clusterData?.cluster_name,
         representativeQuery: bestMatch.representativeQuery?.substring(0, 80) + '...',
         clusterStats: {
           totalQueries: bestMatch.totalQueries,
           successRate: bestMatch.successRate,
           hasPromptEnhancement: !!bestMatch.promptEnhancement
-        }
+        },
+        explorationMode: useExploration
       });
 
       await this.logEvent('INFO', '🎯 Best cluster match found with similarity analysis', {
         clusterId: bestMatch.id,
         similarity: bestMatch.similarity,
-        threshold: this.similarityThreshold,
+        dynamicThreshold: thresholdInfo.threshold,
+        thresholdReasoning: thresholdInfo.reasoning,
+        variance: thresholdInfo.variance,
         representativeQuery: bestMatch.representativeQuery?.substring(0, 100),
         clusterMetrics: {
           totalQueries: bestMatch.totalQueries,
           successRate: bestMatch.successRate,
           promptEnhancementLength: bestMatch.promptEnhancement?.length || 0
         },
+        explorationMode: useExploration,
         sessionId,
         userId
       });
 
-      // Check if similarity meets threshold
-      const similarityMeetsThreshold = bestMatch.similarity >= this.similarityThreshold;
+      // Check if similarity meets dynamic threshold
+      const similarityMeetsThreshold = bestMatch.similarity >= thresholdInfo.threshold;
       
-      console.log('[CROWD WISDOM CLUSTERING] 📏 Similarity threshold decision:', {
+      console.log('[CROWD WISDOM CLUSTERING] 📏 Dynamic similarity threshold decision:', {
         similarity: bestMatch.similarity,
-        threshold: this.similarityThreshold,
+        dynamicThreshold: thresholdInfo.threshold,
+        thresholdReasoning: thresholdInfo.reasoning,
+        variance: thresholdInfo.variance.toFixed(6),
         meetsThreshold: similarityMeetsThreshold,
+        explorationMode: useExploration,
         decision: similarityMeetsThreshold ? 'ASSIGN_TO_EXISTING_CLUSTER' : 'CREATE_NEW_CLUSTER'
       });
       
@@ -332,29 +425,35 @@ class QueryClusteringService {
         console.log('[CROWD WISDOM CLUSTERING] 🎉 Query successfully assigned to existing cluster:', {
           clusterId: bestMatch.id.substring(0, 8) + '...',
           similarity: bestMatch.similarity,
-          promptEnhancement: bestMatch.promptEnhancement ? 'Present' : 'None'
+          promptEnhancement: bestMatch.promptEnhancement ? 'Present' : 'None',
+          explorationMode: useExploration
         });
         
         return {
           clusterId: bestMatch.id,
           similarity: bestMatch.similarity,
           isNewCluster: false,
-          promptEnhancement: bestMatch.promptEnhancement
+          promptEnhancement: bestMatch.promptEnhancement,
+          explorationMode: useExploration
         };
       } else {
         console.log('[CROWD WISDOM CLUSTERING] ❌ Similarity below threshold - creating new cluster');
         console.log('[CROWD WISDOM CLUSTERING] 📊 Similarity gap analysis:', {
           actualSimilarity: bestMatch.similarity,
-          requiredThreshold: this.similarityThreshold,
-          gap: this.similarityThreshold - bestMatch.similarity,
-          percentBelow: ((this.similarityThreshold - bestMatch.similarity) / this.similarityThreshold * 100).toFixed(2) + '%'
+          requiredThreshold: thresholdInfo.threshold,
+          thresholdReasoning: thresholdInfo.reasoning,
+          variance: thresholdInfo.variance.toFixed(6),
+          gap: thresholdInfo.threshold - bestMatch.similarity,
+          percentBelow: ((thresholdInfo.threshold - bestMatch.similarity) / thresholdInfo.threshold * 100).toFixed(2) + '%'
         });
         
         // Similarity too low, create new cluster
-        await this.logEvent('INFO', '❌ Similarity below threshold, creating new cluster', {
+        await this.logEvent('INFO', '❌ Similarity below dynamic threshold, creating new cluster', {
           bestSimilarity: bestMatch.similarity,
-          threshold: this.similarityThreshold,
-          similarityGap: this.similarityThreshold - bestMatch.similarity,
+          dynamicThreshold: thresholdInfo.threshold,
+          thresholdReasoning: thresholdInfo.reasoning,
+          variance: thresholdInfo.variance,
+          similarityGap: thresholdInfo.threshold - bestMatch.similarity,
           sessionId,
           userId
         });
@@ -363,14 +462,16 @@ class QueryClusteringService {
         console.log('[CROWD WISDOM CLUSTERING] ✅ New cluster created due to low similarity:', {
           clusterId: newClusterId.substring(0, 8) + '...',
           rejectedSimilarity: bestMatch.similarity,
-          threshold: this.similarityThreshold
+          dynamicThreshold: thresholdInfo.threshold,
+          thresholdReasoning: thresholdInfo.reasoning
         });
         
         return {
           clusterId: newClusterId,
           similarity: 1.0,
           isNewCluster: true,
-          promptEnhancement: ''
+          promptEnhancement: '',
+          explorationMode: false
         };
       }
 
@@ -381,6 +482,38 @@ class QueryClusteringService {
         userId
       });
       throw error;
+    }
+  }
+
+  /**
+   * Generate eager prompt enhancement for new clusters
+   * @param {string} queryText - Representative query
+   * @param {string} sessionId - Session ID
+   * @returns {Promise<string>} - Initial enhancement text
+   */
+  async generateEagerPromptEnhancement(queryText, sessionId) {
+    try {
+      await this.logEvent('INFO', 'Generating eager prompt enhancement for new cluster', {
+        queryText: queryText.substring(0, 100),
+        sessionId
+      });
+
+      // Generic success factors as a skeleton
+      const genericPrompt = `For queries like "${queryText.substring(0, 100)}...", provide clear, well-structured responses that break down complex topics into understandable parts. Use examples where appropriate and ensure the explanation matches the user's apparent knowledge level.`;
+
+      await this.logEvent('DEBUG', 'Eager enhancement generated', {
+        enhancementLength: genericPrompt.length,
+        sessionId
+      });
+
+      return genericPrompt;
+
+    } catch (error) {
+      await this.logEvent('ERROR', 'Failed to generate eager enhancement', {
+        error: error.message,
+        sessionId
+      });
+      return ''; // Fallback to empty enhancement
     }
   }
 
@@ -420,6 +553,9 @@ class QueryClusteringService {
       // Generate a meaningful cluster name based on query content
       const clusterName = this.generateClusterName(queryText);
 
+      // Eager template warm-up: Generate initial prompt enhancement
+      const initialEnhancement = await this.generateEagerPromptEnhancement(queryText, sessionId);
+
       const { data, error } = await supabase
         .from('crowd_wisdom_clusters')
         .insert([
@@ -427,7 +563,8 @@ class QueryClusteringService {
             centroid_embedding: queryEmbedding,
             representative_query: queryText,
             cluster_name: clusterName,
-            prompt_enhancement: '', // Start with no enhancement
+            prompt_enhancement: initialEnhancement,
+            prompt_enhancement_version: 1,
             total_queries: 1,
             success_count: 0,
             success_rate: 0.0
@@ -562,11 +699,13 @@ class QueryClusteringService {
    * @param {Array} queryEmbedding - Query embedding
    * @param {string} clusterId - Cluster ID
    * @param {number} similarity - Similarity score
+   * @param {Object} thresholdInfo - Dynamic threshold information
+   * @param {boolean} explorationMode - Whether exploration mode is active
    * @param {string} sessionId - Session ID
    * @param {string} userId - User ID
    * @returns {Promise<string>} - Assignment ID
    */
-  async createQueryAssignment(queryText, queryEmbedding, clusterId, similarity, sessionId, userId) {
+  async createQueryAssignment(queryText, queryEmbedding, clusterId, similarity, thresholdInfo, explorationMode, sessionId, userId) {
     try {
       const { data, error } = await supabase
         .from('crowd_wisdom_query_assignments')
@@ -576,6 +715,10 @@ class QueryClusteringService {
             query_embedding: queryEmbedding,
             cluster_id: clusterId,
             similarity_score: similarity,
+            dynamic_threshold: thresholdInfo.threshold,
+            embedding_variance: thresholdInfo.variance,
+            exploration_mode: explorationMode,
+            ignore_enhancement: explorationMode, // Same as exploration mode for now
             session_id: sessionId,
             user_id: userId,
             processing_time_ms: 0 // Will be updated later with response time

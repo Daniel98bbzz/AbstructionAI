@@ -3,10 +3,17 @@ import { supabase } from '../lib/supabaseClient.js';
 import QueryClusteringService from '../services/QueryClusteringService.js';
 import SuccessAnalyzer from '../services/SuccessAnalyzer.js';
 import EmbeddingGenerator from '../utils/embeddingGenerator.js';
+import CachedOpenAI from '../utils/cachedOpenAI.js';
+import crypto from 'crypto';
 
 class CrowdWisdomManager {
   constructor(openaiClient) {
-    this.openai = openaiClient;
+    // Wrap OpenAI client with caching
+    if (openaiClient instanceof CachedOpenAI) {
+      this.openai = openaiClient;
+    } else {
+      this.openai = new CachedOpenAI(process.env.OPENAI_API_KEY);
+    }
     this.queryClusteringService = new QueryClusteringService(openaiClient);
     this.successAnalyzer = new SuccessAnalyzer(openaiClient);
     this.embeddingGenerator = new EmbeddingGenerator(openaiClient);
@@ -15,6 +22,77 @@ class CrowdWisdomManager {
     this.learningEnabled = true;
     this.minFeedbackConfidence = 0.7; // Reset to production value
     this.promptUpdateThreshold = 1; // Temporarily reduced for testing (production: 2)
+  }
+
+  /**
+   * Calculate SHA-256 hash of a string
+   * @param {string} text - Text to hash
+   * @returns {string} - Hex hash
+   */
+  calculateHash(text) {
+    return crypto.createHash('sha256').update(text || '').digest('hex');
+  }
+
+  /**
+   * Calculate text entropy for feedback quality assessment
+   * @param {string} text - Text to analyze
+   * @returns {number} - Entropy score
+   */
+  calculateTextEntropy(text) {
+    if (!text || text.length === 0) return 0;
+    
+    // Count character frequencies
+    const frequencies = {};
+    for (const char of text.toLowerCase()) {
+      frequencies[char] = (frequencies[char] || 0) + 1;
+    }
+    
+    // Calculate entropy
+    const textLength = text.length;
+    let entropy = 0;
+    
+    for (const freq of Object.values(frequencies)) {
+      const probability = freq / textLength;
+      entropy -= probability * Math.log2(probability);
+    }
+    
+    return entropy;
+  }
+
+  /**
+   * Assess feedback quality for learning gating
+   * @param {string} feedbackText - User feedback
+   * @param {Object} feedbackAnalysis - Sentiment analysis result
+   * @param {string} sessionId - Session ID
+   * @returns {Object} - Quality assessment result
+   */
+  assessFeedbackQuality(feedbackText, feedbackAnalysis, sessionId) {
+    const checks = {
+      lengthCheck: feedbackText.length >= 10,
+      sentimentCheck: feedbackAnalysis.isPositive,
+      entropyCheck: this.calculateTextEntropy(feedbackText) >= 2.0
+    };
+
+    const passesGating = checks.lengthCheck && checks.sentimentCheck && checks.entropyCheck;
+
+    console.log('[CROWD WISDOM MANAGER] 🔍 Feedback quality assessment:', {
+      feedbackLength: feedbackText.length,
+      isPositive: feedbackAnalysis.isPositive,
+      entropy: this.calculateTextEntropy(feedbackText).toFixed(2),
+      checks,
+      passesGating,
+      sessionId
+    });
+
+    return {
+      checks,
+      passesGating,
+      entropy: this.calculateTextEntropy(feedbackText),
+      reason: !passesGating ? 
+        (!checks.lengthCheck ? 'Too short' :
+         !checks.sentimentCheck ? 'Not positive' :
+         !checks.entropyCheck ? 'Low entropy' : 'Unknown') : 'Passes all checks'
+    };
   }
 
   /**
@@ -65,12 +143,26 @@ class CrowdWisdomManager {
         sessionId
       );
       
+      // Calculate enhancement hash and track application
+      const enhancementHash = this.calculateHash(promptEnhancement);
+      const hasEnhancement = !!promptEnhancement && promptEnhancement.length > 0;
+      
       console.log('[CROWD WISDOM MANAGER] 🎨 Prompt enhancement retrieved:', {
         clusterId: clusterResult.clusterId.substring(0, 8) + '...',
-        hasEnhancement: !!promptEnhancement && promptEnhancement.length > 0,
+        hasEnhancement: hasEnhancement,
         enhancementLength: promptEnhancement ? promptEnhancement.length : 0,
-        enhancementPreview: promptEnhancement ? promptEnhancement.substring(0, 100) + '...' : 'None'
+        enhancementPreview: promptEnhancement ? promptEnhancement.substring(0, 100) + '...' : 'None',
+        enhancementHash: enhancementHash.substring(0, 8) + '...'
       });
+
+      // Step 3: Update query assignment with enhancement tracking
+      await this.updateQueryAssignmentWithEnhancement(
+        clusterResult.assignmentId,
+        promptEnhancement,
+        enhancementHash,
+        clusterResult.clusterId,
+        sessionId
+      );
 
       const processingTime = Date.now() - startTime;
 
@@ -91,6 +183,8 @@ class CrowdWisdomManager {
         similarity: clusterResult.similarity,
         isNewCluster: clusterResult.isNewCluster,
         promptEnhancement,
+        promptEnhancementApplied: hasEnhancement,
+        promptEnhancementHash: enhancementHash,
         processingTimeMs: processingTime
       };
 
@@ -153,16 +247,21 @@ class CrowdWisdomManager {
         sessionId
       );
 
-      // Step 3: If feedback is positive and confident, trigger learning
+      // Step 3: Apply feedback quality gating
+      const feedbackQuality = this.assessFeedbackQuality(feedbackText, feedbackAnalysis, sessionId);
+      
+      // If feedback is positive, confident, and high quality, trigger learning
       let learningResult = null;
       const shouldTriggerLearning = feedbackAnalysis.isPositive && 
           feedbackAnalysis.confidence >= this.minFeedbackConfidence &&
+          feedbackQuality.passesGating &&
           this.learningEnabled;
           
       console.log('[CROWD WISDOM MANAGER] 🎓 Learning trigger evaluation:', {
         isPositive: feedbackAnalysis.isPositive,
         confidence: feedbackAnalysis.confidence,
         minRequired: this.minFeedbackConfidence,
+        feedbackQuality: feedbackQuality,
         learningEnabled: this.learningEnabled,
         shouldTriggerLearning: shouldTriggerLearning
       });
@@ -196,6 +295,7 @@ class CrowdWisdomManager {
         console.log('[CROWD WISDOM MANAGER] ❌ Learning not triggered:', {
           reason: !feedbackAnalysis.isPositive ? 'Negative feedback' :
                   feedbackAnalysis.confidence < this.minFeedbackConfidence ? 'Low confidence' :
+                  !feedbackQuality.passesGating ? `Poor quality feedback: ${feedbackQuality.reason}` :
                   !this.learningEnabled ? 'Learning disabled' : 'Unknown'
         });
       }
@@ -303,13 +403,14 @@ class CrowdWisdomManager {
           userId
         );
 
-        // Step 4: Log the learning event
+        // Step 4: Log the learning event with hash tracking
         await this.logLearningEvent(
           assignment.cluster_id,
           assignmentId,
           successFactors,
           promptUpdate,
           feedbackAnalysis.confidence,
+          assignment.query_text,
           sessionId
         );
 
@@ -521,11 +622,37 @@ Respond with JSON:
         userId
       );
 
-      // Update cluster with new prompt enhancement
+      // Calculate hashes for tracking
+      const queryHash = this.calculateHash(cluster.representative_query);
+      const newEnhancementHash = this.calculateHash(newPromptEnhancement);
+      const previousEnhancementHash = this.calculateHash(cluster.prompt_enhancement || '');
+      
+      // Log hash tracking for verification
+      await this.logEvent('INFO', 'Prompt enhancement generated with hash tracking', {
+        clusterId,
+        query_hash: queryHash.substring(0, 8) + '...',
+        previous_prompt_hash: previousEnhancementHash.substring(0, 8) + '...',
+        new_prompt_hash: newEnhancementHash.substring(0, 8) + '...',
+        sessionId,
+        userId
+      });
+      
+      // Get current version to increment
+      const { data: currentCluster, error: versionError } = await supabase
+        .from('crowd_wisdom_clusters')
+        .select('prompt_enhancement_version')
+        .eq('id', clusterId)
+        .single();
+
+      const newVersion = (currentCluster?.prompt_enhancement_version || 0) + 1;
+
+      // Update cluster with new prompt enhancement and tracking data
       const { error: updateError } = await supabase
         .from('crowd_wisdom_clusters')
         .update({
           prompt_enhancement: newPromptEnhancement,
+          prompt_enhancement_hash: newEnhancementHash,
+          prompt_enhancement_version: newVersion,
           updated_at: new Date().toISOString()
         })
         .eq('id', clusterId);
@@ -543,6 +670,9 @@ Respond with JSON:
         clusterId,
         previousPromptLength: cluster.prompt_enhancement?.length || 0,
         newPromptLength: newPromptEnhancement.length,
+        previousEnhancementHash: this.calculateHash(cluster.prompt_enhancement || '').substring(0, 8) + '...',
+        newEnhancementHash: newEnhancementHash.substring(0, 8) + '...',
+        enhancementVersion: newVersion,
         sessionId,
         userId
       });
@@ -780,11 +910,24 @@ The enhancement should be actionable and specific to this type of query.`;
    * @param {Object} successFactors - Success factors
    * @param {string} promptUpdate - Prompt update
    * @param {number} confidence - Confidence score
+   * @param {string} queryText - Query text for hash tracking
    * @param {string} sessionId - Session ID
    * @returns {Promise<boolean>} - Success status
    */
-  async logLearningEvent(clusterId, assignmentId, successFactors, promptUpdate, confidence, sessionId) {
+  async logLearningEvent(clusterId, assignmentId, successFactors, promptUpdate, confidence, queryText, sessionId) {
     try {
+      // Calculate hashes for tracking
+      const queryHash = this.calculateHash(queryText);
+      const promptHash = this.calculateHash(promptUpdate);
+      
+      // Store hash tracking information in prompt_update object
+      const promptUpdateWithHashes = {
+        prompt_text: promptUpdate,
+        query_hash: queryHash,
+        prompt_hash: promptHash,
+        generated_at: new Date().toISOString()
+      };
+      
       const { error } = await supabase
         .from('crowd_wisdom_learning_logs')
         .insert([
@@ -792,7 +935,7 @@ The enhancement should be actionable and specific to this type of query.`;
             cluster_id: clusterId,
             query_assignment_id: assignmentId,
             extracted_patterns: successFactors,
-            prompt_update: promptUpdate,
+            prompt_update: promptUpdateWithHashes,
             confidence_score: confidence,
             learning_trigger: 'positive_feedback'
           }
@@ -808,10 +951,12 @@ The enhancement should be actionable and specific to this type of query.`;
         return false;
       }
 
-      await this.logEvent('DEBUG', 'Learning event logged successfully', {
+      await this.logEvent('DEBUG', 'Learning event logged successfully with hash tracking', {
         clusterId,
         assignmentId,
         confidence,
+        query_hash: queryHash.substring(0, 8) + '...',
+        prompt_hash: promptHash.substring(0, 8) + '...',
         sessionId
       });
 
@@ -822,6 +967,169 @@ The enhancement should be actionable and specific to this type of query.`;
         error: error.message,
         clusterId,
         assignmentId,
+        sessionId
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Count tokens in a text string (approximate)
+   * @param {string} text - Text to count tokens for
+   * @returns {number} - Approximate token count
+   */
+  countTokens(text) {
+    if (!text) return 0;
+    // Rough approximation: 1 token ≈ 4 characters for English text
+    // This is a simplified approach; for exact counting, we'd need tiktoken
+    return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * Verify hash consistency between generation and application
+   * @param {string} clusterId - Cluster ID
+   * @param {string} appliedHash - Hash of applied enhancement
+   * @param {string} sessionId - Session ID
+   * @returns {Promise<boolean>} - Whether hashes match
+   */
+  async verifyEnhancementHashConsistency(clusterId, appliedHash, sessionId) {
+    try {
+      // Get the latest learning log for this cluster
+      const { data: learningLog, error } = await supabase
+        .from('crowd_wisdom_learning_logs')
+        .select('prompt_update')
+        .eq('cluster_id', clusterId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error) {
+        await this.logEvent('WARN', 'Could not verify hash consistency - no learning log found', {
+          clusterId,
+          appliedHash: appliedHash.substring(0, 8) + '...',
+          sessionId
+        });
+        return false;
+      }
+
+      const generatedHash = learningLog.prompt_update?.prompt_hash;
+      const hashesMatch = generatedHash === appliedHash;
+
+      if (!hashesMatch) {
+        await this.logEvent('WARN', 'Hash mismatch detected between generation and application', {
+          clusterId,
+          generated_hash: generatedHash?.substring(0, 8) + '...',
+          applied_hash: appliedHash.substring(0, 8) + '...',
+          sessionId
+        });
+      } else {
+        await this.logEvent('DEBUG', 'Hash consistency verified', {
+          clusterId,
+          hash: appliedHash.substring(0, 8) + '...',
+          sessionId
+        });
+      }
+
+      return hashesMatch;
+
+    } catch (error) {
+      await this.logEvent('ERROR', 'Error verifying hash consistency', {
+        error: error.message,
+        clusterId,
+        appliedHash: appliedHash.substring(0, 8) + '...',
+        sessionId
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Update query assignment with prompt enhancement tracking data
+   * @param {string} assignmentId - Assignment ID
+   * @param {string} promptEnhancement - Enhancement text
+   * @param {string} enhancementHash - Enhancement hash
+   * @param {string} clusterId - Cluster ID
+   * @param {string} sessionId - Session ID
+   * @returns {Promise<boolean>} - Success status
+   */
+  async updateQueryAssignmentWithEnhancement(assignmentId, promptEnhancement, enhancementHash, clusterId, sessionId) {
+    try {
+      // Get cluster name for tracking
+      const { data: cluster, error: clusterError } = await supabase
+        .from('crowd_wisdom_clusters')
+        .select('cluster_name')
+        .eq('id', clusterId)
+        .single();
+
+      if (clusterError) {
+        await this.logEvent('WARN', 'Could not get cluster name for enhancement tracking', {
+          error: clusterError.message,
+          assignmentId,
+          clusterId,
+          sessionId
+        });
+      }
+
+      const hasEnhancement = !!promptEnhancement && promptEnhancement.length > 0;
+      const tokensAdded = hasEnhancement ? this.countTokens(promptEnhancement) : 0;
+      
+      // Log the applied enhancement hash for verification and verify consistency
+      if (hasEnhancement) {
+        await this.logEvent('INFO', 'Prompt enhancement applied to query', {
+          assignmentId,
+          clusterId,
+          applied_prompt_hash: enhancementHash.substring(0, 8) + '...',
+          tokens_added: tokensAdded,
+          enhancement_preview: promptEnhancement.substring(0, 100) + '...',
+          sessionId
+        });
+
+        // Verify hash consistency (fire-and-forget)
+        this.verifyEnhancementHashConsistency(clusterId, enhancementHash, sessionId).catch(error => {
+          console.warn('[CrowdWisdomManager] Hash verification failed:', error);
+        });
+      }
+      
+      // Update assignment with enhancement tracking data using new field names
+      const { error: updateError } = await supabase
+        .from('crowd_wisdom_query_assignments')
+        .update({
+          applied_prompt_enhancement: hasEnhancement,
+          prompt_tokens_added: tokensAdded,
+          prompt_enhancement_used: promptEnhancement || '',
+          prompt_enhancement_hash: enhancementHash,
+          cluster_name_at_time: cluster?.cluster_name || ''
+        })
+        .eq('id', assignmentId);
+
+      if (updateError) {
+        await this.logEvent('ERROR', 'Failed to update assignment with enhancement tracking', {
+          error: updateError.message,
+          assignmentId,
+          clusterId,
+          sessionId
+        });
+        return false;
+      }
+
+      await this.logEvent('DEBUG', 'Query assignment updated with enhancement tracking', {
+        assignmentId,
+        clusterId,
+        hasEnhancement,
+        tokensAdded,
+        enhancementLength: promptEnhancement?.length || 0,
+        enhancementHash: enhancementHash.substring(0, 8) + '...',
+        clusterName: cluster?.cluster_name || 'Unknown',
+        sessionId
+      });
+
+      return true;
+
+    } catch (error) {
+      await this.logEvent('ERROR', 'Error updating assignment with enhancement tracking', {
+        error: error.message,
+        assignmentId,
+        clusterId,
         sessionId
       });
       return false;
@@ -870,6 +1178,117 @@ The enhancement should be actionable and specific to this type of query.`;
       await this.logEvent('ERROR', 'Failed to compile system statistics', {
         error: error.message,
         timeframe
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Get prompt enhancement application analytics
+   * @param {string} timeframe - Timeframe for analytics
+   * @param {string} clusterId - Optional cluster ID filter
+   * @returns {Promise<Object>} - Enhancement analytics
+   */
+  async getEnhancementAnalytics(timeframe = '24 hours', clusterId = null) {
+    try {
+      const timeframeBoundary = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+      // Base query for analytics
+      let query = supabase
+        .from('crowd_wisdom_query_assignments')
+        .select('*')
+        .gte('created_at', timeframeBoundary);
+
+      if (clusterId) {
+        query = query.eq('cluster_id', clusterId);
+      }
+
+      const { data: assignments, error } = await query;
+
+      if (error) {
+        throw error;
+      }
+
+      // Calculate analytics
+      const totalQueries = assignments.length;
+      const queriesWithEnhancement = assignments.filter(a => a.applied_prompt_enhancement).length;
+      const queriesWithoutEnhancement = totalQueries - queriesWithEnhancement;
+      
+      const enhancementApplicationRate = totalQueries > 0 
+        ? (queriesWithEnhancement / totalQueries * 100).toFixed(2)
+        : 0;
+
+      // Calculate total tokens added
+      const totalTokensAdded = assignments.reduce((sum, a) => sum + (a.prompt_tokens_added || 0), 0);
+      const avgTokensPerEnhancement = queriesWithEnhancement > 0 
+        ? (totalTokensAdded / queriesWithEnhancement).toFixed(1)
+        : 0;
+
+      // Group by enhancement hash to see usage patterns
+      const enhancementUsage = {};
+      assignments.forEach(assignment => {
+        if (assignment.applied_prompt_enhancement && assignment.prompt_enhancement_hash) {
+          const hash = assignment.prompt_enhancement_hash;
+          const hashKey = hash.substring(0, 8) + '...';
+          
+          if (!enhancementUsage[hashKey]) {
+            enhancementUsage[hashKey] = {
+              hash: hash,
+              usage_count: 0,
+              cluster_names: new Set(),
+              successful_queries: 0,
+              total_tokens_added: 0
+            };
+          }
+          
+          enhancementUsage[hashKey].usage_count++;
+          enhancementUsage[hashKey].total_tokens_added += (assignment.prompt_tokens_added || 0);
+          if (assignment.cluster_name_at_time) {
+            enhancementUsage[hashKey].cluster_names.add(assignment.cluster_name_at_time);
+          }
+          if (assignment.user_feedback_positive === true) {
+            enhancementUsage[hashKey].successful_queries++;
+          }
+        }
+      });
+
+      // Convert sets to arrays for JSON serialization
+      Object.values(enhancementUsage).forEach(usage => {
+        usage.cluster_names = Array.from(usage.cluster_names);
+        usage.success_rate = usage.usage_count > 0 
+          ? (usage.successful_queries / usage.usage_count * 100).toFixed(2)
+          : 0;
+        usage.avg_tokens_per_use = usage.usage_count > 0
+          ? (usage.total_tokens_added / usage.usage_count).toFixed(1)
+          : 0;
+      });
+
+      const analytics = {
+        timeframe,
+        clusterId,
+        total_queries: totalQueries,
+        queries_with_enhancement: queriesWithEnhancement,
+        queries_without_enhancement: queriesWithoutEnhancement,
+        enhancement_application_rate: enhancementApplicationRate + '%',
+        total_tokens_added: totalTokensAdded,
+        avg_tokens_per_enhancement: avgTokensPerEnhancement,
+        unique_enhancements_used: Object.keys(enhancementUsage).length,
+        enhancement_usage_patterns: enhancementUsage
+      };
+
+      await this.logEvent('INFO', 'Enhancement analytics compiled', {
+        analytics,
+        timeframe,
+        clusterId
+      });
+
+      return analytics;
+
+    } catch (error) {
+      await this.logEvent('ERROR', 'Failed to compile enhancement analytics', {
+        error: error.message,
+        timeframe,
+        clusterId
       });
       return null;
     }

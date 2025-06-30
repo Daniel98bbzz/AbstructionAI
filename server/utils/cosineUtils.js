@@ -1,9 +1,11 @@
 import { supabase } from '../lib/supabaseClient.js';
+import vectorSimilarity from './vectorSimilarity.js';
 
 class CosineUtils {
   constructor() {
     this.similarityThreshold = 0.75; // Default threshold for cluster assignment
     this.batchSize = 100; // For batch processing of similarities
+    this.useVectorSearch = true; // Use pgvector for similarity search when possible
   }
 
   /**
@@ -121,6 +123,7 @@ class CosineUtils {
       await this.logEvent('INFO', `Finding most similar vector among ${candidateVectors.length} candidates`, {
         candidateCount: candidateVectors.length,
         context,
+        useVectorSearch: this.useVectorSearch,
         sessionId
       });
 
@@ -130,6 +133,50 @@ class CosineUtils {
           sessionId
         });
         return null;
+      }
+
+      // Use pgvector optimization for cluster matching when possible
+      if (this.useVectorSearch && context === 'cluster_matching') {
+        try {
+          await this.logEvent('DEBUG', 'Using pgvector for cluster similarity search', {
+            context,
+            sessionId
+          });
+
+          const pgvectorResults = await vectorSimilarity.findSimilarClusters(
+            queryVector,
+            candidateVectors.length,
+            0.0 // No threshold filtering here, we'll handle that later
+          );
+
+          if (pgvectorResults && pgvectorResults.length > 0) {
+            const bestMatch = pgvectorResults[0];
+            const processingTime = Date.now() - startTime;
+
+            await this.logEvent('INFO', 'pgvector similarity search completed', {
+              bestSimilarity: bestMatch.similarity,
+              resultsCount: pgvectorResults.length,
+              processingTimeMs: processingTime,
+              context,
+              sessionId
+            });
+
+            return {
+              id: bestMatch.id,
+              similarity: bestMatch.similarity,
+              representativeQuery: bestMatch.representative_query,
+              promptEnhancement: bestMatch.prompt_enhancement,
+              totalQueries: bestMatch.total_queries,
+              successRate: bestMatch.success_rate
+            };
+          }
+        } catch (error) {
+          await this.logEvent('WARN', 'pgvector search failed, falling back to manual calculation', {
+            error: error.message,
+            context,
+            sessionId
+          });
+        }
       }
 
       let bestMatch = null;

@@ -1,16 +1,16 @@
 import express from 'express';
 import { OpenAI } from 'openai';
 import CrowdWisdomManager from '../managers/CrowdWisdomManager.js';
+import CachedOpenAI from '../utils/cachedOpenAI.js';
+import completionsCache from '../utils/completionsCache.js';
 import { supabase } from '../lib/supabaseClient.js';
 
 const router = express.Router();
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize cached OpenAI client
+const openai = new CachedOpenAI(process.env.OPENAI_API_KEY);
 
-// Initialize Crowd Wisdom Manager
+// Initialize Crowd Wisdom Manager with cached client
 const crowdWisdomManager = new CrowdWisdomManager(openai);
 
 /**
@@ -390,6 +390,77 @@ router.get('/learning-events', async (req, res) => {
 });
 
 /**
+ * Get prompt enhancement analytics
+ * GET /api/crowd-wisdom/enhancement-analytics
+ */
+router.get('/enhancement-analytics', async (req, res) => {
+  try {
+    const { 
+      timeframe = '24 hours',
+      clusterId 
+    } = req.query;
+
+    console.log('[CrowdWisdomAPI] Getting enhancement analytics', {
+      timeframe,
+      clusterId
+    });
+
+    const analytics = await crowdWisdomManager.getEnhancementAnalytics(timeframe, clusterId);
+
+    if (!analytics) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to compile enhancement analytics'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: analytics,
+      timeframe,
+      clusterId
+    });
+
+  } catch (error) {
+    console.error('[CrowdWisdomAPI] Error getting enhancement analytics:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get completions cache statistics
+ * GET /api/crowd-wisdom/cache-stats
+ */
+router.get('/cache-stats', async (req, res) => {
+  try {
+    console.log('[CrowdWisdomAPI] Getting cache statistics');
+
+    // Get cache statistics from both client and database
+    const clientStats = openai.getCacheStats();
+    const databaseStats = await completionsCache.getCacheStats();
+
+    res.json({
+      success: true,
+      data: {
+        client: clientStats,
+        database: databaseStats,
+        caching_enabled: openai.cachingEnabled
+      }
+    });
+
+  } catch (error) {
+    console.error('[CrowdWisdomAPI] Error getting cache statistics:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * Health check endpoint
  * GET /api/crowd-wisdom/health
  */
@@ -412,14 +483,19 @@ router.get('/health', async (req, res) => {
       max_tokens: 1
     });
 
+    // Get cache stats for health check
+    const cacheStats = openai.getCacheStats();
+
     res.json({
       success: true,
       status: 'healthy',
       checks: {
         database: 'connected',
         openai: 'connected',
-        crowdWisdomManager: 'initialized'
+        crowdWisdomManager: 'initialized',
+        caching: 'enabled'
       },
+      cache_stats: cacheStats,
       timestamp: new Date().toISOString()
     });
 
