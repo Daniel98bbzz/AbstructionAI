@@ -1013,23 +1013,38 @@ class QueryClusteringService {
           const hasFollowUpKeywords = this.hasFollowUpKeywords(queryText, recentQuery.query_text);
           const isRecentlyAsked = minutesAgo <= 5; // Within 5 minutes
           
+          // 🎯 NEW: Cluster-based follow-up detection
+          // If both queries will likely be assigned to the same cluster AND asked recently,
+          // this is a strong signal for follow-up behavior
+          const isSameClusterCandidate = similarity > 0.3; // Same threshold used for cluster assignment
+          const isVeryRecent = minutesAgo <= 3; // Very recent timing
+          const isClusterBasedFollowUp = isSameClusterCandidate && isVeryRecent;
+          
           console.log('[CROWD WISDOM CLUSTERING] 🔍 Follow-up analysis:', {
             recentQuery: recentQuery.query_text.substring(0, 50) + '...',
             minutesAgo,
             similarity: similarity.toFixed(3),
             hasFollowUpKeywords,
             isHighSimilarity,
-            isRecentlyAsked
+            isRecentlyAsked,
+            isSameClusterCandidate,
+            isVeryRecent,
+            isClusterBasedFollowUp
           });
 
+          // 🎯 FIX: More inclusive follow-up detection
           // If high similarity + recent + follow-up keywords = likely follow-up
-          if (isRecentlyAsked && (isHighSimilarity || hasFollowUpKeywords)) {
+          // OR if same cluster candidate + very recent = likely follow-up  
+          const isFollowUp = (isRecentlyAsked && (isHighSimilarity || hasFollowUpKeywords)) || isClusterBasedFollowUp;
+          
+          if (isFollowUp) {
             console.log('[CROWD WISDOM CLUSTERING] 🔄 Detected FOLLOW-UP query:', {
               currentQuery: queryText.substring(0, 50) + '...',
               recentQuery: recentQuery.query_text.substring(0, 50) + '...',
               similarity,
               minutesAgo,
               hasFollowUpKeywords,
+              isClusterBasedFollowUp: isClusterBasedFollowUp ? 'YES - Same cluster + very recent' : 'NO',
               sessionId
             });
             
@@ -1039,6 +1054,7 @@ class QueryClusteringService {
               similarity,
               minutesAgo,
               hasFollowUpKeywords,
+              isClusterBasedFollowUp,
               sessionId,
               userId
             });
@@ -1093,7 +1109,11 @@ class QueryClusteringService {
       /(difference|compare|comparison|vs|versus)/,
       // Additional chemistry-specific patterns
       /^(can you explain|what makes|why do|how do)/,
-      /(polar|nonpolar|ionic|covalent|bond|bonds|molecule|molecules)/
+      /(polar|nonpolar|ionic|covalent|bond|bonds|molecule|molecules)/,
+      // Volcano/geology-specific patterns
+      /(volcano|volcanoes|volcanic|eruption|eruptions|magma|lava|geological)/,
+      // General patterns for types/categories
+      /^(what are the|what types|different types|main types|kinds of)/
     ];
 
     const hasFollowUpPattern = followUpPatterns.some(pattern => pattern.test(currentLower));
@@ -1115,7 +1135,8 @@ class QueryClusteringService {
       });
     });
 
-    const hasSharedTerms = sharedWords.length >= 2;
+    // 🎯 FIX: Lower threshold from 2 to 1 for shared terms
+    const hasSharedTerms = sharedWords.length >= 1;
 
     // Check for pronoun references (it, that, this, they, etc.)
     const hasPronouns = /(^|\s)(it|that|this|they|them|those|these|which)(\s|$)/i.test(currentQuery);
@@ -1132,10 +1153,11 @@ class QueryClusteringService {
       hasSharedTerms,
       hasPronouns,
       isTopicContinuation,
-      finalDecision: hasFollowUpPattern || (hasSharedTerms && hasPronouns) || isTopicContinuation
+      finalDecision: hasFollowUpPattern || (hasSharedTerms && (hasPronouns || isTopicContinuation)) || isTopicContinuation
     });
 
-    return hasFollowUpPattern || (hasSharedTerms && hasPronouns) || isTopicContinuation;
+    // 🎯 FIX: More inclusive logic - topic continuation alone can indicate follow-up
+    return hasFollowUpPattern || (hasSharedTerms && (hasPronouns || isTopicContinuation)) || isTopicContinuation;
   }
 
   /**
@@ -1145,10 +1167,10 @@ class QueryClusteringService {
    */
   extractKeyWords(text) {
     // Remove common stop words and extract meaningful terms
-    const stopWords = ['what', 'how', 'why', 'when', 'where', 'which', 'who', 'can', 'could', 'would', 'should', 'do', 'does', 'did', 'is', 'are', 'was', 'were', 'the', 'and', 'or', 'but', 'for', 'with', 'from', 'you', 'explain', 'tell', 'show', 'make', 'makes'];
+    const stopWords = ['what', 'how', 'why', 'when', 'where', 'which', 'who', 'can', 'could', 'would', 'should', 'do', 'does', 'did', 'is', 'are', 'was', 'were', 'the', 'and', 'or', 'but', 'for', 'with', 'from', 'you', 'explain', 'tell', 'show', 'make', 'makes', 'them', 'they', 'different'];
     
     return text.split(/\s+/)
-      .filter(word => word.length > 3)
+      .filter(word => word.length > 2) // Lowered from 3 to 2 to catch more words
       .filter(word => !stopWords.includes(word))
       .map(word => word.replace(/[^\w]/g, '')) // Remove punctuation
       .filter(word => word.length > 0);
@@ -1183,12 +1205,14 @@ class QueryClusteringService {
    * @returns {boolean} - True if same topic continuation
    */
   isTopicContinuation(currentLower, recentLower) {
-    // Define topic domains
+    // Define topic domains with more comprehensive keywords
     const topics = {
-      chemistry: ['bond', 'bonds', 'covalent', 'ionic', 'polar', 'nonpolar', 'molecule', 'molecules', 'atom', 'atoms', 'electron', 'electrons', 'chemical', 'chemistry'],
-      math: ['equation', 'derivative', 'integral', 'function', 'variable', 'algebra', 'calculus'],
-      programming: ['code', 'function', 'variable', 'algorithm', 'programming', 'software'],
-      physics: ['force', 'energy', 'momentum', 'velocity', 'physics', 'quantum']
+      chemistry: ['bond', 'bonds', 'covalent', 'ionic', 'polar', 'nonpolar', 'molecule', 'molecules', 'atom', 'atoms', 'electron', 'electrons', 'chemical', 'chemistry', 'compound', 'compounds', 'reaction', 'reactions'],
+      math: ['equation', 'derivative', 'integral', 'function', 'variable', 'algebra', 'calculus', 'mathematics', 'theorem', 'formula', 'geometry', 'statistics'],
+      programming: ['code', 'function', 'variable', 'algorithm', 'programming', 'software', 'javascript', 'python', 'data', 'structure'],
+      physics: ['force', 'energy', 'momentum', 'velocity', 'physics', 'quantum', 'wave', 'particle', 'electromagnetic'],
+      geology: ['volcano', 'volcanoes', 'volcanic', 'eruption', 'eruptions', 'magma', 'lava', 'geological', 'geology', 'tectonic', 'plates', 'earthquake', 'seismic', 'mineral', 'rock', 'rocks', 'formation', 'formations'],
+      biology: ['biology', 'cell', 'cells', 'dna', 'protein', 'organism', 'organisms', 'evolution', 'genetics', 'molecular', 'ecosystem', 'species', 'apoptosis']
     };
 
     // Check if both queries belong to the same topic domain
@@ -1196,8 +1220,9 @@ class QueryClusteringService {
       const currentMatches = keywords.filter(keyword => currentLower.includes(keyword)).length;
       const recentMatches = keywords.filter(keyword => recentLower.includes(keyword)).length;
       
-      // If both queries have significant matches in the same domain
-      if (currentMatches >= 2 && recentMatches >= 2) {
+      // 🎯 FIX: More inclusive logic - if both queries have matches in the same domain
+      // Lower threshold: at least 1 match in each query for the same domain
+      if (currentMatches >= 1 && recentMatches >= 1) {
         console.log(`[CROWD WISDOM CLUSTERING] 📚 Topic continuation detected: ${topicName}`, {
           currentMatches,
           recentMatches,
@@ -1205,6 +1230,31 @@ class QueryClusteringService {
         });
         return true;
       }
+    }
+
+    // Additional check for question type patterns that indicate related topics
+    const questionTypePatterns = [
+      'what are',
+      'what is',
+      'how do',
+      'how does',
+      'why do',
+      'why does',
+      'different types',
+      'main types',
+      'types of'
+    ];
+
+    const currentPatterns = questionTypePatterns.filter(pattern => currentLower.includes(pattern));
+    const recentPatterns = questionTypePatterns.filter(pattern => recentLower.includes(pattern));
+
+    // If both use similar question patterns, they might be related
+    if (currentPatterns.length > 0 && recentPatterns.length > 0) {
+      console.log('[CROWD WISDOM CLUSTERING] 🔄 Similar question patterns detected:', {
+        currentPatterns,
+        recentPatterns
+      });
+      return true;
     }
 
     return false;
