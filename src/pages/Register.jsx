@@ -93,7 +93,11 @@ function Register() {
     learning_style: '',
     technical_depth: 50,
     preferred_analogy_domains: [],
-    main_learning_goal: ''
+    main_learning_goal: '',
+    
+    // Personalization toggles
+    use_interests_for_analogies: true,
+    use_profile_for_main_answer: true
   });
 
   const [errors, setErrors] = useState({});
@@ -189,7 +193,11 @@ function Register() {
         preferred_analogy_domains: formData.preferred_analogy_domains && Array.isArray(formData.preferred_analogy_domains) 
           ? formData.preferred_analogy_domains 
           : [],
-        main_learning_goal: formData.main_learning_goal.toLowerCase()
+        main_learning_goal: formData.main_learning_goal.toLowerCase(),
+        
+        // Personalization toggles
+        use_interests_for_analogies: formData.use_interests_for_analogies,
+        use_profile_for_main_answer: formData.use_profile_for_main_answer
       };
       
       console.log('Saving user profile with arrays:', {
@@ -436,6 +444,55 @@ function Register() {
             <div className="flex justify-between mt-2 text-sm text-gray-600">
               <span>Beginner-friendly</span>
               <span>Technically detailed</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Personalization Toggles */}
+        <div className="pt-6 space-y-4 border-t border-gray-200">
+          <h4 className="text-base font-medium text-gray-900">Personalization Settings</h4>
+          
+          <div className="space-y-4">
+            <div className="flex items-start">
+              <div className="flex items-center h-5">
+                <input
+                  id="use_interests_for_analogies"
+                  name="use_interests_for_analogies"
+                  type="checkbox"
+                  checked={formData.use_interests_for_analogies}
+                  onChange={handleInputChange}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+              </div>
+              <div className="ml-3">
+                <label htmlFor="use_interests_for_analogies" className="text-sm font-medium text-gray-700">
+                  Use my interests for personalized analogies
+                </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  When enabled, analogies in the Abstract tab will be tailored to your selected interests.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-start">
+              <div className="flex items-center h-5">
+                <input
+                  id="use_profile_for_main_answer"
+                  name="use_profile_for_main_answer"
+                  type="checkbox"
+                  checked={formData.use_profile_for_main_answer}
+                  onChange={handleInputChange}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+              </div>
+              <div className="ml-3">
+                <label htmlFor="use_profile_for_main_answer" className="text-sm font-medium text-gray-700">
+                  Use my profile for personalized main answers
+                </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  When enabled, main answers will be adapted based on your education level, age, learning goals, and technical depth preference.
+                </p>
+              </div>
             </div>
           </div>
         </div>
