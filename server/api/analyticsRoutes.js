@@ -93,8 +93,9 @@ router.get('/topics/popularity', async (req, res) => {
     console.log('[Analytics] Fetching topic popularity with filters:', req.query);
     
     let query = supabase
-      .from('queries')
-      .select('*');
+      .from('sessions')
+      .select('*')
+      .not('secret_topic', 'is', null);
     
     // Apply time filter
     const timeFilter = buildTimeFilter(timeframe, startDate, endDate);
@@ -105,15 +106,15 @@ router.get('/topics/popularity', async (req, res) => {
       }
     }
     
-    const { data: queries, error } = await query;
+    const { data: sessions, error } = await query;
     
     if (error) {
-      console.error('[Analytics] Error fetching queries:', error);
-      return res.status(500).json({ error: 'Failed to fetch queries' });
+      console.error('[Analytics] Error fetching sessions:', error);
+      return res.status(500).json({ error: 'Failed to fetch sessions' });
     }
     
     // Apply user segment filter if needed
-    let filteredQueries = queries;
+    let filteredSessions = sessions;
     if (userSegment !== 'all') {
       // Get users matching the segment
       const userFilter = buildUserSegmentFilter(userSegment);
@@ -124,17 +125,16 @@ router.get('/topics/popularity', async (req, res) => {
           .or(userFilter);
         
         const userIds = users?.map(u => u.user_id) || [];
-        filteredQueries = queries.filter(q => userIds.includes(q.user_id));
+        filteredSessions = sessions.filter(s => userIds.includes(s.user_id));
       }
     }
     
-    // Count sessions by topic
+    // Count sessions by topic using secret_topic
     const topicCounts = {};
-    const sessionTopics = {};
     
-    filteredQueries.forEach(query => {
-      if (query.discovered_topic) {
-        const topic = query.discovered_topic;
+    filteredSessions.forEach(session => {
+      if (session.secret_topic) {
+        const topic = session.secret_topic;
         
         // Apply topic filter
         if (topicFilter && !topic.toLowerCase().includes(topicFilter.toLowerCase())) {
@@ -144,15 +144,7 @@ router.get('/topics/popularity', async (req, res) => {
         if (!topicCounts[topic]) {
           topicCounts[topic] = 0;
         }
-        
-        if (!sessionTopics[query.session_id]) {
-          sessionTopics[query.session_id] = new Set();
-        }
-        
-        if (!sessionTopics[query.session_id].has(topic)) {
-          topicCounts[topic]++;
-          sessionTopics[query.session_id].add(topic);
-        }
+        topicCounts[topic]++;
       }
     });
     
@@ -272,30 +264,11 @@ router.get('/topics/timeline', async (req, res) => {
 
 router.get('/users/engagement', async (req, res) => {
   try {
-    const { timeframe = '7d', startDate, endDate, userSegment = 'all' } = req.query;
+    const { timeframe = '30d', startDate, endDate, userSegment = 'all', includeInactive = 'false' } = req.query;
     
     console.log('[Analytics] Fetching user engagement with filters:', req.query);
     
-    let query = supabase
-      .from('user_profiles')
-      .select('*');
-    
-    // Apply user segment filter
-    if (userSegment !== 'all') {
-      const userFilter = buildUserSegmentFilter(userSegment);
-      if (userFilter) {
-        // User segment filtering moved to post-processing
-      }
-    }
-    
-    const { data: profiles, error } = await query;
-    
-    if (error) {
-      console.error('[Analytics] Error fetching user profiles:', error);
-      return res.status(500).json({ error: 'Failed to fetch user profiles' });
-    }
-    
-    // Get session counts for time period
+    // Get session counts for time period first
     let sessionQuery = supabase
       .from('sessions')
       .select('user_id');
@@ -310,36 +283,79 @@ router.get('/users/engagement', async (req, res) => {
     
     const { data: sessions } = await sessionQuery;
     
-    // Calculate engagement levels
-    const userEngagement = {};
+    // Calculate session counts per user
     const sessionCounts = {};
-    
     sessions?.forEach(session => {
-      sessionCounts[session.user_id] = (sessionCounts[session.user_id] || 0) + 1;
+      if (session.user_id) { // Filter out null user_ids
+        sessionCounts[session.user_id] = (sessionCounts[session.user_id] || 0) + 1;
+      }
     });
     
+    // Get active user profiles (only users who have sessions in timeframe)
+    const activeUserIds = Object.keys(sessionCounts);
+    let profiles = [];
+    
+    if (activeUserIds.length > 0) {
+      const { data: userProfiles } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .in('id', activeUserIds);
+      profiles = userProfiles || [];
+    }
+    
+    // If includeInactive is true, get all profiles
+    if (includeInactive === 'true') {
+      const { data: allProfiles } = await supabase
+        .from('user_profiles')
+        .select('*');
+      profiles = allProfiles || [];
+    }
+    
+    // Calculate engagement levels with better thresholds
+    const userEngagement = {};
+    
     profiles?.forEach(profile => {
-      const sessionCount = sessionCounts[profile.user_id] || 0;
+      const sessionCount = sessionCounts[profile.id] || 0;
       let level;
       
-      if (sessionCount === 0) level = 'Inactive';
-      else if (sessionCount <= 2) level = 'Low';
-      else if (sessionCount <= 5) level = 'Medium';
-      else if (sessionCount <= 10) level = 'High';
-      else level = 'Very High';
+      // Better engagement thresholds based on timeframe
+      const isLongTimeframe = timeframe === '30d' || timeframe === '90d';
+      
+      if (sessionCount === 0) {
+        level = 'Inactive';
+      } else if (isLongTimeframe) {
+        // Thresholds for longer timeframes
+        if (sessionCount <= 3) level = 'Low';
+        else if (sessionCount <= 10) level = 'Medium';
+        else if (sessionCount <= 25) level = 'High';
+        else level = 'Very High';
+      } else {
+        // Thresholds for shorter timeframes (7d, 1d)
+        if (sessionCount <= 2) level = 'Low';
+        else if (sessionCount <= 5) level = 'Medium';
+        else if (sessionCount <= 15) level = 'High';
+        else level = 'Very High';
+      }
       
       userEngagement[level] = (userEngagement[level] || 0) + 1;
     });
     
     const totalUsers = profiles?.length || 0;
     const totalSessions = sessions?.length || 0;
-    const avgSessionsPerUser = totalUsers > 0 ? (totalSessions / totalUsers).toFixed(1) : '0';
+    const activeUsers = Object.keys(sessionCounts).length;
+    const avgSessionsPerUser = activeUsers > 0 ? (totalSessions / activeUsers).toFixed(1) : '0';
     
     res.json({
       engagement_distribution: userEngagement,
       total_users: totalUsers,
+      active_users: activeUsers,
       total_sessions: totalSessions,
-      avg_sessions_per_user: avgSessionsPerUser
+      avg_sessions_per_user: avgSessionsPerUser,
+      timeframe_info: {
+        period: timeframe,
+        showing_only_active: includeInactive !== 'true',
+        note: includeInactive !== 'true' ? 'Only showing users active in selected timeframe' : 'Showing all users'
+      }
     });
     
   } catch (error) {
