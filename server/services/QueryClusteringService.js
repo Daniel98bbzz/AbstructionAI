@@ -6,7 +6,7 @@ class QueryClusteringService {
   constructor(openaiClient) {
     this.embeddingGenerator = new EmbeddingGenerator(openaiClient);
     this.cosineUtils = new CosineUtils();
-    this.similarityThreshold = 0.3; // Further reduced - 0.5 was still too high
+    this.similarityThreshold = 0.6; // Increased from 0.3 to create more distinct clusters
     this.maxClusters = 50; // Maximum number of clusters to maintain
     this.centroidUpdateRate = 0.1; // How much new embeddings influence centroids
   }
@@ -1016,7 +1016,7 @@ class QueryClusteringService {
           // 🎯 NEW: Cluster-based follow-up detection
           // If both queries will likely be assigned to the same cluster AND asked recently,
           // this is a strong signal for follow-up behavior
-          const isSameClusterCandidate = similarity > 0.3; // Same threshold used for cluster assignment
+          const isSameClusterCandidate = similarity > 0.6; // Same threshold used for cluster assignment
           const isVeryRecent = minutesAgo <= 3; // Very recent timing
           const isClusterBasedFollowUp = isSameClusterCandidate && isVeryRecent;
           

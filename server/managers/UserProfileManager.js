@@ -151,16 +151,22 @@ class UserProfileManager {
           return [value]; // For any other type, wrap in array
         };
 
-    // Create a new formatted profile with correct array types
+    // Create a new formatted profile with correct array types and default toggles
     const formattedProfile = {
       ...profile,
       interests: ensureArray(profile.interests),
-      preferred_analogy_domains: ensureArray(profile.preferred_analogy_domains)
+      preferred_analogy_domains: ensureArray(profile.preferred_analogy_domains),
+      
+      // Add default values for personalization toggles if they don't exist
+      use_interests_for_analogies: profile.use_interests_for_analogies ?? true,
+      use_profile_for_main_answer: profile.use_profile_for_main_answer ?? true
         };
         
-    console.log('Formatted profile arrays:', {
+    console.log('Formatted profile with personalization toggles:', {
       interests: formattedProfile.interests,
-      preferred_analogy_domains: formattedProfile.preferred_analogy_domains
+      preferred_analogy_domains: formattedProfile.preferred_analogy_domains,
+      use_interests_for_analogies: formattedProfile.use_interests_for_analogies,
+      use_profile_for_main_answer: formattedProfile.use_profile_for_main_answer
         });
         
     return formattedProfile;
@@ -179,7 +185,11 @@ class UserProfileManager {
         learning_style: 'Visual',
         technical_depth: 50,
         preferred_analogy_domains: ['Gaming', 'Cooking'],
-        main_learning_goal: 'Personal Interest'
+        main_learning_goal: 'Personal Interest',
+        
+        // Default personalization toggles
+        use_interests_for_analogies: true,
+        use_profile_for_main_answer: true
       };
       
       const { data, error } = await supabase
