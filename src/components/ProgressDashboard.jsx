@@ -8,7 +8,6 @@ function ProgressDashboard() {
     getLearningPathRecommendations, 
     getUserAchievements,
     getEnhancedProgress,
-    getUserStreak,
     getLeaderboard,
     getAdaptiveRecommendations,
     loading 
@@ -18,7 +17,7 @@ function ProgressDashboard() {
   const [enhancedProgress, setEnhancedProgress] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
   const [achievements, setAchievements] = useState([]);
-  const [streakData, setStreakData] = useState(null);
+
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [adaptiveRecommendations, setAdaptiveRecommendations] = useState([]);
   const [loadingProgress, setLoadingProgress] = useState(false);
@@ -35,50 +34,57 @@ function ProgressDashboard() {
       setError(null);
       
       // Load all progress data in parallel
+      // Load core progress data
+      const enhancedResult = await getEnhancedProgress();
+      
+      // Load optional data with graceful fallbacks
       const [
         progressResult, 
-        enhancedResult,
         recommendationsResult, 
         achievementsResult, 
-        streakResult,
         leaderboardResult,
         adaptiveResult
-      ] = await Promise.all([
+      ] = await Promise.allSettled([
         getUserProgress(),
-        getEnhancedProgress(),
         getLearningPathRecommendations(),
         getUserAchievements(),
-        getUserStreak(),
-        getLeaderboard('total'),
-        getAdaptiveRecommendations()
+        getLeaderboard('total').catch(() => ({ success: false, error: 'Leaderboard not available' })),
+        getAdaptiveRecommendations().catch(() => ({ success: false, error: 'Recommendations not available' }))
       ]);
       
-      if (progressResult.success) {
-        setProgressData(progressResult);
-      }
-      
+      // Handle core progress data
       if (enhancedResult.success) {
         setEnhancedProgress(enhancedResult);
       }
       
-      if (recommendationsResult.success) {
-        setRecommendations(recommendationsResult.recommendations || []);
+      // Handle optional data with graceful fallbacks
+      if (progressResult.status === 'fulfilled' && progressResult.value?.success) {
+        setProgressData(progressResult.value);
       }
       
-      if (achievementsResult.success) {
-        setAchievements(achievementsResult.achievements || []);
+      if (recommendationsResult.status === 'fulfilled' && recommendationsResult.value?.success) {
+        setRecommendations(recommendationsResult.value.recommendations || []);
       }
       
-      if (streakResult.success) {
-        setStreakData(streakResult);
+      if (achievementsResult.status === 'fulfilled' && achievementsResult.value?.success) {
+        setAchievements(achievementsResult.value.achievements || []);
       }
       
-      if (leaderboardResult.success) {
-        setLeaderboardData(leaderboardResult);
+
+      
+      if (leaderboardResult.status === 'fulfilled' && leaderboardResult.value?.success) {
+        setLeaderboardData(leaderboardResult.value);
+      } else {
+        // Set empty leaderboard if endpoint fails
+        setLeaderboardData({
+          success: true,
+          leaderboard: [],
+          currentUser: { position: 'Unranked', tier: 'bronze', total_points: 0 }
+        });
       }
       
-      if (adaptiveResult.success) {
-        setAdaptiveRecommendations(adaptiveResult.recommendations || []);
+      if (adaptiveResult.status === 'fulfilled' && adaptiveResult.value?.success) {
+        setAdaptiveRecommendations(adaptiveResult.value.recommendations || []);
       }
       
     } catch (err) {
@@ -166,6 +172,43 @@ function ProgressDashboard() {
     }
   };
 
+  const handleStartReview = (topicName) => {
+    // Navigate to a review session for the specific topic
+    // This could redirect to the main chat with a pre-filled review prompt
+    const reviewPrompt = `I'd like to review ${formatTopicName(topicName)}. Can you help me practice and test my understanding of this topic?`;
+    
+    // Store the review prompt and navigate to the main chat
+    localStorage.setItem('reviewPrompt', reviewPrompt);
+    
+    // Show success message
+    alert(`Starting review session for ${formatTopicName(topicName)}! Redirecting to chat...`);
+    
+    // Navigate to the main page (you might want to use React Router here)
+    window.location.href = '/';
+  };
+
+  const handleStartLearning = (topic, type = 'general') => {
+    let learningPrompt = '';
+    
+    switch(type) {
+      case 'advancement':
+        learningPrompt = `I want to advance my knowledge in ${formatTopicName(topic)}. Can you teach me more advanced concepts?`;
+        break;
+      case 'strengthen':
+        learningPrompt = `I need to strengthen my understanding of ${formatTopicName(topic)}. Can you help me with the fundamentals?`;
+        break;
+      case 'review':
+        learningPrompt = `I'd like to review ${formatTopicName(topic)}. Can you help me practice what I've learned?`;
+        break;
+      default:
+        learningPrompt = `I want to learn more about ${formatTopicName(topic)}. Can you help me get started?`;
+    }
+    
+    localStorage.setItem('learningPrompt', learningPrompt);
+    alert(`Starting learning session for ${formatTopicName(topic)}! Redirecting to chat...`);
+    window.location.href = '/';
+  };
+
   const ProgressBar = ({ value, max = 100, color = 'bg-blue-500', label, showValue = true }) => (
     <div className="w-full">
       {label && <div className="flex justify-between text-sm text-gray-600 mb-1">
@@ -181,36 +224,7 @@ function ProgressDashboard() {
     </div>
   );
 
-  const StreakCard = () => (
-    <div className="bg-gradient-to-r from-orange-400 to-red-500 text-white rounded-lg p-6 shadow-lg">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-xl font-bold mb-2">🔥 Learning Streak</h3>
-          <div className="text-3xl font-bold">{streakData?.streak?.current || 0}</div>
-          <div className="text-sm opacity-90">Current streak</div>
-        </div>
-        <div className="text-right">
-          <div className="text-lg">{streakData?.streak?.longest || 0}</div>
-          <div className="text-sm opacity-90">Best streak</div>
-        </div>
-      </div>
-      
-      {streakData?.nextMilestone && (
-        <div className="mt-4 pt-4 border-t border-white/20">
-          <div className="text-sm opacity-90">Next milestone: {streakData.nextMilestone.name}</div>
-          <ProgressBar 
-            value={streakData.streak.current} 
-            max={streakData.nextMilestone.days}
-            color="bg-white/30"
-            showValue={false}
-          />
-          <div className="text-xs mt-1 opacity-75">
-            {streakData.nextMilestone.days - streakData.streak.current} days to go
-          </div>
-        </div>
-      )}
-    </div>
-  );
+
 
   const LeaderboardCard = () => (
     <div className="bg-white rounded-lg shadow-lg p-6">
@@ -327,8 +341,7 @@ function ProgressDashboard() {
         {activeTab === 'overview' && (
           <div className="space-y-8">
             {/* Gamification Cards Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <StreakCard />
+            <div className="grid grid-cols-1 gap-6">
               <LeaderboardCard />
             </div>
 
@@ -425,36 +438,7 @@ function ProgressDashboard() {
               </div>
             )}
 
-            {/* Next Review Due Section */}
-            {enhancedProgress?.nextReviewDue && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
-                <div className="flex items-center mb-4">
-                  <svg className="h-6 w-6 text-purple-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <h3 className="text-lg font-medium text-purple-900">📚 Next Review Due</h3>
-                </div>
-                <div className="bg-white rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium text-gray-900">
-                        {formatTopicName(enhancedProgress.nextReviewDue.topic_name)}
-                      </h4>
-                      <p className="text-sm text-gray-600">
-                        Mastery: {enhancedProgress.nextReviewDue.mastery?.level || 'Unknown'} 
-                        ({Math.round(enhancedProgress.nextReviewDue.mastery?.score || 0)}%)
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-medium text-purple-600">Due now</div>
-                      <button className="mt-1 bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700">
-                        Review Now
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+
 
             {/* Adaptive Recommendations */}
             {adaptiveRecommendations.length > 0 && (
@@ -466,7 +450,8 @@ function ProgressDashboard() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {adaptiveRecommendations.slice(0, 4).map((rec, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                    <div key={index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                         onClick={() => handleStartLearning(rec.topic_name || rec.topic, rec.type)}>
                       <div className="flex items-start justify-between">
                         <div className="flex items-center space-x-3">
                           {getRecommendationIcon(rec.type)}
@@ -477,6 +462,9 @@ function ProgressDashboard() {
                             <p className="text-sm text-gray-600 mt-1">
                               {rec.reasoning}
                             </p>
+                            <button className="mt-2 text-xs text-primary-600 hover:text-primary-700 font-medium">
+                              Click to start →
+                            </button>
                           </div>
                         </div>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -616,7 +604,10 @@ function ProgressDashboard() {
                           <span>Type: {rec.type}</span>
                           <span>Confidence: {Math.round(rec.confidence * 100)}%</span>
                         </div>
-                        <button className="bg-primary-600 text-white px-4 py-2 rounded-md hover:bg-primary-700">
+                        <button 
+                          onClick={() => handleStartLearning(rec.topic, rec.type)}
+                          className="bg-primary-600 text-white px-4 py-2 rounded-md hover:bg-primary-700 transition-colors"
+                        >
                           Start Learning
                         </button>
                       </div>
@@ -707,6 +698,6 @@ function ProgressDashboard() {
       </div>
     </div>
   );
-}
+  }
 
 export default ProgressDashboard; 

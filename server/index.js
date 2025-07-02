@@ -2861,31 +2861,6 @@ app.get('/api/user-topics/feed', async (req, res) => {
     
     console.log(`[Topic Feed] Generating personalized feed for user ${user_id}`);
     
-    // Get trending topics and suggestions in parallel
-    const [trendingResponse, suggestionsResponse] = await Promise.all([
-      // Call internal trending endpoint
-      new Promise((resolve) => {
-        const mockReq = { query: { user_id } };
-        const mockRes = {
-          json: (data) => resolve(data),
-          status: () => mockRes
-        };
-        // We'll call the trending endpoint logic directly here
-        resolve({ success: true, trending_topics: [] }); // Placeholder for now
-      }),
-      // Call internal suggestions endpoint  
-      new Promise((resolve) => {
-        const mockReq = { query: { user_id } };
-        const mockRes = {
-          json: (data) => resolve(data),
-          status: () => mockRes
-        };
-        // We'll call the suggestions endpoint logic directly here
-        resolve({ success: true, suggestions: [] }); // Placeholder for now
-      })
-    ]);
-    
-    // For now, let's make direct calls to get the data we need
     // Get user's recent activity
     const { data: recentSessions, error: recentError } = await supabase
       .from('sessions')
@@ -2904,16 +2879,194 @@ app.get('/api/user-topics/feed', async (req, res) => {
       .eq('id', user_id)
       .single();
     
+    // Get trending topics in user's cluster
+    let trendingTopics = [];
+    let clusterSize = 0;
+    
+    if (userProfile?.cluster_id) {
+      // Get other users in the same cluster
+      const { data: clusterUsers, error: clusterError } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('cluster_id', userProfile.cluster_id);
+      
+      if (!clusterError && clusterUsers) {
+        clusterSize = clusterUsers.length;
+        const clusterUserIds = clusterUsers.map(u => u.id);
+        
+        // Get recent sessions from cluster users (last 30 days for better data)
+        const { data: clusterSessions, error: clusterSessionsError } = await supabase
+          .from('sessions')
+          .select('secret_topic, user_id, created_at')
+          .in('user_id', clusterUserIds)
+          .not('secret_topic', 'is', null)
+          .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+          .order('created_at', { ascending: false });
+        
+        if (!clusterSessionsError && clusterSessions) {
+          // Count topic frequency and unique users
+          const topicStats = {};
+          
+          clusterSessions.forEach(session => {
+            const topic = session.secret_topic;
+            if (!topicStats[topic]) {
+              topicStats[topic] = {
+                name: topic,
+                sessions: 0,
+                users: new Set(),
+                learners: []
+              };
+            }
+            topicStats[topic].sessions++;
+            topicStats[topic].users.add(session.user_id);
+          });
+          
+          // Get usernames for learners display
+          const allUserIds = [...new Set(clusterSessions.map(s => s.user_id))];
+          const { data: userDetails } = await supabase
+            .from('user_profiles')
+            .select('id, username')
+            .in('id', allUserIds);
+          
+          const userMap = {};
+          if (userDetails) {
+            userDetails.forEach(user => {
+              userMap[user.id] = user.username || `User${user.id.slice(0, 8)}`;
+            });
+          }
+          
+          // Add learner details to topic stats
+          Object.values(topicStats).forEach(stat => {
+            stat.learners = Array.from(stat.users).map(userId => ({
+              username: userMap[userId] || `User${userId.slice(0, 8)}`
+            }));
+          });
+          
+          // Sort by trending score (combination of sessions and unique users)
+          trendingTopics = Object.values(topicStats)
+            .filter(stat => stat.sessions >= 2) // Require at least 2 sessions
+            .map(stat => ({
+              name: stat.name,
+              unique_users: stat.users.size,
+              session_count: stat.sessions,
+              trend_score: stat.sessions * 0.7 + stat.users.size * 0.3,
+              learners: stat.learners
+            }))
+            .sort((a, b) => b.trend_score - a.trend_score)
+            .slice(0, 5);
+        }
+      }
+    }
+    
+    // Get topic suggestions based on user's interests and popular topics
+    let suggestions = [];
+    
+    // Get globally popular topics (extend to 60 days for better data)
+    const { data: allSessions, error: allSessionsError } = await supabase
+      .from('sessions')
+      .select('secret_topic, user_id')
+      .not('secret_topic', 'is', null)
+      .gte('created_at', new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString());
+    
+    if (!allSessionsError && allSessions) {
+      const globalTopicCounts = {};
+      const globalTopicUsers = {};
+      
+      allSessions.forEach(session => {
+        const topic = session.secret_topic;
+        globalTopicCounts[topic] = (globalTopicCounts[topic] || 0) + 1;
+        
+        if (!globalTopicUsers[topic]) {
+          globalTopicUsers[topic] = new Set();
+        }
+        globalTopicUsers[topic].add(session.user_id);
+      });
+      
+      // Get user's recent topics to avoid suggesting the same ones
+      const userTopics = new Set(recentSessions?.map(s => s.secret_topic) || []);
+      
+      // Create suggestions from popular topics user hasn't explored
+      const popularTopics = Object.entries(globalTopicCounts)
+        .filter(([topic]) => !userTopics.has(topic))
+        .filter(([topic, count]) => count >= 5) // Require minimum activity
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+      
+      suggestions = popularTopics.map(([topic, count]) => ({
+        name: topic,
+        type: 'global_popular',
+        reason: `Popular with ${globalTopicUsers[topic]?.size || 0} learners (${count} sessions)`,
+        popularity_score: count,
+        learner_count: globalTopicUsers[topic]?.size || 0
+      }));
+      
+      // Add cluster-based suggestions if available
+      if (trendingTopics.length > 0) {
+        const clusterSuggestion = trendingTopics
+          .filter(trending => !userTopics.has(trending.name))
+          .slice(0, 3)
+          .map(trending => ({
+            name: trending.name,
+            type: 'cluster_trending',
+            reason: `Trending in your learning cluster (${trending.unique_users} learners)`,
+            trend_score: trending.trend_score,
+            learners: trending.learners
+          }));
+        
+        suggestions = [...clusterSuggestion, ...suggestions].slice(0, 5);
+      }
+      
+      // Add interest-based suggestions if user has interests
+      if (userProfile?.interests && Array.isArray(userProfile.interests)) {
+        const interestSuggestions = userProfile.interests
+          .filter(interest => !userTopics.has(interest))
+          .filter(interest => globalTopicCounts[interest]) // Only suggest if topic has activity
+          .slice(0, 2)
+          .map(interest => ({
+            name: interest,
+            type: 'interest_based',
+            reason: 'Based on your learning interests',
+            interest_match: true,
+            session_count: globalTopicCounts[interest] || 0
+          }));
+        
+        suggestions = [...suggestions, ...interestSuggestions].slice(0, 6);
+      }
+      
+      // If still no suggestions, add some default popular ones
+      if (suggestions.length === 0) {
+        const fallbackSuggestions = Object.entries(globalTopicCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([topic, count]) => ({
+            name: topic,
+            type: 'fallback_popular',
+            reason: `Popular topic to explore (${count} total sessions)`,
+            popularity_score: count
+          }));
+        
+        suggestions = fallbackSuggestions;
+      }
+    }
+    
     const feed = {
       recent_activity: recentSessions || [],
-      trending_topics: [], // Will be populated by actual trending call
-      suggestions: [], // Will be populated by actual suggestions call
+      trending_topics: trendingTopics,
+      suggestions: suggestions,
       cluster_id: userProfile?.cluster_id || null,
+      cluster_size: clusterSize,
       interests: userProfile?.interests || [],
-      generated_at: new Date().toISOString()
+      generated_at: new Date().toISOString(),
+      stats: {
+        total_recent_sessions: recentSessions?.length || 0,
+        cluster_trending_count: trendingTopics.length,
+        suggestion_count: suggestions.length,
+        has_cluster: !!userProfile?.cluster_id,
+        has_interests: !!(userProfile?.interests && userProfile.interests.length > 0)
+      }
     };
     
-    console.log(`[Topic Feed] Generated feed with ${feed.recent_activity.length} recent activities`);
+    console.log(`[Topic Feed] Generated feed with ${feed.recent_activity.length} recent activities, ${trendingTopics.length} trending topics, ${suggestions.length} suggestions`);
     
     res.json({
       success: true,
@@ -3745,6 +3898,189 @@ app.get('/api/user-achievements', async (req, res) => {
 
 // ==================== PROGRESS SYSTEM ENHANCEMENTS ====================
 
+// 🏆 Get Leaderboard (Generated from real session data) - MUST be before /:userId route
+app.get('/api/progress/leaderboard', async (req, res) => {
+  try {
+    const { user_id, type = 'total' } = req.query;
+    
+    console.log(`[Leaderboard] Generating real leaderboard from sessions data`);
+    
+    // Calculate leaderboard from sessions data
+    const timeFilter = type === 'weekly' ? "created_at >= NOW() - INTERVAL '7 days'" : 
+                      type === 'monthly' ? "created_at >= NOW() - INTERVAL '30 days'" : 
+                      '1=1'; // No filter for total
+    
+    // Get user activity and calculate points from sessions with user names
+    const { data: userSessions, error: sessionsError } = await supabase
+      .from('sessions')
+      .select(`
+        user_id, 
+        secret_topic, 
+        created_at,
+        users!inner(
+          first_name,
+          last_name
+        )
+      `)
+      .not('secret_topic', 'is', null)
+      .not('user_id', 'is', null);
+    
+    if (sessionsError) {
+      console.error('[Leaderboard] Error fetching sessions:', sessionsError);
+      return res.status(500).json({ error: 'Failed to fetch sessions data' });
+    }
+    
+    // Calculate points and stats for each user
+    const userStats = {};
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    
+    userSessions.forEach(session => {
+      const userId = session.user_id;
+      const sessionDate = new Date(session.created_at);
+      
+      if (!userStats[userId]) {
+        userStats[userId] = {
+          userId,
+          firstName: session.users?.first_name || null,
+          lastName: session.users?.last_name || null,
+          totalSessions: 0,
+          totalTopics: new Set(),
+          weeklySessions: 0,
+          weeklyTopics: new Set(),
+          monthlySessions: 0,
+          monthlyTopics: new Set()
+        };
+      }
+      
+      const stats = userStats[userId];
+      
+      // Count total activity
+      stats.totalSessions++;
+      stats.totalTopics.add(session.secret_topic);
+      
+      // Count weekly activity
+      if (sessionDate >= weekAgo) {
+        stats.weeklySessions++;
+        stats.weeklyTopics.add(session.secret_topic);
+      }
+      
+      // Count monthly activity
+      if (sessionDate >= monthAgo) {
+        stats.monthlySessions++;
+        stats.monthlyTopics.add(session.secret_topic);
+      }
+    });
+    
+    // Convert to leaderboard format with points calculation
+    const leaderboardData = Object.values(userStats).map(stats => {
+      // Points calculation: 10 points per session + 50 points per unique topic
+      const totalPoints = (stats.totalSessions * 10) + (stats.totalTopics.size * 50);
+      const weeklyPoints = (stats.weeklySessions * 10) + (stats.weeklyTopics.size * 50);
+      const monthlyPoints = (stats.monthlySessions * 10) + (stats.monthlyTopics.size * 50);
+      
+      // Determine tier based on total points
+      let tier = 'bronze';
+      if (totalPoints >= 2500) tier = 'diamond';
+      else if (totalPoints >= 1000) tier = 'platinum';
+      else if (totalPoints >= 500) tier = 'gold';
+      else if (totalPoints >= 100) tier = 'silver';
+      
+      // Calculate achievements (simplified)
+      const achievements = Math.min(10, Math.floor(stats.totalTopics.size / 3) + Math.floor(stats.totalSessions / 10));
+      
+      return {
+        userId: stats.userId,
+        firstName: stats.firstName,
+        lastName: stats.lastName,
+        totalPoints,
+        weeklyPoints,
+        monthlyPoints,
+        tier,
+        achievements,
+        sessions: stats.totalSessions,
+        topics: stats.totalTopics.size
+      };
+    });
+    
+    // Sort by appropriate points column
+    const sortColumn = type === 'weekly' ? 'weeklyPoints' : 
+                      type === 'monthly' ? 'monthlyPoints' : 'totalPoints';
+    
+    leaderboardData.sort((a, b) => b[sortColumn] - a[sortColumn]);
+    
+    // Format leaderboard with names (fallback to friendly IDs)
+    const formattedLeaderboard = leaderboardData.slice(0, 20).map((entry, index) => {
+      let displayName = '';
+      
+      // Try to use real names if available
+      if (entry.firstName && entry.lastName) {
+        displayName = `${entry.firstName} ${entry.lastName}`.trim();
+      } else if (entry.firstName) {
+        displayName = entry.firstName;
+      } else {
+        // Create a friendly username from the ID
+        const friendlyId = entry.userId.slice(0, 8);
+        displayName = `User ${friendlyId}`;
+      }
+      
+      return {
+        position: index + 1,
+        userId: entry.userId,
+        name: displayName,
+        points: entry[sortColumn],
+        tier: entry.tier,
+        achievements: entry.achievements
+      };
+    });
+    
+    // Find current user's position
+    let currentUserRank = null;
+    if (user_id) {
+      const userEntry = leaderboardData.find(entry => entry.userId === user_id);
+      if (userEntry) {
+        const position = leaderboardData.findIndex(entry => entry.userId === user_id) + 1;
+        currentUserRank = {
+          position,
+          tier: userEntry.tier,
+          total_points: userEntry[sortColumn]
+        };
+      } else {
+        // User not found in leaderboard
+        currentUserRank = {
+          position: 'Unranked',
+          tier: 'bronze',
+          total_points: 0
+        };
+      }
+    }
+    
+    res.json({
+      success: true,
+      leaderboard: formattedLeaderboard,
+      currentUser: currentUserRank,
+      type,
+      tierThresholds: {
+        bronze: 0,
+        silver: 100,
+        gold: 500,
+        platinum: 1000,
+        diamond: 2500
+      },
+      metadata: {
+        totalUsers: Object.keys(userStats).length,
+        basedOnSessions: userSessions.length,
+        generatedAt: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Leaderboard] Error:', error);
+    res.status(500).json({ error: 'Failed to generate leaderboard' });
+  }
+});
+
 // 🎯 Get Enhanced User Progress with Adaptive Mastery Models
 app.get('/api/progress/:userId', async (req, res) => {
   try {
@@ -3752,73 +4088,138 @@ app.get('/api/progress/:userId', async (req, res) => {
     
     console.log(`[Enhanced Progress] Fetching enhanced progress for user ${userId}`);
     
-    // Get user's topic mastery data
-    const { data: topicMastery, error: masteryError } = await supabase
-      .from('topic_mastery')
-      .select('*')
+    // Get user sessions with secret_topic (actual data source)
+    const { data: sessions, error: sessionsError } = await supabase
+      .from('sessions')
+      .select('secret_topic, created_at, id, interactions')
       .eq('user_id', userId)
-      .order('updated_at', { ascending: false });
-    
-    if (masteryError) {
-      console.error('[Enhanced Progress] Error fetching topic mastery:', masteryError);
-    }
-    
-    // Get recent learning sessions
-    const { data: recentSessions, error: sessionsError } = await supabase
-      .from('learning_sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .order('session_date', { ascending: false })
-      .limit(20);
+      .not('secret_topic', 'is', null)
+      .order('created_at', { ascending: false });
     
     if (sessionsError) {
       console.error('[Enhanced Progress] Error fetching sessions:', sessionsError);
+      return res.status(500).json({ error: 'Failed to fetch user sessions' });
     }
     
-    // Calculate enhanced mastery for each topic
-    const enhancedTopics = (topicMastery || []).map(topic => {
-      // Get recent performance data for this topic
-      const topicSessions = (recentSessions || []).filter(s => s.topic_name === topic.topic_name);
-      
-      // Calculate mastery using learning algorithms
-      const learningData = {
-        avgFeedbackScore: topic.avg_feedback_score || 0,
-        quizScores: [], // Would be populated from quiz data
-        timeSpent: topic.total_time_spent || 0,
-        reviewCount: topic.review_count || 0,
-        lastReviewQuality: topic.last_review_quality || 0,
-        correctAnswers: topic.quiz_successes || 0,
-        totalQuestions: topic.quiz_attempts || 0
-      };
-      
-      const masteryInfo = masteryCalculator.calculateMastery(learningData);
-      
-      // Check if due for review
-      const dueForReview = spacedRepetition.isDueForReview({
-        nextReviewDate: topic.next_review_date,
-        lastReviewDate: topic.last_review_date
+    console.log(`[Enhanced Progress] Found ${sessions?.length || 0} sessions with topics for user ${userId}`);
+    
+    if (!sessions || sessions.length === 0) {
+      return res.json({
+        success: true,
+        topics: [],
+        summary: {
+          totalTopics: 0,
+          averageMastery: 0,
+          topicsReady: 0,
+          topicsDue: 0,
+          expertLevel: 0,
+          totalStudyTime: 0
+        },
+        algorithm_insights: {
+          spaced_repetition: 'SM-2 Algorithm',
+          mastery_weights: {
+            feedback: '30%',
+            quiz: '40%',
+            retention: '20%',
+            engagement: '10%'
+          }
+        }
       });
+    }
+    
+    // Process sessions to calculate topic-based progress
+    const topicStats = {};
+    const now = new Date();
+    
+    sessions.forEach(session => {
+      const topic = session.secret_topic;
+      const sessionDate = new Date(session.created_at);
+      const daysAgo = (now - sessionDate) / (1000 * 60 * 60 * 24);
       
-      // Calculate current retention if time has passed
-      let currentRetention = masteryInfo.score;
-      if (topic.last_review_date) {
-        currentRetention = learningDecay.calculateRetention(
-          masteryInfo.score,
-          topic.last_review_date,
-          topic.review_count || 1
-        );
+      if (!topicStats[topic]) {
+        topicStats[topic] = {
+          topic_name: topic,
+          session_count: 0,
+          first_learned: session.created_at,
+          last_activity: session.created_at,
+          interactions_count: 0,
+          recent_sessions: []
+        };
       }
       
+      topicStats[topic].session_count++;
+      topicStats[topic].last_activity = session.created_at;
+      
+      // Count interactions in this session
+      if (session.interactions && Array.isArray(session.interactions)) {
+        topicStats[topic].interactions_count += session.interactions.length;
+      }
+      
+      // Track recent sessions (last 7 days)
+      if (daysAgo <= 7) {
+        topicStats[topic].recent_sessions.push(session);
+      }
+    });
+    
+    // Calculate enhanced mastery for each topic based on actual session data
+    const enhancedTopics = Object.values(topicStats).map(topic => {
+      // Simple mastery calculation based on engagement and recency
+      const sessionCount = topic.session_count;
+      const recentActivity = topic.recent_sessions.length;
+      const interactionDensity = topic.interactions_count / sessionCount;
+      const daysSinceLastActivity = (now - new Date(topic.last_activity)) / (1000 * 60 * 60 * 24);
+      
+      // Calculate mastery score (0-100)
+      let masteryScore = Math.min(100, (sessionCount * 10) + (recentActivity * 15) + (interactionDensity * 5));
+      
+      // Reduce score based on time since last activity
+      if (daysSinceLastActivity > 7) {
+        masteryScore *= Math.max(0.5, 1 - (daysSinceLastActivity - 7) / 30);
+      }
+      
+      masteryScore = Math.round(masteryScore);
+      
+      // Determine mastery level
+      let masteryLevel = 'beginner';
+      if (masteryScore >= 80) masteryLevel = 'expert';
+      else if (masteryScore >= 60) masteryLevel = 'advanced';
+      else if (masteryScore >= 30) masteryLevel = 'intermediate';
+      
+      // Determine if due for review (topics not practiced in 3+ days)
+      const dueForReview = daysSinceLastActivity >= 3;
+      
+      // Calculate next review date (basic spaced repetition)
+      const nextReviewDays = Math.min(14, Math.max(1, sessionCount * 2));
+      const nextReviewDate = new Date(new Date(topic.last_activity).getTime() + nextReviewDays * 24 * 60 * 60 * 1000);
+      
+      // Calculate retention (decreases over time)
+      const maxRetentionDays = 30;
+      const retentionScore = Math.max(20, 100 - (daysSinceLastActivity / maxRetentionDays) * 80);
+      
       return {
-        ...topic,
-        mastery: masteryInfo,
-        currentRetention,
+        topic_name: topic.topic_name,
+        session_count: sessionCount,
+        interactions_count: topic.interactions_count,
+        first_learned: topic.first_learned,
+        last_activity: topic.last_activity,
+        mastery: {
+          score: masteryScore,
+          level: masteryLevel,
+          confidence: Math.min(1, sessionCount / 10), // Confidence based on practice
+          components: {
+            feedback: Math.round(masteryScore * 0.3),
+            quiz: Math.round(masteryScore * 0.4),
+            retention: Math.round(retentionScore),
+            engagement: Math.round(interactionDensity * 10)
+          }
+        },
+        currentRetention: Math.round(retentionScore),
         dueForReview,
-        nextReviewDate: spacedRepetition.getNextReviewDate({
-          nextReviewDate: topic.next_review_date
-        }),
-        recentActivity: topicSessions.length,
-        lastActivity: topicSessions[0]?.session_date || topic.updated_at
+        nextReviewDate: nextReviewDate.toISOString(),
+        recentActivity: recentActivity,
+        total_time_spent: sessionCount * 10, // Estimate 10 minutes per session
+        review_count: sessionCount,
+        interval_days: nextReviewDays
       };
     });
     
@@ -3935,92 +4336,7 @@ app.get('/api/progress/streak', async (req, res) => {
   }
 });
 
-// 🏆 Get Leaderboard
-app.get('/api/progress/leaderboard', async (req, res) => {
-  try {
-    const { user_id, type = 'total' } = req.query;
-    
-    console.log(`[Leaderboard] Fetching ${type} leaderboard`);
-    
-    let orderColumn = 'total_points';
-    if (type === 'weekly') orderColumn = 'weekly_points';
-    if (type === 'monthly') orderColumn = 'monthly_points';
-    
-    // Get top users
-    const { data: leaderboardData, error: leaderboardError } = await supabase
-      .from('leaderboard')
-      .select(`
-        user_id,
-        total_points,
-        weekly_points,
-        monthly_points,
-        rank_tier,
-        achievements_count,
-        users!inner(
-          first_name,
-          last_name
-        )
-      `)
-      .order(orderColumn, { ascending: false })
-      .limit(20);
-    
-    if (leaderboardError) {
-      console.error('[Leaderboard] Error fetching leaderboard:', leaderboardError);
-      return res.status(500).json({ error: 'Failed to fetch leaderboard' });
-    }
-    
-    // Get current user's position if provided
-    let currentUserRank = null;
-    if (user_id) {
-      const { data: userLeaderboard, error: userError } = await supabase
-        .from('leaderboard')
-        .select('*')
-        .eq('user_id', user_id)
-        .single();
-      
-      if (!userError && userLeaderboard) {
-        // Calculate user's rank by counting users with higher points
-        const { count } = await supabase
-          .from('leaderboard')
-          .select('*', { count: 'exact', head: true })
-          .gt(orderColumn, userLeaderboard[orderColumn]);
-        
-        currentUserRank = {
-          ...userLeaderboard,
-          position: (count || 0) + 1
-        };
-      }
-    }
-    
-    // Format leaderboard data
-    const formattedLeaderboard = (leaderboardData || []).map((entry, index) => ({
-      position: index + 1,
-      userId: entry.user_id,
-      name: entry.users ? `${entry.users.first_name} ${entry.users.last_name}`.trim() : 'Anonymous',
-      points: entry[orderColumn] || 0,
-      tier: entry.rank_tier,
-      achievements: entry.achievements_count || 0
-    }));
-    
-    res.json({
-      success: true,
-      leaderboard: formattedLeaderboard,
-      currentUser: currentUserRank,
-      type,
-      tierThresholds: {
-        bronze: 0,
-        silver: 100,
-        gold: 500,
-        platinum: 1000,
-        diamond: 2500
-      }
-    });
-    
-  } catch (error) {
-    console.error('[Leaderboard] Error:', error);
-    res.status(500).json({ error: 'Failed to fetch leaderboard' });
-  }
-});
+
 
 // 🧠 Get Adaptive Recommendations
 app.get('/api/progress/recommendations/:userId', async (req, res) => {

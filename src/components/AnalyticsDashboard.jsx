@@ -55,7 +55,8 @@ const AnalyticsDashboard = ({ userId = null, isUserSpecific = false }) => {
   // Fetch analytics data with filters
   const fetchAnalytics = useCallback(async (filterOptions = filters) => {
     try {
-      const baseUrl = `http://localhost:3001/api/analytics${isUserSpecific ? '/self' : ''}`;
+      // Use relative URLs for better deployment compatibility
+      const baseUrl = `/api/analytics${isUserSpecific ? '/self' : ''}`;
       
       // Build query parameters
       const params = new URLSearchParams();
@@ -76,18 +77,36 @@ const AnalyticsDashboard = ({ userId = null, isUserSpecific = false }) => {
         fetch(`${baseUrl}/clusters/distribution${urlSuffix}`)
       ]);
 
+      // Check response status and handle errors
+      const responses = [popularityRes, timelineRes, engagementRes, trendsRes, clustersRes];
+      const responseLabels = ['popularity', 'timeline', 'engagement', 'trends', 'clusters'];
+      
+      for (let i = 0; i < responses.length; i++) {
+        if (!responses[i].ok) {
+          console.error(`Analytics ${responseLabels[i]} endpoint failed:`, responses[i].status, responses[i].statusText);
+        }
+      }
+
       const [popularity, timeline, engagement, trends, clusters] = await Promise.all([
-        popularityRes.json(),
-        timelineRes.json(),
-        engagementRes.json(),
-        trendsRes.json(),
-        clustersRes.json()
+        popularityRes.ok ? popularityRes.json() : { error: `Failed to fetch popularity data (${popularityRes.status})` },
+        timelineRes.ok ? timelineRes.json() : { error: `Failed to fetch timeline data (${timelineRes.status})` },
+        engagementRes.ok ? engagementRes.json() : { error: `Failed to fetch engagement data (${engagementRes.status})` },
+        trendsRes.ok ? trendsRes.json() : { error: `Failed to fetch trends data (${trendsRes.status})` },
+        clustersRes.ok ? clustersRes.json() : { error: `Failed to fetch clusters data (${clustersRes.status})` }
       ]);
 
       setAnalytics({ popularity, timeline, engagement, trends, clusters });
       setLastUpdated(new Date());
     } catch (error) {
       console.error('Error fetching analytics:', error);
+      // Set error state for better user feedback
+      setAnalytics({
+        popularity: { error: 'Failed to load analytics data' },
+        timeline: { error: 'Failed to load analytics data' },
+        engagement: { error: 'Failed to load analytics data' },
+        trends: { error: 'Failed to load analytics data' },
+        clusters: { error: 'Failed to load analytics data' }
+      });
     } finally {
       setLoading(false);
     }

@@ -250,6 +250,44 @@ function QueryPage() {
     loadUserData();
   }, [user?.id]);
 
+  // Handle stored prompts from Progress Dashboard
+  useEffect(() => {
+    const checkStoredPrompts = () => {
+      // Check for review prompt
+      const reviewPrompt = localStorage.getItem('reviewPrompt');
+      if (reviewPrompt) {
+        setQuery(reviewPrompt);
+        localStorage.removeItem('reviewPrompt');
+        // Show a toast or notification
+        console.log('Loaded review prompt from Progress Dashboard:', reviewPrompt);
+      }
+      
+      // Check for learning prompt
+      const learningPrompt = localStorage.getItem('learningPrompt');
+      if (learningPrompt) {
+        setQuery(learningPrompt);
+        localStorage.removeItem('learningPrompt');
+        console.log('Loaded learning prompt from Progress Dashboard:', learningPrompt);
+      }
+    };
+
+    // Check on component mount
+    checkStoredPrompts();
+    
+    // Also check when the component becomes visible (e.g., tab focus)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        checkStoredPrompts();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   // Migrate existing conversations to a default project if needed
   useEffect(() => {
     if (user && projects.length === 0) {

@@ -51,6 +51,8 @@ function buildTimeFilter(timeframe, startDate, endDate) {
         };
       }
       break;
+    case 'all':
+      return { allTime: true }; // Special flag for no time filter
     default:
       const defaultWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       return { startDate: defaultWeekAgo.toISOString() };
@@ -99,7 +101,7 @@ router.get('/topics/popularity', async (req, res) => {
     
     // Apply time filter
     const timeFilter = buildTimeFilter(timeframe, startDate, endDate);
-    if (timeFilter) {
+    if (timeFilter && !timeFilter.allTime) {
       query = query.gte('created_at', timeFilter.startDate);
       if (timeFilter.endDate) {
         query = query.lte('created_at', timeFilter.endDate);
@@ -183,30 +185,45 @@ router.get('/topics/timeline', async (req, res) => {
   try {
     const { timeframe = '7d', startDate, endDate, userSegment = 'all', topicFilter } = req.query;
     
+    // Check cache first
+    const cacheKey = getCacheKey('topics_timeline', req.query);
+    const cachedResult = getFromCache(cacheKey);
+    if (cachedResult) {
+      console.log('[Analytics] Returning cached timeline data');
+      return res.json(cachedResult);
+    }
+    
     console.log('[Analytics] Fetching topic timeline with filters:', req.query);
     
+    // Use sessions table which has the secret_topic data
     let query = supabase
-      .from('queries')
-      .select('*');
+      .from('sessions')
+      .select('secret_topic, created_at, user_id')
+      .not('secret_topic', 'is', null);
     
     // Apply time filter
     const timeFilter = buildTimeFilter(timeframe, startDate, endDate);
-    if (timeFilter) {
+    if (timeFilter && !timeFilter.allTime) {
       query = query.gte('created_at', timeFilter.startDate);
       if (timeFilter.endDate) {
         query = query.lte('created_at', timeFilter.endDate);
       }
     }
     
-    const { data: queries, error } = await query;
+    const { data: sessions, error } = await query;
     
     if (error) {
-      console.error('[Analytics] Error fetching queries:', error);
-      return res.status(500).json({ error: 'Failed to fetch queries' });
+      console.error('[Analytics] Error fetching sessions:', error);
+      return res.status(500).json({ error: 'Failed to fetch sessions' });
+    }
+    
+    console.log(`[Analytics Timeline Debug] Found ${sessions?.length || 0} sessions`);
+    if (sessions && sessions.length > 0) {
+      console.log(`[Analytics Timeline Debug] Sample session:`, sessions[0]);
     }
     
     // Apply user segment filter if needed
-    let filteredQueries = queries;
+    let filteredSessions = sessions;
     if (userSegment !== 'all') {
       const userFilter = buildUserSegmentFilter(userSegment);
       if (userFilter) {
@@ -216,24 +233,23 @@ router.get('/topics/timeline', async (req, res) => {
           .or(userFilter);
         
         const userIds = users?.map(u => u.user_id) || [];
-        filteredQueries = queries.filter(q => userIds.includes(q.user_id));
+        filteredSessions = sessions.filter(s => userIds.includes(s.user_id));
       }
     }
     
     // Group by date and topic
     const timelineData = {};
-    const sessionTopics = {};
     
-    filteredQueries.forEach(query => {
-      if (query.discovered_topic) {
-        const topic = query.discovered_topic;
+    filteredSessions.forEach(session => {
+      if (session.secret_topic) {
+        const topic = session.secret_topic;
         
         // Apply topic filter
         if (topicFilter && !topic.toLowerCase().includes(topicFilter.toLowerCase())) {
           return;
         }
         
-        const date = new Date(query.created_at).toISOString().split('T')[0];
+        const date = new Date(session.created_at).toISOString().split('T')[0];
         
         if (!timelineData[date]) {
           timelineData[date] = {};
@@ -243,18 +259,32 @@ router.get('/topics/timeline', async (req, res) => {
           timelineData[date][topic] = 0;
         }
         
-        const sessionKey = `${query.session_id}-${topic}`;
-        if (!sessionTopics[sessionKey]) {
-          timelineData[date][topic]++;
-          sessionTopics[sessionKey] = true;
-        }
+        timelineData[date][topic]++;
       }
     });
     
-    res.json({
+    const result = {
       timeline_data: timelineData,
-      period: timeframe === 'custom' ? `${startDate} to ${endDate}` : `Last ${timeframe}`
-    });
+      period: timeframe === 'custom' ? `${startDate} to ${endDate}` : `Last ${timeframe}`,
+      total_sessions: filteredSessions.length,
+      // Debug info
+      debug: {
+        sessions_found: sessions?.length || 0,
+        filtered_sessions: filteredSessions?.length || 0,
+        sample_session: sessions?.length > 0 ? {
+          secret_topic: sessions[0].secret_topic,
+          created_at: sessions[0].created_at,
+          date_extracted: new Date(sessions[0].created_at).toISOString().split('T')[0]
+        } : null,
+        timeframe_used: timeframe,
+        time_filter: timeFilter
+      }
+    };
+    
+    // Cache the result
+    setCache(cacheKey, result);
+    
+    res.json(result);
     
   } catch (error) {
     console.error('[Analytics] Error in topic timeline endpoint:', error);
@@ -368,6 +398,14 @@ router.get('/topics/trends', async (req, res) => {
   try {
     const { timeframe = '7d', topicFilter, minSessions = 1 } = req.query;
     
+    // Check cache first
+    const cacheKey = getCacheKey('topics_trends', req.query);
+    const cachedResult = getFromCache(cacheKey);
+    if (cachedResult) {
+      console.log('[Analytics] Returning cached trends data');
+      return res.json(cachedResult);
+    }
+    
     console.log('[Analytics] Fetching topic trends with filters:', req.query);
     
     const now = new Date();
@@ -395,26 +433,28 @@ router.get('/topics/trends', async (req, res) => {
         previousEnd = recentStart;
     }
     
-    const [recentQueries, previousQueries] = await Promise.all([
+    // Use sessions table instead of queries for trend analysis
+    const [recentSessions, previousSessions] = await Promise.all([
       supabase
-        .from('queries')
-        .select('*')
+        .from('sessions')
+        .select('secret_topic, user_id, created_at')
+        .not('secret_topic', 'is', null)
         .gte('created_at', recentStart.toISOString()),
       supabase
-        .from('queries')
-        .select('*')
+        .from('sessions')
+        .select('secret_topic, user_id, created_at')
+        .not('secret_topic', 'is', null)
         .gte('created_at', previousStart.toISOString())
         .lt('created_at', previousEnd.toISOString())
     ]);
     
     // Count sessions by topic for both periods
-    const countTopicSessions = (queries) => {
+    const countTopicSessions = (sessions) => {
       const topicCounts = {};
-      const sessionTopics = {};
       
-      queries.data?.forEach(query => {
-        if (query.discovered_topic) {
-          const topic = query.discovered_topic;
+      sessions.data?.forEach(session => {
+        if (session.secret_topic) {
+          const topic = session.secret_topic;
           
           // Apply topic filter
           if (topicFilter && !topic.toLowerCase().includes(topicFilter.toLowerCase())) {
@@ -425,52 +465,45 @@ router.get('/topics/trends', async (req, res) => {
             topicCounts[topic] = 0;
           }
           
-          if (!sessionTopics[query.session_id]) {
-            sessionTopics[query.session_id] = new Set();
-          }
-          
-          if (!sessionTopics[query.session_id].has(topic)) {
-            topicCounts[topic]++;
-            sessionTopics[query.session_id].add(topic);
-          }
+          topicCounts[topic]++;
         }
       });
       
       return topicCounts;
     };
     
-    const recentCounts = countTopicSessions(recentQueries);
-    const previousCounts = countTopicSessions(previousQueries);
+    const recentCounts = countTopicSessions(recentSessions);
+    const previousCounts = countTopicSessions(previousSessions);
     
     // Calculate trends
     const allTopics = new Set([...Object.keys(recentCounts), ...Object.keys(previousCounts)]);
     const trends = [];
     
     allTopics.forEach(topic => {
-      const recentSessions = recentCounts[topic] || 0;
-      const previousSessions = previousCounts[topic] || 0;
+      const recentSessionsCount = recentCounts[topic] || 0;
+      const previousSessionsCount = previousCounts[topic] || 0;
       
       // Apply minimum sessions filter
-      if (recentSessions < parseInt(minSessions) && previousSessions < parseInt(minSessions)) {
+      if (recentSessionsCount < parseInt(minSessions) && previousSessionsCount < parseInt(minSessions)) {
         return;
       }
       
       let growthPercentage;
       let trend;
       
-      if (previousSessions === 0) {
-        growthPercentage = recentSessions > 0 ? 'New' : '0';
-        trend = recentSessions > 0 ? 'up' : 'stable';
+      if (previousSessionsCount === 0) {
+        growthPercentage = recentSessionsCount > 0 ? 'New' : '0';
+        trend = recentSessionsCount > 0 ? 'up' : 'stable';
       } else {
-        growthPercentage = (((recentSessions - previousSessions) / previousSessions) * 100).toFixed(1);
-        trend = recentSessions > previousSessions ? 'up' : 
-               recentSessions < previousSessions ? 'down' : 'stable';
+        growthPercentage = (((recentSessionsCount - previousSessionsCount) / previousSessionsCount) * 100).toFixed(1);
+        trend = recentSessionsCount > previousSessionsCount ? 'up' : 
+               recentSessionsCount < previousSessionsCount ? 'down' : 'stable';
       }
       
       trends.push({
         topic_name: topic,
-        recent_sessions: recentSessions,
-        previous_sessions: previousSessions,
+        recent_sessions: recentSessionsCount,
+        previous_sessions: previousSessionsCount,
         growth_percentage: growthPercentage,
         trend: trend
       });
@@ -479,10 +512,25 @@ router.get('/topics/trends', async (req, res) => {
     // Sort by recent sessions
     trends.sort((a, b) => b.recent_sessions - a.recent_sessions);
     
-    res.json({
+    const result = {
       trends: trends,
-      period: `Comparing last ${timeframe} vs previous ${timeframe}`
-    });
+      period: `Comparing last ${timeframe} vs previous ${timeframe}`,
+      recent_period: {
+        start: recentStart.toISOString(),
+        end: now.toISOString(),
+        total_sessions: recentSessions.data?.length || 0
+      },
+      previous_period: {
+        start: previousStart.toISOString(),
+        end: previousEnd.toISOString(),
+        total_sessions: previousSessions.data?.length || 0
+      }
+    };
+    
+    // Cache the result
+    setCache(cacheKey, result);
+    
+    res.json(result);
     
   } catch (error) {
     console.error('[Analytics] Error in topic trends endpoint:', error);
@@ -649,6 +697,32 @@ router.get('/self/topics/trends', async (req, res) => {
 router.get('/self/clusters/distribution', async (req, res) => {
   // User's cluster information
   res.json({ message: 'User cluster endpoint - implementation needed' });
+});
+
+// Debug endpoint to see sessions data
+router.get('/debug/sessions', async (req, res) => {
+  try {
+    const { data: sessions, error } = await supabase
+      .from('sessions')
+      .select('secret_topic, created_at, user_id')
+      .not('secret_topic', 'is', null)
+      .limit(5);
+    
+    if (error) {
+      return res.json({ error: error.message });
+    }
+    
+    res.json({
+      total_found: sessions?.length || 0,
+      sample_sessions: sessions,
+      timeline_example: sessions?.length > 0 ? {
+        date: new Date(sessions[0].created_at).toISOString().split('T')[0],
+        topic: sessions[0].secret_topic
+      } : null
+    });
+  } catch (error) {
+    res.json({ error: error.message });
+  }
 });
 
 export default router; 
