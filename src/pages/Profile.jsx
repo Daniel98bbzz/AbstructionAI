@@ -16,6 +16,10 @@ function Profile() {
     technical_depth: 50,
     preferred_analogy_domains: [],
     main_learning_goal: '',
+    
+    // Personalization toggles
+    use_interests_for_analogies: true,
+    use_profile_for_main_answer: true,
   });
   const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -118,6 +122,10 @@ function Profile() {
           technical_depth: data.technical_depth || 50,
           preferred_analogy_domains: data.preferred_analogy_domains || [],
           main_learning_goal: data.main_learning_goal || '',
+          
+          // Personalization toggles
+          use_interests_for_analogies: data.use_interests_for_analogies ?? true,
+          use_profile_for_main_answer: data.use_profile_for_main_answer ?? true,
         });
       }
     } catch (error) {
@@ -180,6 +188,8 @@ function Profile() {
           technical_depth: validatedFormData.technical_depth,
           preferred_analogy_domains: validatedFormData.preferred_analogy_domains,
           main_learning_goal: validatedFormData.main_learning_goal,
+          use_interests_for_analogies: validatedFormData.use_interests_for_analogies,
+          use_profile_for_main_answer: validatedFormData.use_profile_for_main_answer,
           updated_at: new Date().toISOString()
         })
         .eq('id', user.id)
@@ -531,6 +541,54 @@ function Profile() {
                     className="flex-grow"
                   />
                   <span className="text-xs text-gray-500">Expert</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Personalization Settings */}
+            <div>
+              <h3 className="text-lg font-medium text-gray-900">Personalization Settings</h3>
+              <div className="mt-4 space-y-4">
+                <div className="flex items-start">
+                  <div className="flex items-center h-5">
+                    <input
+                      id="use_interests_for_analogies"
+                      name="use_interests_for_analogies"
+                      type="checkbox"
+                      checked={formData.use_interests_for_analogies}
+                      onChange={handleCheckboxChange}
+                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                  </div>
+                  <div className="ml-3">
+                    <label htmlFor="use_interests_for_analogies" className="text-sm font-medium text-gray-700">
+                      Use my interests for personalized analogies
+                    </label>
+                    <p className="text-xs text-gray-500 mt-1">
+                      When enabled, analogies in the Abstract tab will be tailored to your selected interests. When disabled, only your preferred analogy domains will be used.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <div className="flex items-center h-5">
+                    <input
+                      id="use_profile_for_main_answer"
+                      name="use_profile_for_main_answer"
+                      type="checkbox"
+                      checked={formData.use_profile_for_main_answer}
+                      onChange={handleCheckboxChange}
+                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                  </div>
+                  <div className="ml-3">
+                    <label htmlFor="use_profile_for_main_answer" className="text-sm font-medium text-gray-700">
+                      Use my profile for personalized main answers
+                    </label>
+                    <p className="text-xs text-gray-500 mt-1">
+                      When enabled, main answers will be adapted based on your education level, age, learning goals, and technical depth preference.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

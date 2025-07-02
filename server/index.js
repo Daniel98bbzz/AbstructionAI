@@ -151,14 +151,73 @@ app.post('/api/query', async (req, res) => {
       sessionData = await sessionManager.createSession(tempUserId, preferences);
     }
 
-    // ✅ CROWD WISDOM SYSTEM ENABLED - Processing query through crowd wisdom for enhanced responses
+        // ✅ CROWD WISDOM SYSTEM ENABLED - Processing query through crowd wisdom for enhanced responses
 
     // Initialize historyMessages array ONCE here
-    const historyMessages = []; 
+    const historyMessages = [];
+
+    // Load user profile if user is authenticated
+    let userProfile = null;
+    if (userId) {
+      try {
+        global.userProfiles = global.userProfiles || {};
+        userProfile = global.userProfiles[userId];
+        
+        if (!userProfile) {
+          // Try to fetch from database
+          const { data, error } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', userId)
+            .single();
+          
+          if (!error && data) {
+            userProfile = data;
+            // Store in memory cache
+            global.userProfiles[userId] = userProfile;
+            console.log('[PERSONALIZATION] 📝 User profile loaded from database', {
+              userId,
+              hasProfile: !!userProfile,
+              useInterestsForAnalogies: userProfile.use_interests_for_analogies,
+              useProfileForMainAnswer: userProfile.use_profile_for_main_answer
+            });
+          }
+        }
+      } catch (profileError) {
+        console.error('[PERSONALIZATION] ⚠️ Error fetching user profile:', profileError);
+      }
+    }
+
+    // Create effective preferences by merging request preferences with user profile
+    const effectivePreferences = preferences ? 
+      {
+        // Merge project preferences with user profile, using user profile as fallback
+        interests: preferences.interests?.length ? preferences.interests : userProfile?.interests || [],
+        preferred_analogy_domains: preferences.preferred_analogy_domains?.length ? 
+          preferences.preferred_analogy_domains : userProfile?.preferred_analogy_domains || [],
+        learning_style: preferences.learning_style || userProfile?.learning_style || 'Visual',
+        technical_depth: preferences.technical_depth || userProfile?.technical_depth || 50,
+        education_level: preferences.education_level || userProfile?.education_level || 'Not specified',
+        main_learning_goal: preferences.main_learning_goal || userProfile?.main_learning_goal || 'Not specified',
+        age: preferences.age || userProfile?.age,
+        occupation: preferences.occupation || userProfile?.occupation,
+        
+        // Personalization toggles
+        use_interests_for_analogies: preferences.use_interests_for_analogies ?? userProfile?.use_interests_for_analogies ?? true,
+        use_profile_for_main_answer: preferences.use_profile_for_main_answer ?? userProfile?.use_profile_for_main_answer ?? true
+      } : userProfile;
 
     // Generate the enhanced prompt using PromptManager with crowd wisdom integration
     console.log('[CROWD WISDOM] Starting query processing through crowd wisdom system');
-    const promptManagerResult = await promptManager.generatePrompt(query, userId, sessionData.id);
+    console.log('[PERSONALIZATION] Effective preferences for prompt generation:', {
+      userId: userId || 'anonymous',
+      sessionId: sessionData.id,
+      preferences: effectivePreferences,
+      hasPreferences: !!effectivePreferences,
+      source: preferences ? 'request+profile' : 'profile_only'
+    });
+    
+    const promptManagerResult = await promptManager.generatePrompt(query, userId, sessionData.id, effectivePreferences);
     const promptManagerMessages = promptManagerResult.messages;
     
     // Log crowd wisdom metadata if available
@@ -462,21 +521,18 @@ TOPIC:`;
     console.log('[Tab Content Generation] Starting simultaneous generation of Examples, Abstract, Quiz, and Flash Cards content');
     
     try {
-      // Get user preferences for better content generation
-      let userPreferences = preferences;
-      if (userId && !userPreferences) {
-        // Try to get user preferences from memory cache
-        global.userProfiles = global.userProfiles || {};
-        const userProfile = global.userProfiles[userId];
-        if (userProfile) {
-          userPreferences = {
-            preferred_analogy_domains: userProfile.preferred_analogy_domains || ['everyday life', 'cooking'],
-            interests: userProfile.interests || ['general'],
-            learning_style: userProfile.learning_style || 'visual',
-            technical_depth: userProfile.technical_depth || 50
-          };
-        }
-      }
+      // Use the effectivePreferences that was already built with proper logic and toggles
+      const userPreferences = effectivePreferences;
+      
+      console.log('[Tab Content Generation] Using effectivePreferences for content generation:', {
+        userId: userId || 'anonymous',
+        sessionId: sessionData.id,
+        hasPreferences: !!userPreferences,
+        interests: userPreferences?.interests || [],
+        preferred_analogy_domains: userPreferences?.preferred_analogy_domains || [],
+        use_interests_for_analogies: userPreferences?.use_interests_for_analogies,
+        use_profile_for_main_answer: userPreferences?.use_profile_for_main_answer
+      });
 
       // Generate Examples, Abstract, Quiz, and Flash Cards content in parallel
       const [examplesResult, abstractResult, quizResult, flashCardsResult] = await Promise.allSettled([
@@ -514,13 +570,40 @@ Format your response as clear, well-structured examples with headings and explan
         
         // Generate Abstract content
         (async () => {
-          // Determine analogy domains based on preferences
-          let analogyDomains = ['everyday life', 'nature', 'cooking', 'sports'];
-          if (userPreferences?.preferred_analogy_domains?.length) {
-            analogyDomains = userPreferences.preferred_analogy_domains;
-          } else if (userPreferences?.interests?.length) {
+          console.log('[ANALOGY GENERATION] Starting analogy domain selection', {
+            userId: userId || 'anonymous',
+            sessionId: sessionData.id,
+            hasPreferences: !!userPreferences,
+            useInterestsForAnalogies: userPreferences?.use_interests_for_analogies,
+            interestsCount: userPreferences?.interests?.length || 0,
+            analogyDomainsCount: userPreferences?.preferred_analogy_domains?.length || 0
+          });
+
+          // Determine analogy domains based on user preferences and toggles
+          let analogyDomains = ['everyday life', 'nature', 'cooking', 'sports']; // fallback defaults
+          let domainSource = 'default';
+
+          if (userPreferences?.use_interests_for_analogies && userPreferences?.interests?.length) {
+            // User wants to use interests for analogies and has interests selected
             analogyDomains = userPreferences.interests;
+            domainSource = 'interests';
+          } else if (userPreferences?.preferred_analogy_domains?.length) {
+            // Use preferred analogy domains (regardless of interests toggle)
+            analogyDomains = userPreferences.preferred_analogy_domains;
+            domainSource = 'preferred_domains';
+          } else if (userPreferences?.interests?.length) {
+            // Fallback to interests if no preferred domains are set
+            analogyDomains = userPreferences.interests;
+            domainSource = 'interests_fallback';
           }
+
+          console.log('[ANALOGY GENERATION] Selected analogy domains', {
+            userId: userId || 'anonymous',
+            sessionId: sessionData.id,
+            domains: analogyDomains,
+            domainSource,
+            domainCount: analogyDomains.length
+          });
           
           const abstractPrompt = `Based on the following question and explanation, create insightful analogies that help make this concept easier to understand. Focus on clear, relatable comparisons.
 
@@ -4769,13 +4852,40 @@ app.post('/api/generate-abstract', async (req, res) => {
 
     console.log('Generating new abstract content via OpenAI');
     
-    // Determine analogy domains based on preferences
-    let analogyDomains = ['everyday life', 'nature', 'cooking', 'sports'];
-    if (preferences?.preferred_analogy_domains?.length) {
-      analogyDomains = preferences.preferred_analogy_domains;
-    } else if (preferences?.interests?.length) {
+    console.log('[API ABSTRACT] Starting analogy domain selection', {
+      userId: userId || 'anonymous',
+      messageId: messageId || 'no_message_id',
+      hasPreferences: !!preferences,
+      useInterestsForAnalogies: preferences?.use_interests_for_analogies,
+      interestsCount: preferences?.interests?.length || 0,
+      analogyDomainsCount: preferences?.preferred_analogy_domains?.length || 0
+    });
+
+    // Determine analogy domains based on preferences and toggles
+    let analogyDomains = ['everyday life', 'nature', 'cooking', 'sports']; // fallback defaults
+    let domainSource = 'default';
+
+    if (preferences?.use_interests_for_analogies && preferences?.interests?.length) {
+      // User wants to use interests for analogies and has interests selected
       analogyDomains = preferences.interests;
+      domainSource = 'interests';
+    } else if (preferences?.preferred_analogy_domains?.length) {
+      // Use preferred analogy domains (regardless of interests toggle)
+      analogyDomains = preferences.preferred_analogy_domains;
+      domainSource = 'preferred_domains';
+    } else if (preferences?.interests?.length) {
+      // Fallback to interests if no preferred domains are set
+      analogyDomains = preferences.interests;
+      domainSource = 'interests_fallback';
     }
+
+    console.log('[API ABSTRACT] Selected analogy domains', {
+      userId: userId || 'anonymous',
+      messageId: messageId || 'no_message_id',
+      domains: analogyDomains,
+      domainSource,
+      domainCount: analogyDomains.length
+    });
     
     // Create a prompt for generating analogies
     const analogiesPrompt = `Based on the following question and explanation, create insightful analogies that help make this concept easier to understand. Focus on clear, relatable comparisons.

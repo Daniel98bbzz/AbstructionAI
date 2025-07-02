@@ -72,6 +72,10 @@ function QueryPage() {
   });
   const [activeFeedbackMessage, setActiveFeedbackMessage] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
+  
+  // User profile for personalization toggles
+  const [userProfile, setUserProfile] = useState(null);
+  
   const messagesEndRef = useRef(null);
   const { submitQuery, loading, error, regenerateAnswer, currentSession } = useQuery();
   
@@ -125,6 +129,34 @@ function QueryPage() {
     }
   }, [showFeedbackFor, user]);
   
+  // Load user profile for personalization toggles
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      if (user) {
+        try {
+          const { data, error } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+          
+          if (!error && data) {
+            setUserProfile(data);
+            console.log('[QueryPage] 📝 User profile loaded for personalization', {
+              userId: user.id,
+              hasProfile: !!data,
+              useInterestsForAnalogies: data.use_interests_for_analogies,
+              useProfileForMainAnswer: data.use_profile_for_main_answer
+            });
+          }
+        } catch (err) {
+          console.log('[QueryPage] ⚠️ Could not load user profile:', err);
+        }
+      }
+    };
+    loadUserProfile();
+  }, [user]);
+
   // Load user-specific data when user changes
   useEffect(() => {
     const loadUserData = async () => {
@@ -550,6 +582,8 @@ function QueryPage() {
       return;
     }
 
+
+
     // Merge project preferences with global preferences to ensure no values are empty
     const queryPreferences = {
       interests: activeProjectData?.preferences?.interests?.length ? 
@@ -562,7 +596,17 @@ function QueryPage() {
         activeProjectData.preferences.preferred_analogy_domains : [
           // Default to interests if no specific analogy domains are set
           ...(activeProjectData?.preferences?.interests || preferences.interests || [])
-        ]
+        ],
+      
+      // Add user profile data for personalization
+      age: userProfile?.age,
+      education_level: userProfile?.education_level,
+      main_learning_goal: userProfile?.main_learning_goal,
+      occupation: userProfile?.occupation,
+      
+      // Personalization toggles
+      use_interests_for_analogies: userProfile?.use_interests_for_analogies ?? true,
+      use_profile_for_main_answer: userProfile?.use_profile_for_main_answer ?? true
     };
 
     // Log the preferences being used for this query
@@ -1200,20 +1244,20 @@ examplePlaceholder();`
                 >
                   {message.role === 'assistant' ? (
                     <div className="space-y-4">
-                      {/* Use ResponseTabs component for tabbed interface */}
+                                            {/* Use ResponseTabs component for tabbed interface */}
                       <ResponseTabs
                         messageId={message.id}
-                                                  mainContent={message.content}
-                          originalQuery={messages.find(m => m.role === 'user' && m.timestamp < message.timestamp)?.content || ''}
-                          sessionId={
-                            (() => {
-                              const activeProjectData = projects.find(p => p.id === activeProject);
-                              const currentConversation = activeProjectData?.conversations.find(c => c.id === activeConversation);
-                              return currentConversation?.sessionId || null;
-                            })()
-                          }
-                          preferences={message.preferences || preferences}
-                          userId={user?.id}
+                        mainContent={message.content}
+                        originalQuery={messages.find(m => m.role === 'user' && m.timestamp < message.timestamp)?.content || ''}
+                        sessionId={
+                          (() => {
+                            const activeProjectData = projects.find(p => p.id === activeProject);
+                            const currentConversation = activeProjectData?.conversations.find(c => c.id === activeConversation);
+                            return currentConversation?.sessionId || null;
+                          })()
+                        }
+                        preferences={userProfile || message.preferences || preferences}
+                        userId={user?.id}
                         tabContent={message.tab_content}
                       />
                     </div>

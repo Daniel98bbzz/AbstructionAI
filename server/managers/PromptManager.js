@@ -25,13 +25,46 @@ When responding to queries:
    * @param {string} query - The user's query
    * @param {string} userId - The user's ID
    * @param {string} sessionId - The session ID
+   * @param {Object} userPreferences - Optional user preferences object
    * @returns {Object} - System and user prompts with crowd wisdom enhancement
    */
-  async generatePrompt(query, userId, sessionId) {
+  async generatePrompt(query, userId, sessionId, userPreferences = null) {
     try {
+      console.log('[PromptManager] 🎯 Starting prompt generation', {
+        userId: userId || 'anonymous',
+        sessionId,
+        hasPreferences: !!userPreferences,
+        queryLength: query?.length || 0
+      });
+
       // Start with the base system prompt
       let systemPromptContent = this.systemPromptTemplate;
       let crowdWisdomData = null;
+
+      // Add personalization based on user preferences if enabled
+      if (userPreferences) {
+        const personalization = this.buildPersonalizationPrompt(userPreferences);
+        if (personalization) {
+          systemPromptContent += personalization;
+          console.log('[PromptManager] ✅ Added personalization to system prompt', {
+            userId,
+            sessionId,
+            personalizationLength: personalization.length,
+            useProfileForMainAnswer: userPreferences.use_profile_for_main_answer
+          });
+        } else {
+          console.log('[PromptManager] ⏭️ No personalization added - toggle disabled or no preferences', {
+            userId,
+            sessionId,
+            useProfileForMainAnswer: userPreferences.use_profile_for_main_answer
+          });
+        }
+      } else {
+        console.log('[PromptManager] ⚠️ No user preferences provided for personalization', {
+          userId,
+          sessionId
+        });
+      }
 
       // Integrate Crowd Wisdom if enabled
       if (this.crowdWisdomEnabled && this.crowdWisdomManager) {
@@ -208,6 +241,57 @@ When responding to queries:
         error: error.message
       };
     }
+  }
+
+  /**
+   * Build personalization prompt based on user preferences
+   * @param {Object} preferences - User preferences object
+   * @returns {string} - Personalization prompt to append to system prompt
+   */
+  buildPersonalizationPrompt(preferences) {
+    // Check if personalization is enabled
+    if (!preferences.use_profile_for_main_answer) {
+      console.log('[PromptManager] 🔄 Profile personalization disabled by user toggle');
+      return '';
+    }
+
+    const personalizations = [];
+
+    // Add user profile information dynamically
+    if (preferences.age) {
+      personalizations.push(`User Age: ${preferences.age} years old`);
+    }
+
+    if (preferences.education_level) {
+      personalizations.push(`Education Level: ${preferences.education_level}`);
+    }
+
+    if (preferences.main_learning_goal) {
+      personalizations.push(`Learning Goal: ${preferences.main_learning_goal}`);
+    }
+
+    if (preferences.technical_depth !== undefined) {
+      personalizations.push(`Technical Depth Preference: ${preferences.technical_depth}/100`);
+    }
+
+    if (preferences.learning_style) {
+      personalizations.push(`Learning Style: ${preferences.learning_style}`);
+    }
+
+    if (personalizations.length > 0) {
+      const personalizationText = `\n\n--- User Profile for Personalization ---\n${personalizations.join('\n')}\n\nPlease adapt your response appropriately for this user profile. Consider their age, education level, learning goals, and preferred technical depth when crafting your explanation.`;
+      
+      console.log('[PromptManager] 📝 Built personalization prompt', {
+        personalizationCount: personalizations.length,
+        preferences: personalizations,
+        textLength: personalizationText.length
+      });
+
+      return personalizationText;
+    }
+
+    console.log('[PromptManager] ⚠️ No personalizable preferences found');
+    return '';
   }
 
   /**
