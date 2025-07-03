@@ -1,0 +1,956 @@
+{
+  "timestamp": "2025-07-03T12:35:35.065Z",
+  "summary": {
+    "totalTests": 7,
+    "passed": 5,
+    "failed": 2
+  },
+  "results": [
+    {
+      "test": "semantic_validation_basic",
+      "success": false,
+      "details": {
+        "success": false,
+        "validationResults": {
+          "error": "Failed to fetch session interactions: invalid input syntax for type uuid: \"sample_session_id_for_testing\""
+        },
+        "responseTime": 856,
+        "tests_performed": [
+          "Semantic alignment validation"
+        ]
+      }
+    },
+    {
+      "test": "validation_storage",
+      "success": true,
+      "details": {
+        "success": true,
+        "summary": {
+          "semantic-alignment": {
+            "count": 1,
+            "latest": "2025-07-03T12:33:48.938Z",
+            "successRate": "0.0%"
+          }
+        },
+        "totalResults": 1,
+        "availableTypes": [
+          "semantic-alignment"
+        ],
+        "file_path": "/Users/Portnoy/AbstructionAI/validation_results/semantic_validation.json"
+      }
+    },
+    {
+      "test": "flashcards_validation",
+      "success": true,
+      "details": {
+        "success": true,
+        "metrics": {
+          "testQuery": "What's the difference between TCP and UDP?",
+          "apiEndpoint": "/api/generate-flash-cards",
+          "apiSuccess": true,
+          "responseTime": 5094,
+          "fromCache": false,
+          "flashcardsGenerated": 5,
+          "conceptCoverage": 100,
+          "avgRelevanceScore": 0.8666666666666666,
+          "relevanceRate": 80,
+          "highRelevanceCards": 4,
+          "flashcards": [
+            {
+              "question": "What is the primary characteristic of TCP that differentiates it from UDP?",
+              "answer": "TCP is connection-oriented, providing reliable, ordered, and error-checked delivery of data."
+            },
+            {
+              "question": "For which types of applications is UDP typically used?",
+              "answer": "UDP is used for real-time applications like gaming, streaming, and DNS where speed is prioritized over reliability."
+            },
+            {
+              "question": "Why is TCP considered more reliable than UDP?",
+              "answer": "TCP ensures that all packets arrive in order, establishes a connection before data transfer, and includes error-checking mechanisms."
+            },
+            {
+              "question": "In what scenarios is TCP preferred over UDP?",
+              "answer": "TCP is preferred for applications requiring data reliability, such as web browsing, email, and file transfers."
+            },
+            {
+              "question": "How does UDP achieve faster data transmission compared to TCP?",
+              "answer": "UDP is connectionless and does not guarantee delivery, ordering, or duplicate protection, which reduces overhead and speeds up transmission."
+            }
+          ],
+          "analyzedCards": [
+            {
+              "id": 1,
+              "question": "What is the primary characteristic of TCP that differentiates it from UDP?",
+              "answer": "TCP is connection-oriented, providing reliable, ordered, and error-checked delivery of data.",
+              "topicRelevance": "100.0%",
+              "keywordMatches": 6,
+              "alignmentTag": "Perfect"
+            },
+            {
+              "id": 2,
+              "question": "For which types of applications is UDP typically used?",
+              "answer": "UDP is used for real-time applications like gaming, streaming, and DNS where speed is prioritized over reliability.",
+              "topicRelevance": "33.3%",
+              "keywordMatches": 1,
+              "alignmentTag": "Moderate"
+            },
+            {
+              "id": 3,
+              "question": "Why is TCP considered more reliable than UDP?",
+              "answer": "TCP ensures that all packets arrive in order, establishes a connection before data transfer, and includes error-checking mechanisms.",
+              "topicRelevance": "100.0%",
+              "keywordMatches": 6,
+              "alignmentTag": "Perfect"
+            },
+            {
+              "id": 4,
+              "question": "In what scenarios is TCP preferred over UDP?",
+              "answer": "TCP is preferred for applications requiring data reliability, such as web browsing, email, and file transfers.",
+              "topicRelevance": "100.0%",
+              "keywordMatches": 3,
+              "alignmentTag": "Perfect"
+            },
+            {
+              "id": 5,
+              "question": "How does UDP achieve faster data transmission compared to TCP?",
+              "answer": "UDP is connectionless and does not guarantee delivery, ordering, or duplicate protection, which reduces overhead and speeds up transmission.",
+              "topicRelevance": "100.0%",
+              "keywordMatches": 7,
+              "alignmentTag": "Perfect"
+            }
+          ],
+          "overallScore": 0.8888888888888887,
+          "tablesUsed": [
+            "topic_mastery",
+            "learning_sessions",
+            "response_tab_content"
+          ],
+          "performance": {
+            "topicMasteryRecords": 0,
+            "learningSessionRecords": 0
+          },
+          "isRealApiTest": true
+        },
+        "log": "REAL flashcard API validation completed. Generated: 5 cards, Coverage: 100.0%, Avg Relevance: 86.7%, High Relevance Rate: 80.0%, Response Time: 5094ms, From Cache: false",
+        "visualization": {
+          "type": "real_api_flashcard_analysis",
+          "flashcardList": [
+            {
+              "id": 1,
+              "question": "What is the primary characteristic of TCP that differentiates it from UDP?",
+              "answer": "TCP is connection-oriented, providing reliable, ordered, and error-checked delivery of data.",
+              "topicRelevance": "100.0%",
+              "keywordMatches": 6,
+              "alignmentTag": "Perfect"
+            },
+            {
+              "id": 2,
+              "question": "For which types of applications is UDP typically used?",
+              "answer": "UDP is used for real-time applications like gaming, streaming, and DNS where speed is prioritized over reliability.",
+              "topicRelevance": "33.3%",
+              "keywordMatches": 1,
+              "alignmentTag": "Moderate"
+            },
+            {
+              "id": 3,
+              "question": "Why is TCP considered more reliable than UDP?",
+              "answer": "TCP ensures that all packets arrive in order, establishes a connection before data transfer, and includes error-checking mechanisms.",
+              "topicRelevance": "100.0%",
+              "keywordMatches": 6,
+              "alignmentTag": "Perfect"
+            },
+            {
+              "id": 4,
+              "question": "In what scenarios is TCP preferred over UDP?",
+              "answer": "TCP is preferred for applications requiring data reliability, such as web browsing, email, and file transfers.",
+              "topicRelevance": "100.0%",
+              "keywordMatches": 3,
+              "alignmentTag": "Perfect"
+            },
+            {
+              "id": 5,
+              "question": "How does UDP achieve faster data transmission compared to TCP?",
+              "answer": "UDP is connectionless and does not guarantee delivery, ordering, or duplicate protection, which reduces overhead and speeds up transmission.",
+              "topicRelevance": "100.0%",
+              "keywordMatches": 7,
+              "alignmentTag": "Perfect"
+            }
+          ],
+          "topicSummary": {
+            "query": "What's the difference between TCP and UDP?",
+            "apiEndpoint": "/api/generate-flash-cards",
+            "cardsGenerated": 5,
+            "fromCache": false,
+            "avgRelevance": "86.7%",
+            "description": "Real flashcard generation test for networking protocols (TCP vs UDP)",
+            "keyAspects": [
+              "Protocol definitions",
+              "Reliability differences",
+              "Use case scenarios",
+              "Technical characteristics"
+            ],
+            "apiResponseTime": "5094ms"
+          },
+          "relevanceDistribution": {
+            "Perfect (90-100%)": 4,
+            "High (70-89%)": 0,
+            "Good (50-69%)": 0,
+            "Moderate (<50%)": 1
+          },
+          "relevanceChart": {
+            "Perfect (90-100%)": "████████████████████",
+            "High (70-89%)": "",
+            "Good (50-69%)": "",
+            "Moderate (<50%)": "█████"
+          }
+        },
+        "responseTime": 5486,
+        "tests_performed": [
+          "Real API endpoint testing (/api/generate-flash-cards)",
+          "Flashcard content analysis",
+          "Topic relevance scoring",
+          "Keyword matching validation",
+          "Database integration verification",
+          "Response time measurement"
+        ]
+      }
+    },
+    {
+      "test": "quiz-generation_validation",
+      "success": true,
+      "details": {
+        "success": true,
+        "metrics": {
+          "testQuery": "How does OAuth 2.0 work?",
+          "apiEndpoint": "/api/generate-quiz",
+          "apiSuccess": true,
+          "responseTime": 14006,
+          "generatedQuiz": {
+            "title": "Understanding OAuth 2.0",
+            "description": "This quiz tests your knowledge on how OAuth 2.0 functions and its key components.",
+            "questions": [
+              {
+                "question": "What is the primary role of OAuth 2.0?",
+                "options": [
+                  "To allow third-party applications to access user data without exposing credentials",
+                  "To provide a secure method of password storage",
+                  "To encrypt sensitive data in transit",
+                  "To authenticate users for a web application"
+                ],
+                "correctAnswer": 0,
+                "explanation": "OAuth 2.0 is designed to allow third-party applications to access user data without needing to expose or store user credentials."
+              },
+              {
+                "question": "Which component in OAuth 2.0 is responsible for issuing access tokens?",
+                "options": [
+                  "Client",
+                  "Resource Server",
+                  "Authorization Server",
+                  "User Agent"
+                ],
+                "correctAnswer": 2,
+                "explanation": "The Authorization Server is responsible for authenticating the user and issuing access tokens to clients."
+              },
+              {
+                "question": "Which flow is suitable for applications that cannot securely store client secrets?",
+                "options": [
+                  "Authorization Code Flow",
+                  "Implicit Flow",
+                  "Resource Owner Password Credentials Flow",
+                  "Client Credentials Flow"
+                ],
+                "correctAnswer": 1,
+                "explanation": "The Implicit Flow is used for applications, such as single-page applications, that cannot securely store client secrets."
+              },
+              {
+                "question": "What is the purpose of a refresh token in OAuth 2.0?",
+                "options": [
+                  "To refresh the encryption keys used during communication",
+                  "To renew an expired access token without user intervention",
+                  "To initiate a new authorization request",
+                  "To provide an alternative to access tokens for accessing resources"
+                ],
+                "correctAnswer": 1,
+                "explanation": "A refresh token is used to obtain a new access token once the current one expires, without requiring the user to reauthorize."
+              },
+              {
+                "question": "In OAuth 2.0, what is the resource owner's role?",
+                "options": [
+                  "To provide credentials to the authorization server",
+                  "To store access tokens securely",
+                  "To own and control the data being accessed",
+                  "To manage the OAuth clients and their permissions"
+                ],
+                "correctAnswer": 2,
+                "explanation": "The resource owner is the entity that owns and controls access to the protected resources, typically the end user."
+              }
+            ],
+            "id": "75804aa6-e09f-40e8-ad5b-492b8b239794",
+            "query": "How does OAuth 2.0 work?",
+            "createdAt": "2025-07-03T12:34:08.243Z",
+            "userId": "validation_user"
+          },
+          "questionsGenerated": 5,
+          "topicClassification": "web_security",
+          "topicConfidence": 93.33333333333333,
+          "avgTopicAlignment": 0.9333333333333332,
+          "wellAlignedQuestions": 4,
+          "wellAlignedRate": 80,
+          "difficultyAnalysis": {
+            "hasVariedDifficulty": true,
+            "conceptCoverage": 100,
+            "questionQuality": "High"
+          },
+          "analyzedQuestions": [
+            {
+              "id": 1,
+              "question": "What is the primary role of OAuth 2.0?",
+              "options": [
+                "To allow third-party applications to access user data without exposing credentials",
+                "To provide a secure method of password storage",
+                "To encrypt sensitive data in transit",
+                "To authenticate users for a web application"
+              ],
+              "correctAnswer": 0,
+              "explanation": "OAuth 2.0 is designed to allow third-party applications to access user data without needing to expose or store user credentials.",
+              "topicAlignment": "66.7%",
+              "keywordMatches": 2,
+              "alignmentTag": "Good"
+            },
+            {
+              "id": 2,
+              "question": "Which component in OAuth 2.0 is responsible for issuing access tokens?",
+              "options": [
+                "Client",
+                "Resource Server",
+                "Authorization Server",
+                "User Agent"
+              ],
+              "correctAnswer": 2,
+              "explanation": "The Authorization Server is responsible for authenticating the user and issuing access tokens to clients.",
+              "topicAlignment": "100.0%",
+              "keywordMatches": 7,
+              "alignmentTag": "Perfect"
+            },
+            {
+              "id": 3,
+              "question": "Which flow is suitable for applications that cannot securely store client secrets?",
+              "options": [
+                "Authorization Code Flow",
+                "Implicit Flow",
+                "Resource Owner Password Credentials Flow",
+                "Client Credentials Flow"
+              ],
+              "correctAnswer": 1,
+              "explanation": "The Implicit Flow is used for applications, such as single-page applications, that cannot securely store client secrets.",
+              "topicAlignment": "100.0%",
+              "keywordMatches": 3,
+              "alignmentTag": "Perfect"
+            },
+            {
+              "id": 4,
+              "question": "What is the purpose of a refresh token in OAuth 2.0?",
+              "options": [
+                "To refresh the encryption keys used during communication",
+                "To renew an expired access token without user intervention",
+                "To initiate a new authorization request",
+                "To provide an alternative to access tokens for accessing resources"
+              ],
+              "correctAnswer": 1,
+              "explanation": "A refresh token is used to obtain a new access token once the current one expires, without requiring the user to reauthorize.",
+              "topicAlignment": "100.0%",
+              "keywordMatches": 5,
+              "alignmentTag": "Perfect"
+            },
+            {
+              "id": 5,
+              "question": "In OAuth 2.0, what is the resource owner's role?",
+              "options": [
+                "To provide credentials to the authorization server",
+                "To store access tokens securely",
+                "To own and control the data being accessed",
+                "To manage the OAuth clients and their permissions"
+              ],
+              "correctAnswer": 2,
+              "explanation": "The resource owner is the entity that owns and controls access to the protected resources, typically the end user.",
+              "topicAlignment": "100.0%",
+              "keywordMatches": 7,
+              "alignmentTag": "Perfect"
+            }
+          ],
+          "overallScore": 0.9111111111111111,
+          "tablesUsed": [
+            "quizzes",
+            "quiz_results"
+          ],
+          "performance": {
+            "quizRecords": 6,
+            "resultRecords": 0
+          },
+          "isRealApiTest": true
+        },
+        "log": "REAL quiz API validation completed. Generated: 5 questions, Topic: web_security, Confidence: 93.3%, Well Aligned: 80.0%, Response Time: 14006ms",
+        "visualization": {
+          "type": "real_api_quiz_analysis",
+          "quizQuestionTable": [
+            {
+              "Question": "What is the primary role of OAuth 2.0?",
+              "Alignment": "66.7%",
+              "Tag": "Good",
+              "Keywords": 2,
+              "Has Explanation": "✅",
+              "Options Count": 4
+            },
+            {
+              "Question": "Which component in OAuth 2.0 is responsible for issuing access tokens?",
+              "Alignment": "100.0%",
+              "Tag": "Perfect",
+              "Keywords": 7,
+              "Has Explanation": "✅",
+              "Options Count": 4
+            },
+            {
+              "Question": "Which flow is suitable for applications that cannot securely store client secrets?",
+              "Alignment": "100.0%",
+              "Tag": "Perfect",
+              "Keywords": 3,
+              "Has Explanation": "✅",
+              "Options Count": 4
+            },
+            {
+              "Question": "What is the purpose of a refresh token in OAuth 2.0?",
+              "Alignment": "100.0%",
+              "Tag": "Perfect",
+              "Keywords": 5,
+              "Has Explanation": "✅",
+              "Options Count": 4
+            },
+            {
+              "Question": "In OAuth 2.0, what is the resource owner's role?",
+              "Alignment": "100.0%",
+              "Tag": "Perfect",
+              "Keywords": 7,
+              "Has Explanation": "✅",
+              "Options Count": 4
+            }
+          ],
+          "topicSummary": {
+            "query": "How does OAuth 2.0 work?",
+            "classification": "web_security",
+            "confidence": "93.3%",
+            "questionsGenerated": 5,
+            "apiEndpoint": "/api/generate-quiz",
+            "responseTime": "14006ms"
+          },
+          "alignmentDistribution": {
+            "Perfect (90-100%)": 4,
+            "High (70-89%)": 0,
+            "Good (50-69%)": 1,
+            "Moderate (<50%)": 0
+          },
+          "alignmentChart": {
+            "Perfect (90-100%)": "████████████████████",
+            "High (70-89%)": "",
+            "Good (50-69%)": "█████",
+            "Moderate (<50%)": ""
+          },
+          "difficultyChart": {
+            "Questions Generated": 5,
+            "Well Aligned": 4,
+            "Topic Confidence": 93
+          }
+        },
+        "responseTime": 14384,
+        "tests_performed": [
+          "Real API endpoint testing (/api/generate-quiz)",
+          "Quiz question analysis",
+          "Topic classification validation",
+          "Keyword alignment scoring",
+          "Database integration verification",
+          "Difficulty distribution analysis"
+        ]
+      }
+    },
+    {
+      "test": "analogies_validation",
+      "success": false,
+      "details": {
+        "success": false,
+        "metrics": {
+          "realUsersFound": [
+            {
+              "id": "335d2f79-7629-449a-830d-56cbc5af3cb6",
+              "username": "user_cook",
+              "preferred_analogy_domains": [],
+              "interests": [
+                "Cooking"
+              ],
+              "learning_style": "visual",
+              "technical_depth": 50,
+              "occupation": "other",
+              "age": 25,
+              "education_level": "other"
+            },
+            {
+              "id": "fdfeaebc-7514-44e4-8056-8f6cd8dc59b5",
+              "username": "user_music",
+              "preferred_analogy_domains": [],
+              "interests": [
+                "Music"
+              ],
+              "learning_style": "visual",
+              "technical_depth": 50,
+              "occupation": "other",
+              "age": 25,
+              "education_level": "other"
+            },
+            {
+              "id": "bd61a5df-3d22-467f-86c1-d697a91fbab8",
+              "username": "user_sport",
+              "preferred_analogy_domains": [],
+              "interests": [
+                "Sports"
+              ],
+              "learning_style": "visual",
+              "technical_depth": 50,
+              "occupation": "other",
+              "age": 25,
+              "education_level": "other"
+            }
+          ],
+          "testUsers": [
+            {
+              "user_id": "335d2f79-7629-449a-830d-56cbc5af3cb6",
+              "username": "user_cook",
+              "preference": "Cooking",
+              "interests": [
+                "Cooking"
+              ],
+              "preferred_analogy_domains": [],
+              "learning_style": "visual",
+              "technical_depth": 50,
+              "occupation": "other",
+              "age": 25,
+              "education_level": "other",
+              "isReal": true
+            },
+            {
+              "user_id": "fdfeaebc-7514-44e4-8056-8f6cd8dc59b5",
+              "username": "user_music",
+              "preference": "Music",
+              "interests": [
+                "Music"
+              ],
+              "preferred_analogy_domains": [],
+              "learning_style": "visual",
+              "technical_depth": 50,
+              "occupation": "other",
+              "age": 25,
+              "education_level": "other",
+              "isReal": true
+            },
+            {
+              "user_id": "bd61a5df-3d22-467f-86c1-d697a91fbab8",
+              "username": "user_sport",
+              "preference": "Sports",
+              "interests": [
+                "Sports"
+              ],
+              "preferred_analogy_domains": [],
+              "learning_style": "visual",
+              "technical_depth": 50,
+              "occupation": "other",
+              "age": 25,
+              "education_level": "other",
+              "isReal": true
+            }
+          ],
+          "queryVariations": [
+            "What is memory hierarchy?",
+            "Explain memory hierarchy",
+            "Teach me about memory hierarchy"
+          ],
+          "testResults": [
+            {
+              "user": "user_cook",
+              "userId": "335d2f79-7629-449a-830d-56cbc5af3cb6",
+              "query": "What is memory hierarchy?",
+              "preference": "Cooking",
+              "clusterId": "clustering_failed",
+              "clusteringSimilarity": null,
+              "isNewCluster": false,
+              "clusteringSuccess": false,
+              "analogyText": "### Analogy 1: The Layered Kitchen Pantry\n\n**Analogy Explanation:**\nImagine a chef's kitchen where ingredients are stored at different levels based on how frequently they are used and how quickly they need to be accessed. The top layer is a small spice rack directly above the cooking area, holding essential spices like salt and pepper that are used in almost every dish. The next layer is a nearby cupboard containing commonly used ingredients such as flour and sugar. Further back is a pantry stocked with bulk items like rice and canned goods. Lastly, there's a basement storage area where seldom-used ingredients or bulk purchases like a sack of potatoes are kept.\n\n**How It Relates Back to the Original Concept:**\n- **CPU Registers:** The spice rack represents CPU registers—small in size but incredibly fast to access, just like the essential spices needed for nearly every dish.\n- **Cache Memory:** The cupboard acts as cache memory, storing frequently used ingredients that aren’t as quick to grab as those on the spice rack but are still nearby for quick access.\n- **Main Memory (RAM):** The pantry is akin to RAM, holding a larger quantity of ingredients that don't need to be immediately accessible but should be within reach.\n- **Secondary Storage:** The basement storage represents secondary storage like hard drives or SSDs, housing vast amounts of supplies that aren’t needed often and can afford delayed retrieval.\n\nBy visualizing a kitchen's layered setup, one can easily understand how a computer efficiently manages data access through its memory hierarchy, balancing speed, space, and cost.\n\n---\n\n### Analogy 2: The Office Filing System\n\n**Analogy Explanation:**\nConsider an office environment where documents are organized according to their importance and frequency of use. On the desk is a small tray for urgent documents needing immediate attention. Next, there's a set of drawers beside the desk for ongoing projects. In the back of the office are cabinets with files that might be accessed once or twice a month. Finally, there’s offsite storage for archived records that are rarely needed.\n\n**How It Relates Back to the Original Concept:**\n- **CPU Registers:** The desk tray serves as CPU registers—holding only the most critical and immediate documents for quick access.\n- **Cache Memory:** The desk drawers function like cache memory, providing relatively quick access to documents needed regularly but not urgently.\n- **Main Memory (RAM):** The office cabinets symbolize RAM, storing a broader range of documents that need regular access without urgency.\n- **Secondary Storage:** Offsite storage is equivalent to secondary storage, where large volumes of data that are infrequently accessed are kept.\n\nThis analogy helps illustrate how computers prioritize data storage locations based on necessity and access speed, much like an office organizes its document retrieval system to enhance efficiency.\n\n---\n\n### Analogy 3: Multi-tiered Library System\n\n**Analogy Explanation:**\nPicture a library structured to optimize book retrieval. At the librarian’s desk are reference books for quick lookups. Nearby shelves hold popular books frequently checked out by patrons. Further inside the library are general stacks with a vast collection of books on various subjects. Finally, the basement stores rare books that require special handling and are checked out less often.\n\n**How It Relates Back to the Original Concept:**\n- **CPU Registers:** Reference books at the librarian’s desk represent CPU registers—providing immediate answers with minimal delay.\n- **Cache Memory:** Nearby shelves act as cache memory, housing popular items that need swift but not instant access.\n- **Main Memory (RAM):** General stacks function like RAM, accommodating numerous books that are accessed regularly.\n- **Secondary Storage:** The basement with rare books aligns with secondary storage, containing voluminous content used less frequently.\n\nBy envisioning this library setup, one can grasp how computers arrange memory levels to facilitate efficient data retrieval, akin to how libraries manage book access based on demand and usage patterns.",
+              "analogyDomain": "cooking",
+              "domainMatch": false,
+              "domainTerms": [
+                "cook",
+                "ingredient",
+                "kitchen",
+                "chef"
+              ],
+              "confidenceScore": 0.94,
+              "responseTime": 30944,
+              "apiSuccess": true,
+              "isSimulated": false,
+              "userCreated": true,
+              "isReal": true
+            },
+            {
+              "user": "user_music",
+              "userId": "fdfeaebc-7514-44e4-8056-8f6cd8dc59b5",
+              "query": "Explain memory hierarchy",
+              "preference": "Music",
+              "clusterId": "clustering_failed",
+              "clusteringSimilarity": null,
+              "isNewCluster": false,
+              "clusteringSuccess": false,
+              "analogyText": "### Analogy 1: The Music Concert Experience\n\n**Analogy Explanation:**\nImagine attending a music concert. The front row seats are like the CPU registers—they're incredibly close to the action, offering the best and fastest experience, but there are very few of them. Just behind the front row is the VIP section, representing the cache memory (L1, L2, L3). These seats are still quite close and provide a great experience, though there are more of them compared to front row seats. Moving further back, you have the general admission area, analogous to the main memory (RAM). There are plenty of these seats, and they offer good quality sound and view, though not as immediate as the VIP or front row seats. Finally, standing outside the arena are those with just audio access via streaming—similar to secondary storage like hard drives and SSDs. They can hear everything but with some delay and less fidelity.\n\n**Relation to Memory Hierarchy:**\nThis analogy illustrates how different types of memory (or seating) serve varied purposes based on proximity and accessibility. Front row seats are exclusive and fast, just like CPU registers. VIP seats (cache memory) provide a quick and enriched experience but not as immediate as the front row. General admission (RAM) is abundant and serves most people well, similar to how RAM provides ample working space for data. Lastly, streaming from outside (secondary storage) is slower but offers massive capacity.\n\n### Analogy 2: The Library System\n\n**Analogy Explanation:**\nThink of a vast library system. The librarian's personal notes, always in their pocket, represent CPU registers—quickest to access and extremely limited in size. Reference books on a desk behind the librarian are like cache memory—quick to reach for frequent lookups. The main bookshelves in the library are analogous to main memory (RAM)—they hold a larger collection of books for regular access. Finally, the off-site storage facility where lesser-used books are archived represents secondary storage such as hard drives or SSDs.\n\n**Relation to Memory Hierarchy:**\nThis analogy shows how a library (computer system) manages its resources for optimal performance. Just as a librarian uses personal notes for immediate access to crucial information (CPU registers), computers use registers for immediate processing needs. Reference books (cache) provide quick access to commonly needed information, while the main bookshelves (RAM) store a wealth of information accessible within walking distance. The off-site storage (secondary storage) holds vast amounts of data that’s slower to access but crucial for long-term storage.\n\n### Analogy 3: The Restaurant Kitchen\n\n**Analogy Explanation:**\nConsider a bustling restaurant kitchen. The chef's apron pockets hold essential spices and utensils (CPU registers), allowing for immediate use in cooking. Within arm's reach are prep stations stocked with key ingredients needed for multiple dishes—this is akin to cache memory. The walk-in fridge and pantry represent main memory (RAM), storing all primary ingredients accessible with a short walk. Finally, the delivery truck represents secondary storage like hard drives, bringing bulk supplies that are stored outside until needed.\n\n**Relation to Memory Hierarchy:**\nIn this analogy, a restaurant kitchen mirrors how a computer organizes memory. The chef's apron pockets (CPU registers) offer instant access but limited capacity. The prep stations nearby (cache memory) allow quick access to frequently needed items in larger quantities. The walk-in fridge and pantry (RAM) provide substantial storage for ingredients regularly used by cooks. Lastly, the delivery truck (secondary storage) brings in bulk ingredients not immediately required and takes longer to access, representing slower but larger storage capacity.",
+              "analogyDomain": "cooking",
+              "domainMatch": false,
+              "domainTerms": [
+                "cook",
+                "ingredient",
+                "kitchen",
+                "chef"
+              ],
+              "confidenceScore": 0.94,
+              "responseTime": 33457,
+              "apiSuccess": true,
+              "isSimulated": false,
+              "userCreated": true,
+              "isReal": true
+            },
+            {
+              "user": "user_sport",
+              "userId": "bd61a5df-3d22-467f-86c1-d697a91fbab8",
+              "query": "Teach me about memory hierarchy",
+              "preference": "Sports",
+              "clusterId": "clustering_failed",
+              "clusteringSimilarity": null,
+              "isNewCluster": false,
+              "clusteringSuccess": false,
+              "analogyText": "### Analogy 1: The Sports Team Playbook\n\n**Analogy Explanation:**\nImagine a sports team, like a football team, preparing for a big game. The team's strategy involves several layers of information, similar to the memory hierarchy in computers. At the top level, you have the quarterback's immediate decisions during the game—quick reactions and adjustments based on real-time situations. This is akin to the CPU registers, which are fast and immediately accessible. \n\nNext, there are the plays that the team has practiced and can execute at a moment's notice. These pre-planned plays are like cache memory (L1, L2, L3), providing a balance between speed and capacity. They are rehearsed enough to be quickly called upon but not as instantaneous as the quarterback's snap decisions.\n\nThe team's overall game plan, which includes multiple strategies and tactics to adapt to different scenarios, represents the main memory (RAM). It's more comprehensive and holds more information than the immediate plays but requires some setup time to implement.\n\nFinally, the archive of past games, strategies, and historical data stored in the coach's office serves as secondary storage (hard drives, SSDs). It's vast and contains a wealth of information but isn't accessed during the game itself due to its slower retrieval time.\n\n**How it Relates Back to the Original Concept:**\nThis analogy helps illustrate how different types of memory in a computer system are used based on immediacy and availability, much like how a sports team leverages different levels of strategy and preparation. The quarterback's decisions are like CPU registers—fast and critical—while the coach’s archive is like secondary storage—large but slow to access.\n\n---\n\n### Analogy 2: The Gourmet Kitchen\n\n**Analogy Explanation:**\nConsider a gourmet kitchen operation in a high-end restaurant. The head chef's immediate actions resemble the CPU registers; these actions are swift and precise, such as adding a pinch of salt or flipping a steak. These are quick tasks that require no delay.\n\nThe kitchen assistants, who manage prepared ingredients within arm’s reach (like spices or garnishes), represent cache memory. They ensure that frequently used items are readily available to the chef without slowing down the cooking process.\n\nThe pantry, stocked with bulk ingredients like flour, sugar, and oils, represents the main memory (RAM). It holds more ingredients than what’s on the counter but requires a few steps to retrieve what’s needed for meal preparation.\n\nLastly, think of the basement storage where large quantities of ingredients are kept for future use—akin to secondary storage (hard drives, SSDs) in computers. It’s vast and stores plenty but takes time to access when supplies need restocking.\n\n**How it Relates Back to the Original Concept:**\nThe gourmet kitchen analogy captures the hierarchy's essence by mapping different kitchen roles and storage locations to computer memory levels. Just as chefs prioritize speed and accessibility in their workflow, computers optimize performance by moving data across different types of memory.\n\n---\n\n### Analogy 3: The Library System\n\n**Analogy Explanation:**\nVisualize a librarian managing a busy public library. The librarian’s memory of where books on popular topics are shelved is like CPU registers—fast and directly accessible without any delay.\n\nThe book cart used for reshelving books frequently borrowed by patrons serves as cache memory (L1, L2, L3). It holds high-demand books for quick access without needing to go back to the shelves repeatedly.\n\nThe library bookshelves themselves function as main memory (RAM), holding a large number of books organized systematically. While not as quick as grabbing from the cart, they provide more options and information once accessed.\n\nFinally, the library’s off-site storage warehouse represents secondary storage (hard drives, SSDs). It stores overflow books that aren't regularly needed but are available for retrieval upon request, reflecting larger capacity but slower access times.\n\n**How it Relates Back to the Original Concept:**\nThis analogy highlights how libraries manage information flow efficiently based on demand and accessibility. Like a computer’s memory hierarchy, libraries optimize space usage by distributing books across easily accessible spots (like carts) and more substantial storage (like warehouses), ensuring smooth operation even during busy times.",
+              "analogyDomain": "cooking",
+              "domainMatch": false,
+              "domainTerms": [
+                "cook",
+                "ingredient",
+                "kitchen",
+                "chef"
+              ],
+              "confidenceScore": 0.94,
+              "responseTime": 17795,
+              "apiSuccess": true,
+              "isSimulated": false,
+              "userCreated": true,
+              "isReal": true
+            }
+          ],
+          "totalTests": 3,
+          "personalizedMatches": 0,
+          "personalizationRate": 0,
+          "apiSuccesses": 3,
+          "apiSuccessRate": 100,
+          "realUsersUsed": 3,
+          "avgResponseTime": 27398.666666666668,
+          "avgConfidence": 0.94,
+          "clusterConsistency": true,
+          "domainDiversity": 3,
+          "overallScore": 0.6466666666666666,
+          "tablesUsed": [
+            "user_profiles",
+            "user_cluster_assignments",
+            "sessions",
+            "response_tab_content"
+          ],
+          "analogyViewer": [
+            {
+              "user": "user_cook",
+              "preference": "Cooking",
+              "analogy": "### Analogy 1: The Layered Kitchen Pantry\n\n**Analogy Explanation:**\nImagine a chef's kitchen where ingredients are stored at different levels based on how frequently they are used and how quickly they need to be accessed. The top layer is a small spice rack directly above the cooking area, holding essential spices like salt and pepper that are used in almost every dish. The next layer is a nearby cupboard containing commonly used ingredients such as flour and sugar. Further back is a pantry stocked with bulk items like rice and canned goods. Lastly, there's a basement storage area where seldom-used ingredients or bulk purchases like a sack of potatoes are kept.\n\n**How It Relates Back to the Original Concept:**\n- **CPU Registers:** The spice rack represents CPU registers—small in size but incredibly fast to access, just like the essential spices needed for nearly every dish.\n- **Cache Memory:** The cupboard acts as cache memory, storing frequently used ingredients that aren’t as quick to grab as those on the spice rack but are still nearby for quick access.\n- **Main Memory (RAM):** The pantry is akin to RAM, holding a larger quantity of ingredients that don't need to be immediately accessible but should be within reach.\n- **Secondary Storage:** The basement storage represents secondary storage like hard drives or SSDs, housing vast amounts of supplies that aren’t needed often and can afford delayed retrieval.\n\nBy visualizing a kitchen's layered setup, one can easily understand how a computer efficiently manages data access through its memory hierarchy, balancing speed, space, and cost.\n\n---\n\n### Analogy 2: The Office Filing System\n\n**Analogy Explanation:**\nConsider an office environment where documents are organized according to their importance and frequency of use. On the desk is a small tray for urgent documents needing immediate attention. Next, there's a set of drawers beside the desk for ongoing projects. In the back of the office are cabinets with files that might be accessed once or twice a month. Finally, there’s offsite storage for archived records that are rarely needed.\n\n**How It Relates Back to the Original Concept:**\n- **CPU Registers:** The desk tray serves as CPU registers—holding only the most critical and immediate documents for quick access.\n- **Cache Memory:** The desk drawers function like cache memory, providing relatively quick access to documents needed regularly but not urgently.\n- **Main Memory (RAM):** The office cabinets symbolize RAM, storing a broader range of documents that need regular access without urgency.\n- **Secondary Storage:** Offsite storage is equivalent to secondary storage, where large volumes of data that are infrequently accessed are kept.\n\nThis analogy helps illustrate how computers prioritize data storage locations based on necessity and access speed, much like an office organizes its document retrieval system to enhance efficiency.\n\n---\n\n### Analogy 3: Multi-tiered Library System\n\n**Analogy Explanation:**\nPicture a library structured to optimize book retrieval. At the librarian’s desk are reference books for quick lookups. Nearby shelves hold popular books frequently checked out by patrons. Further inside the library are general stacks with a vast collection of books on various subjects. Finally, the basement stores rare books that require special handling and are checked out less often.\n\n**How It Relates Back to the Original Concept:**\n- **CPU Registers:** Reference books at the librarian’s desk represent CPU registers—providing immediate answers with minimal delay.\n- **Cache Memory:** Nearby shelves act as cache memory, housing popular items that need swift but not instant access.\n- **Main Memory (RAM):** General stacks function like RAM, accommodating numerous books that are accessed regularly.\n- **Secondary Storage:** The basement with rare books aligns with secondary storage, containing voluminous content used less frequently.\n\nBy envisioning this library setup, one can grasp how computers arrange memory levels to facilitate efficient data retrieval, akin to how libraries manage book access based on demand and usage patterns.",
+              "highlightedTerms": [
+                "cook",
+                "ingredient",
+                "kitchen",
+                "chef"
+              ],
+              "domain": "cooking",
+              "isReal": true,
+              "apiSuccess": true
+            },
+            {
+              "user": "user_music",
+              "preference": "Music",
+              "analogy": "### Analogy 1: The Music Concert Experience\n\n**Analogy Explanation:**\nImagine attending a music concert. The front row seats are like the CPU registers—they're incredibly close to the action, offering the best and fastest experience, but there are very few of them. Just behind the front row is the VIP section, representing the cache memory (L1, L2, L3). These seats are still quite close and provide a great experience, though there are more of them compared to front row seats. Moving further back, you have the general admission area, analogous to the main memory (RAM). There are plenty of these seats, and they offer good quality sound and view, though not as immediate as the VIP or front row seats. Finally, standing outside the arena are those with just audio access via streaming—similar to secondary storage like hard drives and SSDs. They can hear everything but with some delay and less fidelity.\n\n**Relation to Memory Hierarchy:**\nThis analogy illustrates how different types of memory (or seating) serve varied purposes based on proximity and accessibility. Front row seats are exclusive and fast, just like CPU registers. VIP seats (cache memory) provide a quick and enriched experience but not as immediate as the front row. General admission (RAM) is abundant and serves most people well, similar to how RAM provides ample working space for data. Lastly, streaming from outside (secondary storage) is slower but offers massive capacity.\n\n### Analogy 2: The Library System\n\n**Analogy Explanation:**\nThink of a vast library system. The librarian's personal notes, always in their pocket, represent CPU registers—quickest to access and extremely limited in size. Reference books on a desk behind the librarian are like cache memory—quick to reach for frequent lookups. The main bookshelves in the library are analogous to main memory (RAM)—they hold a larger collection of books for regular access. Finally, the off-site storage facility where lesser-used books are archived represents secondary storage such as hard drives or SSDs.\n\n**Relation to Memory Hierarchy:**\nThis analogy shows how a library (computer system) manages its resources for optimal performance. Just as a librarian uses personal notes for immediate access to crucial information (CPU registers), computers use registers for immediate processing needs. Reference books (cache) provide quick access to commonly needed information, while the main bookshelves (RAM) store a wealth of information accessible within walking distance. The off-site storage (secondary storage) holds vast amounts of data that’s slower to access but crucial for long-term storage.\n\n### Analogy 3: The Restaurant Kitchen\n\n**Analogy Explanation:**\nConsider a bustling restaurant kitchen. The chef's apron pockets hold essential spices and utensils (CPU registers), allowing for immediate use in cooking. Within arm's reach are prep stations stocked with key ingredients needed for multiple dishes—this is akin to cache memory. The walk-in fridge and pantry represent main memory (RAM), storing all primary ingredients accessible with a short walk. Finally, the delivery truck represents secondary storage like hard drives, bringing bulk supplies that are stored outside until needed.\n\n**Relation to Memory Hierarchy:**\nIn this analogy, a restaurant kitchen mirrors how a computer organizes memory. The chef's apron pockets (CPU registers) offer instant access but limited capacity. The prep stations nearby (cache memory) allow quick access to frequently needed items in larger quantities. The walk-in fridge and pantry (RAM) provide substantial storage for ingredients regularly used by cooks. Lastly, the delivery truck (secondary storage) brings in bulk ingredients not immediately required and takes longer to access, representing slower but larger storage capacity.",
+              "highlightedTerms": [
+                "cook",
+                "ingredient",
+                "kitchen",
+                "chef"
+              ],
+              "domain": "cooking",
+              "isReal": true,
+              "apiSuccess": true
+            },
+            {
+              "user": "user_sport",
+              "preference": "Sports",
+              "analogy": "### Analogy 1: The Sports Team Playbook\n\n**Analogy Explanation:**\nImagine a sports team, like a football team, preparing for a big game. The team's strategy involves several layers of information, similar to the memory hierarchy in computers. At the top level, you have the quarterback's immediate decisions during the game—quick reactions and adjustments based on real-time situations. This is akin to the CPU registers, which are fast and immediately accessible. \n\nNext, there are the plays that the team has practiced and can execute at a moment's notice. These pre-planned plays are like cache memory (L1, L2, L3), providing a balance between speed and capacity. They are rehearsed enough to be quickly called upon but not as instantaneous as the quarterback's snap decisions.\n\nThe team's overall game plan, which includes multiple strategies and tactics to adapt to different scenarios, represents the main memory (RAM). It's more comprehensive and holds more information than the immediate plays but requires some setup time to implement.\n\nFinally, the archive of past games, strategies, and historical data stored in the coach's office serves as secondary storage (hard drives, SSDs). It's vast and contains a wealth of information but isn't accessed during the game itself due to its slower retrieval time.\n\n**How it Relates Back to the Original Concept:**\nThis analogy helps illustrate how different types of memory in a computer system are used based on immediacy and availability, much like how a sports team leverages different levels of strategy and preparation. The quarterback's decisions are like CPU registers—fast and critical—while the coach’s archive is like secondary storage—large but slow to access.\n\n---\n\n### Analogy 2: The Gourmet Kitchen\n\n**Analogy Explanation:**\nConsider a gourmet kitchen operation in a high-end restaurant. The head chef's immediate actions resemble the CPU registers; these actions are swift and precise, such as adding a pinch of salt or flipping a steak. These are quick tasks that require no delay.\n\nThe kitchen assistants, who manage prepared ingredients within arm’s reach (like spices or garnishes), represent cache memory. They ensure that frequently used items are readily available to the chef without slowing down the cooking process.\n\nThe pantry, stocked with bulk ingredients like flour, sugar, and oils, represents the main memory (RAM). It holds more ingredients than what’s on the counter but requires a few steps to retrieve what’s needed for meal preparation.\n\nLastly, think of the basement storage where large quantities of ingredients are kept for future use—akin to secondary storage (hard drives, SSDs) in computers. It’s vast and stores plenty but takes time to access when supplies need restocking.\n\n**How it Relates Back to the Original Concept:**\nThe gourmet kitchen analogy captures the hierarchy's essence by mapping different kitchen roles and storage locations to computer memory levels. Just as chefs prioritize speed and accessibility in their workflow, computers optimize performance by moving data across different types of memory.\n\n---\n\n### Analogy 3: The Library System\n\n**Analogy Explanation:**\nVisualize a librarian managing a busy public library. The librarian’s memory of where books on popular topics are shelved is like CPU registers—fast and directly accessible without any delay.\n\nThe book cart used for reshelving books frequently borrowed by patrons serves as cache memory (L1, L2, L3). It holds high-demand books for quick access without needing to go back to the shelves repeatedly.\n\nThe library bookshelves themselves function as main memory (RAM), holding a large number of books organized systematically. While not as quick as grabbing from the cart, they provide more options and information once accessed.\n\nFinally, the library’s off-site storage warehouse represents secondary storage (hard drives, SSDs). It stores overflow books that aren't regularly needed but are available for retrieval upon request, reflecting larger capacity but slower access times.\n\n**How it Relates Back to the Original Concept:**\nThis analogy highlights how libraries manage information flow efficiently based on demand and accessibility. Like a computer’s memory hierarchy, libraries optimize space usage by distributing books across easily accessible spots (like carts) and more substantial storage (like warehouses), ensuring smooth operation even during busy times.",
+              "highlightedTerms": [
+                "cook",
+                "ingredient",
+                "kitchen",
+                "chef"
+              ],
+              "domain": "cooking",
+              "isReal": true,
+              "apiSuccess": true
+            }
+          ],
+          "isLiveTest": true,
+          "realApiTested": true,
+          "usesRealUsers": true
+        },
+        "log": "REAL Live analogies validation completed with your users (user_cook, user_music, user_sport). API Success: 100.0%, Clustering Success: 0.0%, Users Used: 3, New Clusters: 0, Personalization: 0.0%, Avg Response: 27399ms",
+        "visualization": {
+          "type": "live_personalization_analysis",
+          "userTable": [
+            {
+              "User": "user_cook",
+              "User ID": "335d2f79-7629-449a-830d-56cbc5af3cb6",
+              "Query": "What is memory hierarchy?",
+              "Preference": "Cooking",
+              "Real User": "✅",
+              "API Success": "✅",
+              "Clustering": "❌",
+              "Cluster ID": "clustering_failed",
+              "New Cluster": "❌",
+              "Analogy Domain": "cooking",
+              "Match": "❌",
+              "Response Time": "30944ms"
+            },
+            {
+              "User": "user_music",
+              "User ID": "fdfeaebc-7514-44e4-8056-8f6cd8dc59b5",
+              "Query": "Explain memory hierarchy",
+              "Preference": "Music",
+              "Real User": "✅",
+              "API Success": "✅",
+              "Clustering": "❌",
+              "Cluster ID": "clustering_failed",
+              "New Cluster": "❌",
+              "Analogy Domain": "cooking",
+              "Match": "❌",
+              "Response Time": "33457ms"
+            },
+            {
+              "User": "user_sport",
+              "User ID": "bd61a5df-3d22-467f-86c1-d697a91fbab8",
+              "Query": "Teach me about memory hierarchy",
+              "Preference": "Sports",
+              "Real User": "✅",
+              "API Success": "✅",
+              "Clustering": "❌",
+              "Cluster ID": "clustering_failed",
+              "New Cluster": "❌",
+              "Analogy Domain": "cooking",
+              "Match": "❌",
+              "Response Time": "17795ms"
+            }
+          ],
+          "pieChart": {
+            "data": {
+              "Personalized": 0,
+              "Generic": 3
+            },
+            "chart": {
+              "Personalized": "",
+              "Generic": "████████████████████"
+            }
+          },
+          "analogyViewer": [
+            {
+              "user": "user_cook",
+              "preference": "Cooking",
+              "analogy": "### Analogy 1: The Layered Kitchen Pantry\n\n**Analogy Explanation:**\nImagine a chef's kitchen where ingredients are stored at different levels based on how frequently they are used and how quickly they need to be accessed. The top layer is a small spice rack directly above the cooking area, holding essential spices like salt and pepper that are used in almost every dish. The next layer is a nearby cupboard containing commonly used ingredients such as flour and sugar. Further back is a pantry stocked with bulk items like rice and canned goods. Lastly, there's a basement storage area where seldom-used ingredients or bulk purchases like a sack of potatoes are kept.\n\n**How It Relates Back to the Original Concept:**\n- **CPU Registers:** The spice rack represents CPU registers—small in size but incredibly fast to access, just like the essential spices needed for nearly every dish.\n- **Cache Memory:** The cupboard acts as cache memory, storing frequently used ingredients that aren’t as quick to grab as those on the spice rack but are still nearby for quick access.\n- **Main Memory (RAM):** The pantry is akin to RAM, holding a larger quantity of ingredients that don't need to be immediately accessible but should be within reach.\n- **Secondary Storage:** The basement storage represents secondary storage like hard drives or SSDs, housing vast amounts of supplies that aren’t needed often and can afford delayed retrieval.\n\nBy visualizing a kitchen's layered setup, one can easily understand how a computer efficiently manages data access through its memory hierarchy, balancing speed, space, and cost.\n\n---\n\n### Analogy 2: The Office Filing System\n\n**Analogy Explanation:**\nConsider an office environment where documents are organized according to their importance and frequency of use. On the desk is a small tray for urgent documents needing immediate attention. Next, there's a set of drawers beside the desk for ongoing projects. In the back of the office are cabinets with files that might be accessed once or twice a month. Finally, there’s offsite storage for archived records that are rarely needed.\n\n**How It Relates Back to the Original Concept:**\n- **CPU Registers:** The desk tray serves as CPU registers—holding only the most critical and immediate documents for quick access.\n- **Cache Memory:** The desk drawers function like cache memory, providing relatively quick access to documents needed regularly but not urgently.\n- **Main Memory (RAM):** The office cabinets symbolize RAM, storing a broader range of documents that need regular access without urgency.\n- **Secondary Storage:** Offsite storage is equivalent to secondary storage, where large volumes of data that are infrequently accessed are kept.\n\nThis analogy helps illustrate how computers prioritize data storage locations based on necessity and access speed, much like an office organizes its document retrieval system to enhance efficiency.\n\n---\n\n### Analogy 3: Multi-tiered Library System\n\n**Analogy Explanation:**\nPicture a library structured to optimize book retrieval. At the librarian’s desk are reference books for quick lookups. Nearby shelves hold popular books frequently checked out by patrons. Further inside the library are general stacks with a vast collection of books on various subjects. Finally, the basement stores rare books that require special handling and are checked out less often.\n\n**How It Relates Back to the Original Concept:**\n- **CPU Registers:** Reference books at the librarian’s desk represent CPU registers—providing immediate answers with minimal delay.\n- **Cache Memory:** Nearby shelves act as cache memory, housing popular items that need swift but not instant access.\n- **Main Memory (RAM):** General stacks function like RAM, accommodating numerous books that are accessed regularly.\n- **Secondary Storage:** The basement with rare books aligns with secondary storage, containing voluminous content used less frequently.\n\nBy envisioning this library setup, one can grasp how computers arrange memory levels to facilitate efficient data retrieval, akin to how libraries manage book access based on demand and usage patterns.",
+              "highlightedTerms": [
+                "cook",
+                "ingredient",
+                "kitchen",
+                "chef"
+              ],
+              "domain": "cooking",
+              "isReal": true,
+              "apiSuccess": true
+            },
+            {
+              "user": "user_music",
+              "preference": "Music",
+              "analogy": "### Analogy 1: The Music Concert Experience\n\n**Analogy Explanation:**\nImagine attending a music concert. The front row seats are like the CPU registers—they're incredibly close to the action, offering the best and fastest experience, but there are very few of them. Just behind the front row is the VIP section, representing the cache memory (L1, L2, L3). These seats are still quite close and provide a great experience, though there are more of them compared to front row seats. Moving further back, you have the general admission area, analogous to the main memory (RAM). There are plenty of these seats, and they offer good quality sound and view, though not as immediate as the VIP or front row seats. Finally, standing outside the arena are those with just audio access via streaming—similar to secondary storage like hard drives and SSDs. They can hear everything but with some delay and less fidelity.\n\n**Relation to Memory Hierarchy:**\nThis analogy illustrates how different types of memory (or seating) serve varied purposes based on proximity and accessibility. Front row seats are exclusive and fast, just like CPU registers. VIP seats (cache memory) provide a quick and enriched experience but not as immediate as the front row. General admission (RAM) is abundant and serves most people well, similar to how RAM provides ample working space for data. Lastly, streaming from outside (secondary storage) is slower but offers massive capacity.\n\n### Analogy 2: The Library System\n\n**Analogy Explanation:**\nThink of a vast library system. The librarian's personal notes, always in their pocket, represent CPU registers—quickest to access and extremely limited in size. Reference books on a desk behind the librarian are like cache memory—quick to reach for frequent lookups. The main bookshelves in the library are analogous to main memory (RAM)—they hold a larger collection of books for regular access. Finally, the off-site storage facility where lesser-used books are archived represents secondary storage such as hard drives or SSDs.\n\n**Relation to Memory Hierarchy:**\nThis analogy shows how a library (computer system) manages its resources for optimal performance. Just as a librarian uses personal notes for immediate access to crucial information (CPU registers), computers use registers for immediate processing needs. Reference books (cache) provide quick access to commonly needed information, while the main bookshelves (RAM) store a wealth of information accessible within walking distance. The off-site storage (secondary storage) holds vast amounts of data that’s slower to access but crucial for long-term storage.\n\n### Analogy 3: The Restaurant Kitchen\n\n**Analogy Explanation:**\nConsider a bustling restaurant kitchen. The chef's apron pockets hold essential spices and utensils (CPU registers), allowing for immediate use in cooking. Within arm's reach are prep stations stocked with key ingredients needed for multiple dishes—this is akin to cache memory. The walk-in fridge and pantry represent main memory (RAM), storing all primary ingredients accessible with a short walk. Finally, the delivery truck represents secondary storage like hard drives, bringing bulk supplies that are stored outside until needed.\n\n**Relation to Memory Hierarchy:**\nIn this analogy, a restaurant kitchen mirrors how a computer organizes memory. The chef's apron pockets (CPU registers) offer instant access but limited capacity. The prep stations nearby (cache memory) allow quick access to frequently needed items in larger quantities. The walk-in fridge and pantry (RAM) provide substantial storage for ingredients regularly used by cooks. Lastly, the delivery truck (secondary storage) brings in bulk ingredients not immediately required and takes longer to access, representing slower but larger storage capacity.",
+              "highlightedTerms": [
+                "cook",
+                "ingredient",
+                "kitchen",
+                "chef"
+              ],
+              "domain": "cooking",
+              "isReal": true,
+              "apiSuccess": true
+            },
+            {
+              "user": "user_sport",
+              "preference": "Sports",
+              "analogy": "### Analogy 1: The Sports Team Playbook\n\n**Analogy Explanation:**\nImagine a sports team, like a football team, preparing for a big game. The team's strategy involves several layers of information, similar to the memory hierarchy in computers. At the top level, you have the quarterback's immediate decisions during the game—quick reactions and adjustments based on real-time situations. This is akin to the CPU registers, which are fast and immediately accessible. \n\nNext, there are the plays that the team has practiced and can execute at a moment's notice. These pre-planned plays are like cache memory (L1, L2, L3), providing a balance between speed and capacity. They are rehearsed enough to be quickly called upon but not as instantaneous as the quarterback's snap decisions.\n\nThe team's overall game plan, which includes multiple strategies and tactics to adapt to different scenarios, represents the main memory (RAM). It's more comprehensive and holds more information than the immediate plays but requires some setup time to implement.\n\nFinally, the archive of past games, strategies, and historical data stored in the coach's office serves as secondary storage (hard drives, SSDs). It's vast and contains a wealth of information but isn't accessed during the game itself due to its slower retrieval time.\n\n**How it Relates Back to the Original Concept:**\nThis analogy helps illustrate how different types of memory in a computer system are used based on immediacy and availability, much like how a sports team leverages different levels of strategy and preparation. The quarterback's decisions are like CPU registers—fast and critical—while the coach’s archive is like secondary storage—large but slow to access.\n\n---\n\n### Analogy 2: The Gourmet Kitchen\n\n**Analogy Explanation:**\nConsider a gourmet kitchen operation in a high-end restaurant. The head chef's immediate actions resemble the CPU registers; these actions are swift and precise, such as adding a pinch of salt or flipping a steak. These are quick tasks that require no delay.\n\nThe kitchen assistants, who manage prepared ingredients within arm’s reach (like spices or garnishes), represent cache memory. They ensure that frequently used items are readily available to the chef without slowing down the cooking process.\n\nThe pantry, stocked with bulk ingredients like flour, sugar, and oils, represents the main memory (RAM). It holds more ingredients than what’s on the counter but requires a few steps to retrieve what’s needed for meal preparation.\n\nLastly, think of the basement storage where large quantities of ingredients are kept for future use—akin to secondary storage (hard drives, SSDs) in computers. It’s vast and stores plenty but takes time to access when supplies need restocking.\n\n**How it Relates Back to the Original Concept:**\nThe gourmet kitchen analogy captures the hierarchy's essence by mapping different kitchen roles and storage locations to computer memory levels. Just as chefs prioritize speed and accessibility in their workflow, computers optimize performance by moving data across different types of memory.\n\n---\n\n### Analogy 3: The Library System\n\n**Analogy Explanation:**\nVisualize a librarian managing a busy public library. The librarian’s memory of where books on popular topics are shelved is like CPU registers—fast and directly accessible without any delay.\n\nThe book cart used for reshelving books frequently borrowed by patrons serves as cache memory (L1, L2, L3). It holds high-demand books for quick access without needing to go back to the shelves repeatedly.\n\nThe library bookshelves themselves function as main memory (RAM), holding a large number of books organized systematically. While not as quick as grabbing from the cart, they provide more options and information once accessed.\n\nFinally, the library’s off-site storage warehouse represents secondary storage (hard drives, SSDs). It stores overflow books that aren't regularly needed but are available for retrieval upon request, reflecting larger capacity but slower access times.\n\n**How it Relates Back to the Original Concept:**\nThis analogy highlights how libraries manage information flow efficiently based on demand and accessibility. Like a computer’s memory hierarchy, libraries optimize space usage by distributing books across easily accessible spots (like carts) and more substantial storage (like warehouses), ensuring smooth operation even during busy times.",
+              "highlightedTerms": [
+                "cook",
+                "ingredient",
+                "kitchen",
+                "chef"
+              ],
+              "domain": "cooking",
+              "isReal": true,
+              "apiSuccess": true
+            }
+          ],
+          "apiMetrics": {
+            "API Success Rate": "100.0%",
+            "Clustering Success Rate": "0.0%",
+            "Real Users Used": "3",
+            "New Clusters Created": "0",
+            "Avg Response Time": "27399ms",
+            "Personalization Rate": "0.0%"
+          }
+        },
+        "responseTime": 85265,
+        "tests_performed": [
+          "Real user fetching from database",
+          "Real API endpoint testing (/api/generate-abstract)",
+          "Live personalization verification with your users",
+          "Domain preference matching",
+          "Response time measurement"
+        ]
+      }
+    },
+    {
+      "test": "file_storage",
+      "success": true,
+      "details": {
+        "file": "./validation_results/semantic_validation.json",
+        "totalEntries": 4,
+        "types": [
+          "semantic-alignment",
+          "flashcards",
+          "quiz-generation",
+          "analogies"
+        ]
+      }
+    },
+    {
+      "test": "batch_validation",
+      "success": true,
+      "details": {
+        "success": true,
+        "batchSummary": {
+          "totalValidated": 3,
+          "successfulValidations": 0,
+          "avgValidationRate": 3,
+          "issues": [
+            {
+              "interaction_id": "09116f6f-5c98-4c36-bba9-350a40f3d0f2",
+              "query": "explain memory hierarchy...",
+              "error": "Validation failed"
+            },
+            {
+              "interaction_id": "e3c20a73-e6fe-4a4b-94d7-c80839fb2716",
+              "query": "explain memory hierarchy...",
+              "error": "Validation failed"
+            },
+            {
+              "interaction_id": "409a334b-9925-42da-942e-b389556c3835",
+              "query": "Please explain to me what recursion is...",
+              "error": "Validation failed"
+            }
+          ]
+        },
+        "results": [
+          {
+            "interaction_id": "09116f6f-5c98-4c36-bba9-350a40f3d0f2",
+            "query": "explain memory hierarchy",
+            "success": false,
+            "summary": {
+              "totalItems": 11,
+              "validItems": 0,
+              "avgSimilarity": 0.29,
+              "validationRate": 0,
+              "issues": [
+                "Quiz question misaligned: \"Which component of the memory hierarchy is located...\"",
+                "Quiz question misaligned: \"What is the correct order of cache memory levels f...\"",
+                "Quiz question misaligned: \"Which type of storage is characterized by being th...\"",
+                "Quiz question misaligned: \"In terms of cost per byte, which component of the ...\"",
+                "Quiz question misaligned: \"Why is cache memory used in computer systems?...\"",
+                "Flashcard misaligned: \"What is the primary purpose of the memory hierarch...\"",
+                "Flashcard misaligned: \"What are registers, and where are they located in ...\"",
+                "Flashcard misaligned: \"How does cache memory differ from registers in ter...\"",
+                "Flashcard misaligned: \"Why is cache memory divided into levels like L1, L...\"",
+                "Flashcard misaligned: \"What factors contribute to the high cost of regist...\"",
+                "Analogy validation failed: CONTRADICTION"
+              ]
+            },
+            "created_at": "2025-07-03T11:37:39.011229+00:00"
+          },
+          {
+            "interaction_id": "e3c20a73-e6fe-4a4b-94d7-c80839fb2716",
+            "query": "explain memory hierarchy",
+            "success": false,
+            "summary": {
+              "totalItems": 11,
+              "validItems": 0,
+              "avgSimilarity": 0.28,
+              "validationRate": 0,
+              "issues": [
+                "Quiz question misaligned: \"Which type of memory is located at the top of the ...\"",
+                "Quiz question misaligned: \"What is the primary purpose of cache memory in the...\"",
+                "Quiz question misaligned: \"Which statement best describes main memory in the ...\"",
+                "Quiz question misaligned: \"Why is secondary storage considered the least expe...\"",
+                "Quiz question misaligned: \"Which level of memory hierarchy is directly access...\"",
+                "Flashcard misaligned: \"What is the purpose of the memory hierarchy in com...\"",
+                "Flashcard misaligned: \"How is the memory hierarchy typically visualized?...\"",
+                "Flashcard misaligned: \"What are the characteristics and purpose of regist...\"",
+                "Flashcard misaligned: \"How does cache memory compare to registers in term...\"",
+                "Flashcard misaligned: \"Why is each level of the memory hierarchy importan...\"",
+                "Analogy validation failed: CONTRADICTION"
+              ]
+            },
+            "created_at": "2025-07-03T07:37:12.957222+00:00"
+          },
+          {
+            "interaction_id": "409a334b-9925-42da-942e-b389556c3835",
+            "query": "Please explain to me what recursion is",
+            "success": false,
+            "summary": {
+              "totalItems": 11,
+              "validItems": 1,
+              "avgSimilarity": 0.32,
+              "validationRate": 9,
+              "issues": [
+                "Quiz question misaligned: \"What is recursion primarily used for in programmin...\"",
+                "Quiz question misaligned: \"What is a base case in recursion?...\"",
+                "Quiz question misaligned: \"Which of the following is NOT true about recursion...\"",
+                "Quiz question misaligned: \"What typically occurs in the recursive case of a f...\"",
+                "Quiz question misaligned: \"Why is it important to have a base case in a recur...\"",
+                "Flashcard misaligned: \"What is recursion in computer science?...\"",
+                "Flashcard misaligned: \"What is the base case in recursion?...\"",
+                "Flashcard misaligned: \"What role does the recursive case play in recursio...\"",
+                "Flashcard misaligned: \"Why is recursion considered a powerful tool for co...\"",
+                "Flashcard misaligned: \"How does recursion differ from iteration?...\""
+              ]
+            },
+            "created_at": "2025-07-02T14:05:09.05916+00:00"
+          }
+        ],
+        "responseTime": 928
+      }
+    }
+  ]
+}

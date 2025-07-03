@@ -12,6 +12,7 @@ import setupClusterRoutes from './api/clusterRoutes.js';
 import feedbackRoutes from './api/feedbackRoutes.js';
 import analyticsRoutes from './api/analyticsRoutes.js';
 import crowdWisdomRoutes from './api/crowdWisdomRoutes.js';
+import validationRoutes from './api/validationRoutes.js';
 import AnalyticsWebSocketServer from './websocketServer.js';
 // Clustering service removed - using ModernClusterManager.js instead
 // Import learning algorithms
@@ -2313,6 +2314,7 @@ setupClusterRoutes(app, supabase);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/crowd-wisdom', crowdWisdomRoutes);
+app.use('/api/validation', validationRoutes);
 
 // Add a route to fix existing structured templates
 app.post('/api/admin/fix-structured-templates', async (req, res) => {

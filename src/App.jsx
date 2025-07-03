@@ -26,6 +26,8 @@ import FeedbackDetailPage from './pages/FeedbackDetailPage';
 import ProgressDashboard from './components/ProgressDashboard';
 import UserAnalytics from './pages/UserAnalytics';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
+import ValidationDashboard from './pages/ValidationDashboard';
+import ValidationTestDetail from './pages/ValidationTestDetail';
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -97,6 +99,8 @@ function App() {
           <Route path="history" element={<History />} />
           <Route path="progress" element={<ProgressDashboard />} />
           <Route path="analytics" element={<UserAnalytics />} />
+          <Route path="validation" element={<ValidationDashboard />} />
+          <Route path="validation/:testId" element={<ValidationTestDetail />} />
         </Route>
         
         {/* Admin routes */}
