@@ -26,6 +26,7 @@ import FeedbackDetailPage from './pages/FeedbackDetailPage';
 import ProgressDashboard from './components/ProgressDashboard';
 import UserAnalytics from './pages/UserAnalytics';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
+import CrowdWisdomVisualizer from './components/CrowdWisdomVisualizer';
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -97,6 +98,7 @@ function App() {
           <Route path="history" element={<History />} />
           <Route path="progress" element={<ProgressDashboard />} />
           <Route path="analytics" element={<UserAnalytics />} />
+          <Route path="crowd-wisdom" element={<CrowdWisdomVisualizer />} />
         </Route>
         
         {/* Admin routes */}

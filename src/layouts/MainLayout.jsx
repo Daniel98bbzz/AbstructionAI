@@ -19,6 +19,12 @@ function MainLayout() {
 
   // Check if current route is the query page (which needs full width)
   const isQueryPage = location.pathname === '/query';
+  
+  // Check if user has admin role
+  const isAdmin = user && (
+    user.user_metadata?.role === 'admin' || 
+    user.email === 'admin@example.com' // Add your admin email here
+  );
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -53,6 +59,20 @@ function MainLayout() {
                     <Link to="/history" className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300">
                       History
                     </Link>
+                    <Link to="/crowd-wisdom" className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                      🧠 Crowd Wisdom
+                    </Link>
+                    {isAdmin && (
+                      <>
+                        <div className="border-l border-gray-300 mx-2"></div>
+                        <Link to="/admin/analytics" className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                          Analytics
+                        </Link>
+                        <Link to="/admin/feedbacks" className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                          Feedbacks
+                        </Link>
+                      </>
+                    )}
                   </>
                 )}
               </nav>

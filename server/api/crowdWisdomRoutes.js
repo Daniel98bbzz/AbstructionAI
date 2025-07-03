@@ -137,48 +137,34 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/clusters', async (req, res) => {
   try {
-    const { limit = 50, sortBy = 'total_queries' } = req.query;
-
-    console.log('[CrowdWisdomAPI] Getting clusters', {
-      limit,
-      sortBy
-    });
-
+    console.log('[CrowdWisdomAPI] Fetching clusters');
+    
     const { data: clusters, error } = await supabase
       .from('crowd_wisdom_clusters')
       .select('*')
-      .order(sortBy, { ascending: false })
-      .limit(parseInt(limit));
+      .order('total_queries', { ascending: false });
 
     if (error) {
-      throw error;
+      console.error('[CrowdWisdomAPI] Error fetching clusters:', error);
+      return res.status(500).json({ 
+        success: false, 
+        error: error.message 
+      });
     }
 
-    // Transform clusters for API response
-    const transformedClusters = clusters.map(cluster => ({
-      id: cluster.id,
-      name: cluster.cluster_name,
-      representativeQuery: cluster.representative_query,
-      totalQueries: cluster.total_queries,
-      successCount: cluster.success_count,
-      successRate: cluster.success_rate,
-      hasPromptEnhancement: Boolean(cluster.prompt_enhancement),
-      promptEnhancementLength: cluster.prompt_enhancement?.length || 0,
-      createdAt: cluster.created_at,
-      updatedAt: cluster.updated_at
-    }));
-
-    res.json({
-      success: true,
-      data: transformedClusters,
-      total: clusters.length
+    console.log('[CrowdWisdomAPI] Fetched', clusters?.length || 0, 'clusters');
+    
+    res.json({ 
+      success: true, 
+      data: clusters || [],
+      count: clusters?.length || 0
     });
-
+    
   } catch (error) {
-    console.error('[CrowdWisdomAPI] Error getting clusters:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
+    console.error('[CrowdWisdomAPI] Server error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
     });
   }
 });
@@ -430,6 +416,84 @@ router.get('/health', async (req, res) => {
       status: 'unhealthy',
       error: error.message,
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * Get recent assignments
+ * GET /api/crowd-wisdom/assignments
+ */
+router.get('/assignments', async (req, res) => {
+  try {
+    console.log('[CrowdWisdomAPI] Fetching recent assignments');
+    
+    const { data: assignments, error } = await supabase
+      .from('crowd_wisdom_query_assignments')
+      .select(`
+        *,
+        crowd_wisdom_clusters!inner(cluster_name)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(req.query.limit || 10);
+
+    if (error) {
+      console.error('[CrowdWisdomAPI] Error fetching assignments:', error);
+      return res.status(500).json({ 
+        success: false, 
+        error: error.message 
+      });
+    }
+
+    console.log('[CrowdWisdomAPI] Fetched', assignments?.length || 0, 'assignments');
+    
+    res.json({ 
+      success: true, 
+      data: assignments || [],
+      count: assignments?.length || 0
+    });
+    
+  } catch (error) {
+    console.error('[CrowdWisdomAPI] Server error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * Get system statistics
+ * GET /api/crowd-wisdom/stats
+ */
+router.get('/stats', async (req, res) => {
+  try {
+    const [clustersResult, assignmentsResult, learningResult] = await Promise.all([
+      supabase.from('crowd_wisdom_clusters').select('*'),
+      supabase.from('crowd_wisdom_query_assignments').select('id'),
+      supabase.from('crowd_wisdom_learning_logs').select('id')
+    ]);
+
+    const clusters = clustersResult.data || [];
+    const totalQueries = clusters.reduce((sum, c) => sum + (c.total_queries || 0), 0);
+    const enhancedClusters = clusters.filter(c => c.prompt_enhancement && c.prompt_enhancement.length > 0).length;
+
+    res.json({
+      success: true,
+      data: {
+        totalClusters: clusters.length,
+        totalQueries,
+        enhancedClusters,
+        totalAssignments: assignmentsResult.data?.length || 0,
+        totalLearningEvents: learningResult.data?.length || 0
+      }
+    });
+
+  } catch (error) {
+    console.error('[CrowdWisdomAPI] Error getting stats:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
