@@ -301,109 +301,156 @@ function Profile() {
 
   if (loading || isLoading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-primary-600"></div>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          <div className="flex justify-center items-center h-64">
+            <div className="relative">
+              <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-primary-600"></div>
+              <div className="absolute inset-0 rounded-full border-2 border-primary-200"></div>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-        <div className="px-4 py-5 sm:px-6">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Your Profile
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            Update your personal information and learning preferences
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-primary-50/30">
+      {/* Enhanced Header */}
+      <div className="bg-gradient-to-r from-primary-600 via-primary-700 to-primary-800 relative overflow-hidden">
+        <div className="absolute inset-0 bg-black/10"></div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2"></div>
+        
+        <div className="relative max-w-7xl mx-auto px-4 py-16 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <div className="inline-flex items-center px-4 py-2 bg-white/20 rounded-full text-white text-sm font-medium mb-6 backdrop-blur-sm">
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              Your Learning Profile
+            </div>
+            <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+              Personalize Your Experience
+            </h1>
+            <p className="text-xl text-primary-100 max-w-3xl mx-auto">
+              Customize your learning preferences to get the most out of AbstructionAI
+            </p>
+          </div>
         </div>
-        
-        {successMessage && (
-          <div className="mx-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
-            {successMessage}
-          </div>
-        )}
-        
-        {(error || authError) && (
-          <div className="mx-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-            {error || authError}
-          </div>
-        )}
-        
-        <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-          <form onSubmit={handleSubmit} className="space-y-8">
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">Basic Information</h3>
-              <div className="mt-4 grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                    Username
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      name="username"
-                      id="username"
-                      value={formData.username}
-                      onChange={handleChange}
-                      className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    />
-                  </div>
-                </div>
+      </div>
 
-                <div>
-                  <label htmlFor="occupation" className="block text-sm font-medium text-gray-700">
-                    Level of Interest
-                  </label>
-                  <div className="mt-1">
-                    <select
-                      id="occupation"
-                      name="occupation"
-                      value={formData.occupation}
-                      onChange={handleChange}
-                      className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    >
-                      <option value="">Select level of interest</option>
-                      {OCCUPATIONS.map(occupation => (
-                        <option key={occupation} value={occupation.toLowerCase()}>
-                          {occupation}
-                        </option>
-                      ))}
-                    </select>
+      <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8 -mt-8 relative z-10">
+        <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+          {/* Success/Error Messages */}
+          {successMessage && (
+            <div className="mx-6 mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 text-green-800 rounded-xl flex items-center">
+              <svg className="w-5 h-5 mr-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {successMessage}
+            </div>
+          )}
+          
+          {(error || authError) && (
+            <div className="mx-6 mt-6 p-4 bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 text-red-800 rounded-xl flex items-center">
+              <svg className="w-5 h-5 mr-3 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {error || authError}
+            </div>
+          )}
+          
+          <div className="p-6 sm:p-8">
+            <form onSubmit={handleSubmit} className="space-y-8">
+              {/* Basic Information Section */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
+                <div className="flex items-center mb-6">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
                   </div>
+                  <h3 className="text-xl font-bold text-gray-900">Basic Information</h3>
                 </div>
-
-                <div>
-                  <label htmlFor="age" className="block text-sm font-medium text-gray-700">
-                    Age
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="number"
-                      name="age"
-                      id="age"
-                      min="13"
-                      value={formData.age}
-                      onChange={handleChange}
-                      className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    />
+                
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label htmlFor="username" className="block text-sm font-semibold text-gray-700 mb-2">
+                      Username
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      </div>
+                      <input
+                        type="text"
+                        name="username"
+                        id="username"
+                        value={formData.username}
+                        onChange={handleChange}
+                        className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white shadow-sm transition-all duration-200"
+                        placeholder="Enter your username"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label htmlFor="education_level" className="block text-sm font-medium text-gray-700">
-                    Education Level
-                  </label>
-                  <div className="mt-1">
+                  <div>
+                    <label htmlFor="occupation" className="block text-sm font-semibold text-gray-700 mb-2">
+                      Level of Interest
+                    </label>
+                    <div className="relative">
+                      <select
+                        id="occupation"
+                        name="occupation"
+                        value={formData.occupation}
+                        onChange={handleChange}
+                        className="block w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white shadow-sm transition-all duration-200"
+                      >
+                        <option value="">Select level of interest</option>
+                        {OCCUPATIONS.map(occupation => (
+                          <option key={occupation} value={occupation.toLowerCase()}>
+                            {occupation}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="age" className="block text-sm font-semibold text-gray-700 mb-2">
+                      Age
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <input
+                        type="number"
+                        name="age"
+                        id="age"
+                        min="13"
+                        value={formData.age}
+                        onChange={handleChange}
+                        className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white shadow-sm transition-all duration-200"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="education_level" className="block text-sm font-semibold text-gray-700 mb-2">
+                      Education Level
+                    </label>
                     <select
                       id="education_level"
                       name="education_level"
                       value={formData.education_level}
                       onChange={handleChange}
-                      className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                      className="block w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white shadow-sm transition-all duration-200"
                     >
                       <option value="">Select education level</option>
                       {EDUCATION_LEVELS.map(level => (
@@ -413,19 +460,17 @@ function Profile() {
                       ))}
                     </select>
                   </div>
-                </div>
 
-                <div>
-                  <label htmlFor="learning_style" className="block text-sm font-medium text-gray-700">
-                    Preferred Learning Style
-                  </label>
-                  <div className="mt-1">
+                  <div>
+                    <label htmlFor="learning_style" className="block text-sm font-semibold text-gray-700 mb-2">
+                      Preferred Learning Style
+                    </label>
                     <select
                       id="learning_style"
                       name="learning_style"
                       value={formData.learning_style}
                       onChange={handleChange}
-                      className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                      className="block w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white shadow-sm transition-all duration-200"
                     >
                       <option value="">Select learning style</option>
                       {LEARNING_STYLES.map(style => (
@@ -435,19 +480,17 @@ function Profile() {
                       ))}
                     </select>
                   </div>
-                </div>
 
-                <div>
-                  <label htmlFor="main_learning_goal" className="block text-sm font-medium text-gray-700">
-                    Main Learning Goal
-                  </label>
-                  <div className="mt-1">
+                  <div>
+                    <label htmlFor="main_learning_goal" className="block text-sm font-semibold text-gray-700 mb-2">
+                      Main Learning Goal
+                    </label>
                     <select
                       id="main_learning_goal"
                       name="main_learning_goal"
                       value={formData.main_learning_goal}
                       onChange={handleChange}
-                      className="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                      className="block w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white shadow-sm transition-all duration-200"
                     >
                       <option value="">Select learning goal</option>
                       {LEARNING_GOALS.map(goal => (
@@ -459,17 +502,24 @@ function Profile() {
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">Interests</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Select all topics that interest you
-              </p>
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {INTERESTS.map(interest => (
-                  <div key={interest} className="flex items-start">
-                    <div className="flex items-center h-5">
+              {/* Interests Section */}
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border border-green-100">
+                <div className="flex items-center mb-6">
+                  <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">Interests</h3>
+                    <p className="text-sm text-gray-600 mt-1">Select all topics that interest you</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {INTERESTS.map(interest => (
+                    <label key={interest} className="relative flex items-center p-3 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-all duration-200 cursor-pointer group">
                       <input
                         id={`interest-${interest}`}
                         name="interests"
@@ -477,28 +527,33 @@ function Profile() {
                         value={interest}
                         checked={formData.interests.includes(interest)}
                         onChange={handleCheckboxChange}
-                        className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300 rounded"
+                        className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
                       />
-                    </div>
-                    <div className="ml-2 text-sm">
-                      <label htmlFor={`interest-${interest}`} className="font-medium text-gray-700">
+                      <span className="ml-2 text-sm font-medium text-gray-700 group-hover:text-gray-900">
                         {interest}
-                      </label>
-                    </div>
-                  </div>
-                ))}
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">Preferred Analogy Domains</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Topics you'd like to see used in analogies to explain concepts
-              </p>
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {ANALOGY_DOMAINS.map(domain => (
-                  <div key={domain} className="flex items-start">
-                    <div className="flex items-center h-5">
+              {/* Analogy Domains Section */}
+              <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl p-6 border border-purple-100">
+                <div className="flex items-center mb-6">
+                  <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">Preferred Analogy Domains</h3>
+                    <p className="text-sm text-gray-600 mt-1">Topics you'd like to see used in analogies to explain concepts</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {ANALOGY_DOMAINS.map(domain => (
+                    <label key={domain} className="relative flex items-center p-3 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-all duration-200 cursor-pointer group">
                       <input
                         id={`domain-${domain}`}
                         name="preferred_analogy_domains"
@@ -506,104 +561,139 @@ function Profile() {
                         value={domain}
                         checked={formData.preferred_analogy_domains.includes(domain)}
                         onChange={handleCheckboxChange}
-                        className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300 rounded"
+                        className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
                       />
-                    </div>
-                    <div className="ml-2 text-sm">
-                      <label htmlFor={`domain-${domain}`} className="font-medium text-gray-700">
+                      <span className="ml-2 text-sm font-medium text-gray-700 group-hover:text-gray-900">
                         {domain}
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">Learning Preferences</h3>
-              <div className="mt-4">
-                <label htmlFor="technical_depth" className="block text-sm font-medium text-gray-700">
-                  Technical Depth Preference
-                </label>
-                <p className="text-xs text-gray-500">
-                  How technical and detailed do you want explanations to be?
-                </p>
-                <div className="mt-2 flex items-center space-x-3">
-                  <span className="text-xs text-gray-500">Beginner</span>
-                  <input
-                    type="range"
-                    id="technical_depth"
-                    name="technical_depth"
-                    min="0"
-                    max="100"
-                    value={formData.technical_depth}
-                    onChange={handleSliderChange}
-                    className="flex-grow"
-                  />
-                  <span className="text-xs text-gray-500">Expert</span>
+                      </span>
+                    </label>
+                  ))}
                 </div>
               </div>
-            </div>
 
-            {/* Personalization Settings */}
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">Personalization Settings</h3>
-              <div className="mt-4 space-y-4">
-                <div className="flex items-start">
-                  <div className="flex items-center h-5">
-                    <input
-                      id="use_interests_for_analogies"
-                      name="use_interests_for_analogies"
-                      type="checkbox"
-                      checked={formData.use_interests_for_analogies}
-                      onChange={handleCheckboxChange}
-                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                    />
+              {/* Learning Preferences Section */}
+              <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-6 border border-orange-100">
+                <div className="flex items-center mb-6">
+                  <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+                    </svg>
                   </div>
-                  <div className="ml-3">
-                    <label htmlFor="use_interests_for_analogies" className="text-sm font-medium text-gray-700">
-                      Use my interests for personalized analogies
-                    </label>
-                    <p className="text-xs text-gray-500 mt-1">
-                      When enabled, analogies in the Abstract tab will be tailored to your selected interests. When disabled, only your preferred analogy domains will be used.
-                    </p>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">Learning Preferences</h3>
+                    <p className="text-sm text-gray-600 mt-1">Customize how technical explanations should be</p>
                   </div>
                 </div>
                 
-                <div className="flex items-start">
-                  <div className="flex items-center h-5">
-                    <input
-                      id="use_profile_for_main_answer"
-                      name="use_profile_for_main_answer"
-                      type="checkbox"
-                      checked={formData.use_profile_for_main_answer}
-                      onChange={handleCheckboxChange}
-                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                    />
-                  </div>
-                  <div className="ml-3">
-                    <label htmlFor="use_profile_for_main_answer" className="text-sm font-medium text-gray-700">
-                      Use my profile for personalized main answers
-                    </label>
-                    <p className="text-xs text-gray-500 mt-1">
-                      When enabled, main answers will be adapted based on your education level, age, learning goals, and technical depth preference.
-                    </p>
+                <div className="bg-white rounded-lg p-6">
+                  <label htmlFor="technical_depth" className="block text-sm font-semibold text-gray-700 mb-3">
+                    Technical Depth Preference
+                  </label>
+                  <p className="text-sm text-gray-600 mb-4">
+                    How technical and detailed do you want explanations to be?
+                  </p>
+                  <div className="flex items-center space-x-4">
+                    <span className="text-sm text-gray-500 font-medium">Beginner</span>
+                    <div className="flex-grow relative">
+                      <input
+                        type="range"
+                        id="technical_depth"
+                        name="technical_depth"
+                        min="0"
+                        max="100"
+                        value={formData.technical_depth}
+                        onChange={handleSliderChange}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                      />
+                      <div className="absolute -top-8 left-0 right-0 flex justify-center">
+                        <span className="bg-primary-600 text-white text-xs px-2 py-1 rounded font-medium">
+                          {formData.technical_depth}%
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-sm text-gray-500 font-medium">Expert</span>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="pt-5">
-              <div className="flex justify-end">
+              {/* Personalization Settings */}
+              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-100">
+                <div className="flex items-center mb-6">
+                  <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">Personalization Settings</h3>
+                    <p className="text-sm text-gray-600 mt-1">Control how your profile is used for personalization</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="bg-white rounded-lg p-4 border border-gray-200">
+                    <div className="flex items-start">
+                      <div className="flex items-center h-5">
+                        <input
+                          id="use_interests_for_analogies"
+                          name="use_interests_for_analogies"
+                          type="checkbox"
+                          checked={formData.use_interests_for_analogies}
+                          onChange={handleCheckboxChange}
+                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                      </div>
+                      <div className="ml-3">
+                        <label htmlFor="use_interests_for_analogies" className="text-sm font-semibold text-gray-900">
+                          Use my interests for personalized analogies
+                        </label>
+                        <p className="text-sm text-gray-600 mt-1">
+                          When enabled, analogies in the Abstract tab will be tailored to your selected interests. When disabled, only your preferred analogy domains will be used.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white rounded-lg p-4 border border-gray-200">
+                    <div className="flex items-start">
+                      <div className="flex items-center h-5">
+                        <input
+                          id="use_profile_for_main_answer"
+                          name="use_profile_for_main_answer"
+                          type="checkbox"
+                          checked={formData.use_profile_for_main_answer}
+                          onChange={handleCheckboxChange}
+                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                      </div>
+                      <div className="ml-3">
+                        <label htmlFor="use_profile_for_main_answer" className="text-sm font-semibold text-gray-900">
+                          Use my profile for personalized main answers
+                        </label>
+                        <p className="text-sm text-gray-600 mt-1">
+                          When enabled, main answers will be adapted based on your education level, age, learning goals, and technical depth preference.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Save Button */}
+              <div className="flex justify-end pt-6">
                 <button
                   type="submit"
-                  className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                  className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-xl text-white bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
                 >
-                  Save
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Save Profile
                 </button>
               </div>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       </div>
     </div>

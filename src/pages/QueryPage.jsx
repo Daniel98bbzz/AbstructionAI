@@ -620,8 +620,6 @@ function QueryPage() {
       return;
     }
 
-
-
     // Merge project preferences with global preferences to ensure no values are empty
     const queryPreferences = {
       interests: activeProjectData?.preferences?.interests?.length ? 
@@ -1229,26 +1227,41 @@ examplePlaceholder();`
 
   if (!user) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg p-6 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Please Log In</h2>
-          <p className="text-gray-600 mb-6">You need to be logged in to submit queries and get personalized responses.</p>
-          <Link to="/login" className="btn btn-primary">
-            Log In
-          </Link>
-          <p className="mt-4 text-sm text-gray-500">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-primary-600 hover:text-primary-500">
-              Register
-            </Link>
-          </p>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white flex items-center justify-center p-4">
+        <div className="max-w-md w-full">
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-8 text-center">
+            <div className="w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center mx-auto mb-6">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Authentication Required</h2>
+            <p className="text-gray-600 mb-8">You need to be logged in to submit queries and get personalized responses.</p>
+            <div className="space-y-4">
+              <Link 
+                to="/login" 
+                className="w-full inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-xl text-white bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                </svg>
+                Sign In
+              </Link>
+              <p className="text-sm text-gray-500">
+                Don't have an account?{' '}
+                <Link to="/register" className="font-medium text-primary-600 hover:text-primary-500 transition-colors">
+                  Create one here
+                </Link>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen bg-gradient-to-br from-gray-50 via-white to-primary-50/20">
       <ConversationHistory
         projects={projects}
         activeProject={activeProject}
@@ -1259,60 +1272,103 @@ examplePlaceholder();`
       />
       
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col bg-white/60 backdrop-blur-sm">
+        {/* Enhanced Chat Header */}
+        <div className="bg-white/90 backdrop-blur-sm border-b border-gray-200/50 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-gray-900">New Query</h1>
+                <p className="text-sm text-gray-600">Ask anything and get personalized explanations</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="inline-flex items-center px-3 py-1.5 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
+                AI Ready
+              </div>
+            </div>
+          </div>
+        </div>
+        
         {/* Chat container */}
-        <div className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6">
           {messages.map((message, index) => (
             <div key={message.id || index} className={`message ${message.role}`}>
-              <div
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`w-full rounded-lg p-4 lg:p-6 ${
-                    message.role === 'user'
-                      ? 'bg-primary-600 text-white'
-                      : message.role === 'error'
-                      ? 'bg-red-100 text-red-700'
-                      : message.role === 'system'
-                      ? 'bg-yellow-50 text-yellow-700'
-                      : message.role === 'thinking'
-                      ? 'bg-gray-100 text-gray-700 animate-pulse'
-                      : 'bg-white shadow'
-                  }`}
-                >
-                  {message.role === 'assistant' ? (
-                    <div className="space-y-4">
-                                            {/* Use ResponseTabs component for tabbed interface */}
-                      <ResponseTabs
-                        messageId={message.id}
-                        mainContent={message.content}
-                        originalQuery={messages.find(m => m.role === 'user' && m.timestamp < message.timestamp)?.content || ''}
-                        sessionId={
-                          (() => {
-                            const activeProjectData = projects.find(p => p.id === activeProject);
-                            const currentConversation = activeProjectData?.conversations.find(c => c.id === activeConversation);
-                            return currentConversation?.sessionId || null;
-                          })()
-                        }
-                        preferences={userProfile || message.preferences || preferences}
-                        userId={user?.id}
-                        tabContent={message.tab_content}
-                      />
-                    </div>
-                  ) : message.role === 'thinking' ? (
-                    <div className="flex items-center space-x-2">
-                      <div className="animate-pulse flex space-x-2">
-                        <div className="h-2 w-2 bg-gray-400 rounded-full animate-bounce"></div>
-                        <div className="h-2 w-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                        <div className="h-2 w-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+              <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className="flex items-start space-x-3 max-w-4xl w-full">
+                  {/* Avatar for assistant messages */}
+                  {message.role === 'assistant' && (
+                    <div className="flex-shrink-0">
+                      <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center shadow-lg">
+                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                        </svg>
                       </div>
-                      <p className="text-gray-500 font-medium">{message.content}</p>
-                    </div>
-                  ) : (
-                    <div className="prose max-w-none">
-                      {message.content}
                     </div>
                   )}
+                  
+                  <div
+                    className={`flex-1 ${
+                      message.role === 'user'
+                        ? 'ml-auto max-w-lg bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-2xl rounded-tr-sm p-4 lg:p-5 shadow-xl'
+                        : message.role === 'error'
+                        ? 'bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 text-red-800 rounded-2xl p-4 lg:p-5 shadow-lg'
+                        : message.role === 'system'
+                        ? 'bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 text-yellow-800 rounded-2xl p-4 lg:p-5 shadow-lg'
+                        : message.role === 'thinking'
+                        ? 'bg-gradient-to-r from-gray-50 to-gray-100 border border-gray-200 text-gray-700 rounded-2xl p-4 lg:p-5 shadow-lg animate-pulse'
+                        : 'bg-white border border-gray-200 rounded-2xl rounded-tl-sm p-4 lg:p-5 shadow-xl'
+                    }`}
+                  >
+                    {/* User avatar for user messages */}
+                    {message.role === 'user' && (
+                      <div className="flex items-center justify-end mb-2">
+                        <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                        </div>
+                      </div>
+                    )}
+                    {message.role === 'assistant' ? (
+                      <div className="space-y-4">
+                        <ResponseTabs
+                          messageId={message.id}
+                          mainContent={message.content}
+                          originalQuery={messages.find(m => m.role === 'user' && m.timestamp < message.timestamp)?.content || ''}
+                          sessionId={
+                            (() => {
+                              const activeProjectData = projects.find(p => p.id === activeProject);
+                              const currentConversation = activeProjectData?.conversations.find(c => c.id === activeConversation);
+                              return currentConversation?.sessionId || null;
+                            })()
+                          }
+                          preferences={userProfile || message.preferences || preferences}
+                          userId={user?.id}
+                          tabContent={message.tab_content}
+                        />
+                      </div>
+                    ) : message.role === 'thinking' ? (
+                      <div className="flex items-center space-x-2">
+                        <div className="animate-pulse flex space-x-2">
+                          <div className="h-2 w-2 bg-gray-400 rounded-full animate-bounce"></div>
+                          <div className="h-2 w-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                          <div className="h-2 w-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                        </div>
+                        <p className="text-gray-500 font-medium">{message.content}</p>
+                      </div>
+                    ) : (
+                      <div className="prose max-w-none">
+                        {message.content}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1326,13 +1382,10 @@ examplePlaceholder();`
                     preGeneratedQuiz={message.quiz}
                     onQuizStart={() => {
                       console.log('Quiz started for message:', message.id);
-                      // Store the current feedback state before starting quiz
                       if (showFeedbackFor === message.id) {
-                        // Save that this message had feedback showing
                         message.hadFeedbackShowing = true;
                       }
                       setActiveQuizMessage(message.id);
-                      // Temporarily hide feedback during quiz
                       if (showFeedbackFor === message.id) {
                         setShowFeedbackFor(null);
                       }
@@ -1341,12 +1394,10 @@ examplePlaceholder();`
                       console.log('Quiz ended for message:', message.id);
                       setActiveQuizMessage(null);
                       
-                      // Force restore feedback state with a delay
                       if (message.hadFeedbackShowing) {
                         setTimeout(() => {
                           setShowFeedbackFor(message.id);
                           setActiveFeedbackMessage(message.id);
-                          // Clear the flag
                           message.hadFeedbackShowing = false;
                         }, 300);
                       }
@@ -1357,15 +1408,12 @@ examplePlaceholder();`
                 </div>
               )}
 
-              {/* FEEDBACK FORM REMOVED: Now using natural conversation analysis for crowd wisdom learning */}
-
               {/* Add feedback button for messages without feedback */}
               {message.role === 'assistant' && 
                !showFeedbackFor && 
                !activeQuizMessage &&
                !message.hadFeedbackSubmitted && (
                 <div className="mt-2 flex justify-end">
-                  {/* FEEDBACK REMOVED: Now using natural conversation analysis */}
                   <div className="text-xs text-gray-500 italic">
                     💬 System learns from your natural conversation
                   </div>
@@ -1376,31 +1424,39 @@ examplePlaceholder();`
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input container */}
-        <div className="border-t bg-white p-4 lg:p-6">
-          <div className="w-full px-2">
-            <form onSubmit={handleSubmit} className="flex space-x-4">
+        {/* Enhanced Input container */}
+        <div className="border-t border-gray-200/50 bg-white/90 backdrop-blur-sm p-4 lg:p-6">
+          <div className="max-w-6xl mx-auto">
+            <form onSubmit={handleSubmit} className="flex items-end space-x-4">
               <div className="flex-1">
-                <textarea
-                  rows="1"
-                  className="w-full rounded-lg border border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 resize-none"
-                  placeholder="Type your message..."
-                  value={query}
-                  onChange={handleQueryChange}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSubmit(e);
-                    }
-                  }}
-                  disabled={loading || regenerating}
-                />
+                <div className="relative">
+                  <textarea
+                    rows="1"
+                    className="w-full rounded-2xl border border-gray-300 bg-gray-50 shadow-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-500 focus:bg-white resize-none px-4 py-3 pr-12 transition-all duration-200 placeholder-gray-500"
+                    placeholder="Ask anything you'd like to learn about..."
+                    value={query}
+                    onChange={handleQueryChange}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSubmit(e);
+                      }
+                    }}
+                    disabled={loading || regenerating}
+                  />
+                  <div className="absolute right-3 bottom-3">
+                    <div className="flex items-center space-x-1 text-xs text-gray-400">
+                      <kbd className="px-1.5 py-0.5 bg-gray-200 rounded text-gray-600 font-medium">Enter</kbd>
+                      <span>to send</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-3">
                 <button
                   type="submit"
                   disabled={loading || regenerating || !query.trim()}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+                  className="group inline-flex items-center justify-center p-3 border border-transparent text-sm font-medium rounded-2xl shadow-lg text-white bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
                 >
                   {loading || regenerating ? (
                     <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1408,58 +1464,72 @@ examplePlaceholder();`
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                   ) : (
-                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <svg className="h-5 w-5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-200" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                       <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
                     </svg>
                   )}
                 </button>
+                
                 <button
                   type="button"
                   onClick={() => generateQuizQuestions(query.trim() || 'this topic')}
                   disabled={loading || regenerating || !messages.some(m => m.role === 'assistant') || isGeneratingContent}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-secondary-600 hover:bg-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary-500 disabled:opacity-50"
+                  className="group inline-flex items-center px-4 py-3 border border-transparent text-sm font-medium rounded-2xl shadow-lg text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
                 >
-                  <svg className="h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-4 w-4 mr-2 group-hover:rotate-12 transition-transform duration-200" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Quiz Me
+                  Quiz
                 </button>
                 
-                {/* Code Example Button */}
                 <button
                   type="button"
                   onClick={handleGenerateCodeExample}
                   disabled={loading || regenerating || !messages.some(m => m.role === 'assistant') || isGeneratingContent}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                  className="group inline-flex items-center px-4 py-3 border border-transparent text-sm font-medium rounded-2xl shadow-lg text-white bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95"
                 >
-                  <svg className="h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform duration-200" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                   </svg>
-                  Code Example
+                  Code
                 </button>
-                
-
               </div>
             </form>
             
-            <div className="mt-2">
+            <div className="mt-4 flex items-center justify-between">
               <button
                 type="button"
-                className="text-sm text-primary-600 hover:text-primary-500"
+                className="inline-flex items-center px-3 py-2 text-sm font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-all duration-200"
                 onClick={() => setShowPreferences(!showPreferences)}
               >
-                {showPreferences ? 'Hide' : 'Show'} Learning Preferences
+                <svg className={`w-4 h-4 mr-2 transition-transform duration-200 ${showPreferences ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+                {showPreferences ? 'Hide' : 'Customize'} Learning Preferences
               </button>
               
-              {showPreferences && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-md">
-                  <h3 className="text-sm font-medium text-gray-700">Customize this explanation</h3>
-                  
-                  <div className="mt-4">
-                    <label htmlFor="visualLearning" className="block text-xs font-medium text-gray-700">
+              <div className="text-xs text-gray-500">
+                Powered by AI • Real-time responses
+              </div>
+            </div>
+              
+            {showPreferences && (
+              <div className="mt-4 p-6 bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-2xl shadow-lg">
+                <div className="flex items-center mb-6">
+                  <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+                    </svg>
+                  </div>
+                  <h3 className="text-base font-semibold text-gray-900">Customize Your Learning Experience</h3>
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="bg-white rounded-xl p-4">
+                    <label htmlFor="visualLearning" className="block text-sm font-medium text-gray-700 mb-2">
                       Visual Learning
                     </label>
-                    <div className="mt-1 flex items-center">
+                    <div className="flex items-center">
                       <span className="text-xs text-gray-500 w-24">Text-based</span>
                       <input
                         type="range"
@@ -1475,11 +1545,11 @@ examplePlaceholder();`
                     </div>
                   </div>
                   
-                  <div className="mt-4">
-                    <label htmlFor="practicalExamples" className="block text-xs font-medium text-gray-700">
+                  <div className="bg-white rounded-xl p-4">
+                    <label htmlFor="practicalExamples" className="block text-sm font-medium text-gray-700 mb-2">
                       Practical Examples
                     </label>
-                    <div className="mt-1 flex items-center">
+                    <div className="flex items-center">
                       <span className="text-xs text-gray-500 w-24">Theoretical</span>
                       <input
                         type="range"
@@ -1495,11 +1565,11 @@ examplePlaceholder();`
                     </div>
                   </div>
                   
-                  <div className="mt-4">
-                    <label htmlFor="technicalDepth" className="block text-xs font-medium text-gray-700">
+                  <div className="bg-white rounded-xl p-4">
+                    <label htmlFor="technicalDepth" className="block text-sm font-medium text-gray-700 mb-2">
                       Technical Depth
                     </label>
-                    <div className="mt-1 flex items-center">
+                    <div className="flex items-center">
                       <span className="text-xs text-gray-500 w-24">Simplified</span>
                       <input
                         type="range"
@@ -1515,71 +1585,85 @@ examplePlaceholder();`
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Add quiz UI */}
+      {/* Enhanced quiz UI */}
       {quizMode && quizQuestions.length > 0 && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 m-4">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-medium text-gray-900">
-                Quiz Question {currentQuestionIndex + 1}/{quizQuestions.length}
-              </h3>
-              <button 
-                onClick={handleExitQuiz}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            <p className="text-gray-800 mb-4">
-              {quizQuestions[currentQuestionIndex].question}
-            </p>
-            
-            <div className="space-y-3 mb-6">
-              {quizQuestions[currentQuestionIndex].options.map((option, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleAnswerSelect(index)}
-                  disabled={selectedAnswer !== null}
-                  className={`w-full text-left p-3 rounded-md border ${
-                    selectedAnswer === index 
-                      ? index === quizQuestions[currentQuestionIndex].correctIndex
-                        ? 'bg-green-50 border-green-500 text-green-700'
-                        : 'bg-red-50 border-red-500 text-red-700'
-                      : 'border-gray-300 hover:bg-gray-50'
-                  }`}
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-gray-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-4">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">
+                      Quiz Question {currentQuestionIndex + 1}/{quizQuestions.length}
+                    </h3>
+                    <p className="text-emerald-100 text-sm">Test your understanding</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={handleExitQuiz}
+                  className="text-white/80 hover:text-white p-2 hover:bg-white/10 rounded-lg transition-all duration-200"
                 >
-                  {option}
-                  {selectedAnswer === index && (
-                    <span className="float-right">
-                      {index === quizQuestions[currentQuestionIndex].correctIndex 
-                        ? '✓' 
-                        : '✗'}
-                    </span>
-                  )}
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
-              ))}
+              </div>
             </div>
             
-            <div className="flex justify-between">
-              <div className="text-sm text-gray-500">
-                Score: {quizScore}/{quizQuestions.length}
+            <div className="p-6">
+              <p className="text-gray-800 mb-4">
+                {quizQuestions[currentQuestionIndex].question}
+              </p>
+              
+              <div className="space-y-3 mb-6">
+                {quizQuestions[currentQuestionIndex].options.map((option, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleAnswerSelect(index)}
+                    disabled={selectedAnswer !== null}
+                    className={`w-full text-left p-3 rounded-md border ${
+                      selectedAnswer === index 
+                        ? index === quizQuestions[currentQuestionIndex].correctIndex
+                          ? 'bg-green-50 border-green-500 text-green-700'
+                          : 'bg-red-50 border-red-500 text-red-700'
+                        : 'border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {option}
+                    {selectedAnswer === index && (
+                      <span className="float-right">
+                        {index === quizQuestions[currentQuestionIndex].correctIndex 
+                          ? '✓' 
+                          : '✗'}
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
-              <button
-                onClick={handleNextQuestion}
-                disabled={selectedAnswer === null}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md disabled:opacity-50"
-              >
-                {currentQuestionIndex < quizQuestions.length - 1 ? 'Next Question' : 'Finish Quiz'}
-              </button>
+              
+              <div className="flex justify-between">
+                <div className="text-sm text-gray-500">
+                  Score: {quizScore}/{quizQuestions.length}
+                </div>
+                <button
+                  onClick={handleNextQuestion}
+                  disabled={selectedAnswer === null}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md disabled:opacity-50"
+                >
+                  {currentQuestionIndex < quizQuestions.length - 1 ? 'Next Question' : 'Finish Quiz'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1632,8 +1716,6 @@ examplePlaceholder();`
           </div>
         </div>
       )}
-
-
     </div>
   );
 }
