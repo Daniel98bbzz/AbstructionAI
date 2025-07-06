@@ -15,6 +15,7 @@ import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { saveProjects, loadProjects } from '../utils/userDataManager';
+import { API_URL } from '../config';
 
 // Helper function to generate consistent session IDs
 const generateSessionId = () => {
@@ -356,53 +357,66 @@ function QueryPage() {
     setPreferences(prev => ({ ...prev, [name]: parseInt(value, 10) }));
   };
 
-  const generateTitle = (message) => {
+  // AI-powered title generation using GPT-4o
+  const generateTitle = async (message) => {
     if (!message || typeof message !== 'string' || message.trim() === '') {
       console.log('Empty or invalid message for title generation');
       return 'New Conversation';
     }
     
-    // Get words from the message, removing punctuation
-    const words = message.replace(/[^\w\s]/gi, '').trim().split(/\s+/);
-    
-    // Common words to skip
-    const skipWords = new Set([
-      'what', 'how', 'why', 'when', 'where', 'who', 'which',
-      'explain', 'tell', 'me', 'about', 'can', 'you', 'please', 
-      'the', 'a', 'an', 'is', 'are', 'was', 'were', 'will', 'would', 
-      'can', 'could', 'should', 'to', 'and', 'or', 'but', 'if', 
-      'then', 'that', 'this', 'these', 'those', 'for', 'with'
-    ]);
-    
-    // Filter out short and common words
-    let filteredWords = words.filter(word => 
-      word.length > 2 && !skipWords.has(word.toLowerCase())
-    );
-    
-    // If we don't have enough words after filtering, take the first few words
-    if (filteredWords.length < 2) {
-      filteredWords = words.filter(w => w.length > 1).slice(0, 3);
+    try {
+      console.log('[AI TITLE] Generating AI-powered title for:', message.substring(0, 50) + '...');
+      
+      const response = await fetch(`${API_URL}/api/generate-title`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: message })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const aiTitle = data.title;
+      
+      console.log(`[AI TITLE] Generated AI title: "${aiTitle}" from message "${message.substring(0, 30)}..."`);
+      return aiTitle;
+      
+    } catch (error) {
+      console.error('[AI TITLE] Error generating AI title, falling back to local generation:', error);
+      
+      // Fallback to local title generation
+      const words = message.replace(/[^\w\s]/gi, '').trim().split(/\s+/);
+      const skipWords = new Set([
+        'what', 'how', 'why', 'when', 'where', 'who', 'which',
+        'explain', 'tell', 'me', 'about', 'can', 'you', 'please', 
+        'the', 'a', 'an', 'is', 'are', 'was', 'were', 'will', 'would', 
+        'can', 'could', 'should', 'to', 'and', 'or', 'but', 'if', 
+        'then', 'that', 'this', 'these', 'those', 'for', 'with'
+      ]);
+      
+      let filteredWords = words.filter(word => 
+        word.length > 2 && !skipWords.has(word.toLowerCase())
+      );
+      
+      if (filteredWords.length < 2) {
+        filteredWords = words.filter(w => w.length > 1).slice(0, 3);
+      }
+      
+      if (filteredWords.length === 0) {
+        filteredWords = words.filter(w => w.length > 0).slice(0, 3);
+      }
+      
+      const fallbackTitle = filteredWords.length > 0 
+        ? filteredWords.slice(0, 3).map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
+        : 'New Conversation';
+      
+      console.log(`[AI TITLE] Using fallback title: "${fallbackTitle}"`);
+      return fallbackTitle;
     }
-    
-    // If we still don't have words, just take the first 3 non-empty words
-    if (filteredWords.length === 0) {
-      filteredWords = words.filter(w => w.length > 0).slice(0, 3);
-    }
-    
-    // If we have nothing at all, use a default
-    if (filteredWords.length === 0) {
-      console.log('No words found for title generation');
-      return 'New Conversation';
-    }
-    
-    // Take up to 3 words and capitalize each one
-    const title = filteredWords
-      .slice(0, 3)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-    
-    console.log(`Generated title "${title}" from message "${message.substring(0, 30)}..."`);
-    return title || 'New Conversation'; // Final fallback
   };
 
   // Add state for project preferences modal
@@ -542,15 +556,15 @@ function QueryPage() {
     }
   };
 
-  const handleQueryChange = (e) => {
+  const handleQueryChange = async (e) => {
     const newQuery = e.target.value;
     setQuery(newQuery);
 
     // If this is the first message in a new conversation, create it
     if (!activeConversation && newQuery.trim()) {
-      // Generate title once
-      const title = generateTitle(newQuery);
-      console.log('Creating new conversation with title:', title);
+      // Generate title using AI
+      const title = await generateTitle(newQuery);
+      console.log('Creating new conversation with AI title:', title);
       
       const newConversation = {
         id: Date.now().toString(),
@@ -574,9 +588,9 @@ function QueryPage() {
     else if (activeConversation && newQuery.trim()) {
       const currentConversation = projects.find(p => p.id === activeProject)?.conversations.find(c => c.id === activeConversation);
       if (currentConversation && currentConversation.title === 'New Conversation') {
-        // Generate title once
-        const title = generateTitle(newQuery);
-        console.log('Updating conversation title:', title);
+        // Generate AI-powered title
+        const title = await generateTitle(newQuery);
+        console.log('Updating conversation with AI title:', title);
         
         // Use a flag to prevent duplicate updates
         if (!currentConversation._titleUpdated) {
@@ -747,6 +761,10 @@ function QueryPage() {
       // Remove the thinking message and add the AI response
       setMessages(prev => prev.filter(msg => msg.role !== 'thinking').concat(aiMessage));
       
+      // Generate title if needed before updating projects
+      const currentConv = projects.find(p => p.id === activeProject)?.conversations.find(c => c.id === activeConversation);
+      const newTitle = currentConv?.title === 'New Conversation' ? await generateTitle(query) : currentConv?.title;
+      
       // Update project conversation with the response session ID
       setProjects(prev => prev.map(project => {
         if (project.id === activeProject) {
@@ -759,7 +777,7 @@ function QueryPage() {
                   ...conv,
                   messages: updatedMessages,
                   lastMessageTime: Date.now(),
-                  title: conv.title === 'New Conversation' ? generateTitle(query) : conv.title,
+                  title: newTitle,
                   sessionId: response.sessionId || conv.sessionId || effectiveSessionId,
                   // Store current preferences at the conversation level as well
                   currentPreferences: queryPreferences

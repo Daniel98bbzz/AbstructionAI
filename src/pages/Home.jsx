@@ -26,16 +26,16 @@ function Home() {
           </div>
           
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-gray-900 leading-tight mb-6">
-            <span className="block mb-2">Bridge the gap between</span>
+            <span className="block mb-2">Learn Better,</span>
             <span className="block bg-gradient-to-r from-primary-600 via-primary-700 to-primary-800 bg-clip-text text-transparent">
-              theory and practice
+              Understand Deeper
             </span>
           </h1>
           
           <p className="mt-6 text-xl md:text-2xl text-gray-600 max-w-4xl mx-auto leading-relaxed font-light">
-            AbstructionAI helps students in technical and engineering fields understand complex concepts through 
-            <span className="font-medium text-primary-700"> personalized explanations</span> and 
-            <span className="font-medium text-primary-700"> real-world analogies</span>.
+          An intelligent learning platform that 
+            <span className="font-medium text-primary-700"> grows</span> with you. AbstructionAI
+            <span className="font-medium text-primary-700"> learns</span> from every interaction to give you explanations, analogies and practice tools tailored to your style.
           </p>
           
           <div className="mt-10 flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">

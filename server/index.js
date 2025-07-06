@@ -997,6 +997,95 @@ Respond with a valid JSON array of objects:
   }
 });
 
+// New endpoint for AI-powered conversation title generation
+app.post('/api/generate-title', async (req, res) => {
+  try {
+    const { query } = req.body;
+    
+    if (!query || typeof query !== 'string' || query.trim() === '') {
+      return res.status(400).json({ error: 'Query is required for title generation' });
+    }
+
+    console.log('[TITLE GENERATION] Generating AI title for query:', query.substring(0, 50) + '...');
+
+    // Create a focused prompt for title generation
+    const titlePrompt = `You are a conversation title generator. Generate a concise, descriptive title (2-6 words) for a conversation about the following query.
+
+RULES:
+- Keep it under 6 words maximum
+- Make it descriptive and specific to the topic
+- Use title case (capitalize important words)
+- Be engaging but professional
+- Focus on the main subject/concept
+- Avoid generic words like "Question", "Help", "Learn"
+
+EXAMPLES:
+Query: "What is machine learning and how does it work?"
+Title: Machine Learning Fundamentals
+
+Query: "How do I build a React component?"
+Title: React Component Development
+
+Query: "Explain quantum physics basics"
+Title: Quantum Physics Basics
+
+Query: "What are the best practices for database design?"
+Title: Database Design Best Practices
+
+Query: "How does photosynthesis work in plants?"
+Title: Plant Photosynthesis Process
+
+USER QUERY: "${query}"
+
+Generate only the title, nothing else:`;
+
+    // Call OpenAI API for title generation
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: titlePrompt }],
+      temperature: 0.3, // Lower temperature for more consistent, focused titles
+      max_tokens: 20, // Short response for title only
+      presence_penalty: 0,
+      frequency_penalty: 0
+    });
+
+    const generatedTitle = completion.choices[0].message.content.trim();
+    
+    // Clean up the title (remove quotes, extra punctuation)
+    const cleanTitle = generatedTitle
+      .replace(/^["']|["']$/g, '') // Remove surrounding quotes
+      .replace(/\.$/, '') // Remove trailing period
+      .trim();
+
+    console.log('[TITLE GENERATION] Generated title:', cleanTitle);
+
+    // Validate title length and provide fallback
+    if (cleanTitle.length > 50 || cleanTitle.length < 2) {
+      console.log('[TITLE GENERATION] Title length validation failed, using fallback');
+      return res.json({ title: 'New Conversation' });
+    }
+
+    res.json({ title: cleanTitle });
+
+  } catch (error) {
+    console.error('[TITLE GENERATION] Error generating title:', error);
+    
+    // Fallback to simple word extraction on error
+    try {
+      const words = req.body.query.replace(/[^\w\s]/gi, '').trim().split(/\s+/);
+      const skipWords = new Set(['what', 'how', 'why', 'when', 'where', 'who', 'which', 'explain', 'tell', 'me', 'about', 'can', 'you', 'please', 'the', 'a', 'an']);
+      const filteredWords = words.filter(word => word.length > 2 && !skipWords.has(word.toLowerCase()));
+      const fallbackTitle = filteredWords.slice(0, 3).map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ') || 'New Conversation';
+      
+      console.log('[TITLE GENERATION] Using fallback title:', fallbackTitle);
+      res.json({ title: fallbackTitle });
+    } catch (fallbackError) {
+      console.error('[TITLE GENERATION] Fallback failed:', fallbackError);
+      res.json({ title: 'New Conversation' });
+    }
+  }
+});
+
 // ❌ LEGACY FEEDBACK ENDPOINT - DISABLED
 // Now using natural conversation analysis for crowd wisdom learning
 app.post('/api/feedback', async (req, res) => {
