@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { API_URL } from '../config.js';
 
 /**
  * Generate quiz questions based on conversation content
@@ -8,7 +9,7 @@ import axios from 'axios';
  */
 export async function generateQuizQuestions(query, options = {}) {
   try {
-    const response = await axios.post(`http://localhost:3001/api/generate-quiz`, {
+    const response = await axios.post(`${API_URL}/api/generate-quiz`, {
       query,
       difficulty: options.difficultyLevel || 'medium',
       userId: options.userId,

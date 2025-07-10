@@ -16,6 +16,15 @@ async function testProduction() {
   console.log('🚀 Starting production build test...\n');
   
   try {
+    // Check if node_modules exists
+    const nodeModulesExists = await fs.access('node_modules').then(() => true).catch(() => false);
+    
+    if (!nodeModulesExists) {
+      console.log('📦 Installing dependencies...');
+      await execAsync('npm install');
+      console.log('✅ Dependencies installed successfully!\n');
+    }
+    
     // Check if dist directory exists
     const distExists = await fs.access('dist').then(() => true).catch(() => false);
     

@@ -6,7 +6,9 @@ import { useAuth } from './AuthContext';
 import { toast } from 'react-hot-toast';
 
 // Fallback API URL if the configured one isn't working
-const FALLBACK_API_URL = 'http://localhost:3001';
+const FALLBACK_API_URL = import.meta.env.MODE === 'development' 
+  ? 'http://localhost:3001'
+  : window.location.origin;
 
 const QuizContext = createContext();
 

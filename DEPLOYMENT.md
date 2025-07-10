@@ -30,13 +30,16 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhY
 ### 2. Build and Deploy Commands
 
 ```bash
+# Install dependencies (required first)
+npm install
+
 # Build the production version
 npm run build:production
 
 # Start the production server
 npm start
 
-# Or build and start in one command
+# Or build and start in one command (after npm install)
 npm run deploy
 ```
 
@@ -45,13 +48,13 @@ npm run deploy
 #### Option A: Deploy to Render (Recommended)
 1. Connect your GitHub repository to Render
 2. Create a new Web Service
-3. Set the build command: `npm run build:production`
+3. Set the build command: `npm install && npm run build:production`
 4. Set the start command: `npm start`
 5. Add environment variables in Render's dashboard
 
 #### Option B: Deploy to Railway
 1. Connect your GitHub repository to Railway
-2. Set the build command: `npm run build:production`
+2. Set the build command: `npm install && npm run build:production`
 3. Set the start command: `npm start`
 4. Add environment variables in Railway's dashboard
 
@@ -63,7 +66,7 @@ npm run deploy
 
 #### Option D: Deploy to DigitalOcean App Platform
 1. Connect your GitHub repository
-2. Set the build command: `npm run build:production`
+2. Set the build command: `npm install && npm run build:production`
 3. Set the run command: `npm start`
 4. Add environment variables in the dashboard
 
@@ -100,6 +103,9 @@ The following minimal changes were made to enable production deployment:
 To test the production build locally:
 
 ```bash
+# Install dependencies (if not already installed)
+npm install
+
 # Build the production version
 npm run build:production
 
@@ -121,8 +127,9 @@ Your app will be available at `http://localhost:3001` (no separate frontend serv
 If you encounter issues:
 
 1. **Build fails**: Check that all dependencies are installed with `npm install`
-2. **Static files not served**: Ensure `NODE_ENV=production` is set
-3. **API calls fail**: Check that environment variables are properly set
-4. **React Router issues**: The fallback route should handle this automatically
+2. **"Module not found" errors**: Run `npm install` to install dependencies first
+3. **Static files not served**: Ensure `NODE_ENV=production` is set
+4. **API calls fail**: Check that environment variables are properly set
+5. **React Router issues**: The fallback route should handle this automatically
 
 Your AbstructionAI project is now production-ready! 🚀 
