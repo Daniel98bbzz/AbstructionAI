@@ -3215,8 +3215,13 @@ function startServer(port) {
   });
 }
 
-// Start the server
-startServer(PORT);
+// Start the server only if not in Vercel environment
+if (!process.env.VERCEL) {
+  startServer(PORT);
+}
+
+// Export the Express app for Vercel
+export default app;
 
 // ==================== TOPIC PROGRESS TRACKING (PHASE 3) ====================
 
