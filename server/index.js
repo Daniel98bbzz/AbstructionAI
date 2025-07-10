@@ -101,6 +101,12 @@ dotenv.config();
 app.use(cors());
 app.use(express.json());
 
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+  // Serve static files from the built React app
+  app.use(express.static(path.join(__dirname, '..', 'dist')));
+}
+
 // Initialize OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -3212,6 +3218,13 @@ function startServer(port) {
       console.log('Server closed');
       process.exit(0);
     });
+  });
+}
+
+// Production fallback route - serve React app for all non-API routes
+if (process.env.NODE_ENV === 'production') {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
   });
 }
 

@@ -9,7 +9,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "dev:full": "concurrently \"npm run dev\" \"npm run server\""
+    "dev:full": "concurrently \"npm run dev\" \"npm run server\"",
+    "build:production": "vite build",
+    "start": "NODE_ENV=production node server/index.js",
+    "deploy": "npm run build:production && npm run start",
+    "test:production": "node test-production.js"
   },
   "keywords": [
     "education",
